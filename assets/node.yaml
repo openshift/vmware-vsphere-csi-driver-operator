@@ -25,14 +25,32 @@ spec:
         - name: csi-driver
           securityContext:
             privileged: true
-          image: ${DRIVER_IMAGE}
+          image: gcr.io/cloud-provider-vsphere/csi/release/driver:v2.1.1
           args:
-            - --endpoint=$(CSI_ENDPOINT)
-            - --logtostderr
-            - --v=${LOG_LEVEL}
+            - --fss-name=internal-feature-states.csi.vsphere.vmware.com
+            - --fss-namespace=$(CSI_NAMESPACE)
           env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: CSI_ENDPOINT
-              value: unix:/csi/csi.sock
+              value: unix:///csi/csi.sock
+            - name: X_CSI_MODE
+              value: "node"
+            # TODO: remove for topology-aware setup
+            # - name: VSPHERE_CSI_CONFIG
+            #   value: "/etc/kubernetes/cloud.conf"
+            - name: X_CSI_DEBUG
+              value: "true"
+            - name: X_CSI_SPEC_DISABLE_LEN_CHECK
+              value: "true"
+            - name: LOGGER_LEVEL
+              value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           volumeMounts:
             - name: kubelet-dir
               mountPath: /var/lib/kubelet
@@ -41,16 +59,6 @@ spec:
               mountPath: /csi
             - name: device-dir
               mountPath: /dev
-            # The following mounts are required to trigger host udevadm from
-            # container
-            - name: udev-rules-etc
-              mountPath: /etc/udev
-            - name: udev-rules-lib
-              mountPath: /lib/udev
-            - name: udev-socket
-              mountPath: /run/udev
-            - name: sys
-              mountPath: /sys
           ports:
             - name: healthz
               # Due to hostNetwork, this port is open on all nodes!
@@ -71,24 +79,24 @@ spec:
         - name: csi-node-driver-registrar
           securityContext:
             privileged: true
-          image: ${NODE_DRIVER_REGISTRAR_IMAGE}
+          image: quay.io/openshift/origin-csi-node-driver-registrar:latest
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
-            - --v=${LOG_LEVEL}
+            - --v=5
           lifecycle:
             preStop:
               exec:
-                command: ["/bin/sh", "-c", "rm -rf /registration/pd.csi.storage.gke.io-reg.sock /csi/csi.sock"]
+                command: ["/bin/sh", "-c", "rm -rf /registration/csi.vsphere.vmware.com-reg.sock /csi/csi.sock"]
           env:
-            - name: KUBE_NODE_NAME
+            - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
             - name: ADDRESS
               value: /csi/csi.sock
             - name: DRIVER_REG_SOCK_PATH
-              value: /var/lib/kubelet/plugins/pd.csi.storage.gke.io/csi.sock
+              value: /var/lib/kubelet/plugins/csi.vsphere.vmware.com/csi.sock
           volumeMounts:
             - name: plugin-dir
               mountPath: /csi
@@ -99,7 +107,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: csi-liveness-probe
-          image: ${LIVENESS_PROBE_IMAGE}
+          image: quay.io/openshift/origin-csi-livenessprobe:latest
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=3s
@@ -118,7 +126,7 @@ spec:
             type: Directory
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/pd.csi.storage.gke.io/
+            path: /var/lib/kubelet/plugins/csi.vsphere.vmware.com/
             type: DirectoryOrCreate
         - name: registration-dir
           hostPath:
@@ -127,22 +135,4 @@ spec:
         - name: device-dir
           hostPath:
             path: /dev
-            type: Directory
-        # The following mounts are required to trigger host udevadm from
-        # container
-        - name: udev-rules-etc
-          hostPath:
-            path: /etc/udev
-            type: Directory
-        - name: udev-rules-lib
-          hostPath:
-            path: /lib/udev
-            type: Directory
-        - name: udev-socket
-          hostPath:
-            path: /run/udev
-            type: Directory
-        - name: sys
-          hostPath:
-            path: /sys
             type: Directory

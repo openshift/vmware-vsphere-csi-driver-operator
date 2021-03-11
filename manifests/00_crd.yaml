@@ -39,6 +39,7 @@ spec:
                 - cinder.csi.openstack.org
                 - manila.csi.openstack.org
                 - csi.ovirt.org
+                - csi.vsphere.vmware.com
                 type: string
             type: object
           spec:

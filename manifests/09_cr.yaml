@@ -1,7 +1,7 @@
 apiVersion: operator.openshift.io/v1
 kind: ClusterCSIDriver
 metadata:
-  name: pd.csi.storage.gke.io
+  name: csi.vsphere.vmware.com
 spec:
   logLevel: Normal
   managementState: Managed
