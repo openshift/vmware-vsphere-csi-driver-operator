@@ -57,17 +57,6 @@ spec:
               value: 3m
             - name: X_CSI_SPEC_DISABLE_LEN_CHECK
               value: "true"
-            # TODO: figure out a way to parse the key; it's hardcoded for now
-            - name: VSPHERE_USER
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.username
-            - name: VSPHERE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.password
           ports:
             - name: healthz
               # Due to hostNetwork, this port is open on a node!
@@ -172,17 +161,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            # TODO: figure out a way to parse the key; it's hardcoded for now
-            - name: VSPHERE_USER
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.username
-            - name: VSPHERE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.password
           volumeMounts:
             - mountPath: /etc/kube
               name: cloud-sa-volume

@@ -20,7 +20,6 @@
 // assets/rbac/snapshotter_binding.yaml
 // assets/rbac/snapshotter_role.yaml
 // assets/role.yaml
-// assets/storageclass.yaml
 package generated
 
 import (
@@ -220,17 +219,6 @@ spec:
               value: 3m
             - name: X_CSI_SPEC_DISABLE_LEN_CHECK
               value: "true"
-            # TODO: figure out a way to parse the key; it's hardcoded for now
-            - name: VSPHERE_USER
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.username
-            - name: VSPHERE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.password
           ports:
             - name: healthz
               # Due to hostNetwork, this port is open on a node!
@@ -335,17 +323,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            # TODO: figure out a way to parse the key; it's hardcoded for now
-            - name: VSPHERE_USER
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.username
-            - name: VSPHERE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: vmware-vsphere-cloud-credentials
-                  key: vcenter.sddc-44-236-21-251.vmwarevmc.com.password
           volumeMounts:
             - mountPath: /etc/kube
               name: cloud-sa-volume
@@ -1072,31 +1049,6 @@ func roleYaml() (*asset, error) {
 	return a, nil
 }
 
-var _storageclassYaml = []byte(`kind: StorageClass
-apiVersion: storage.k8s.io/v1
-metadata:
-  name: thin-csi
-provisioner: csi.vsphere.vmware.com
-volumeBindingMode: Immediate
-parameters:
-  diskformat: thin
-`)
-
-func storageclassYamlBytes() ([]byte, error) {
-	return _storageclassYaml, nil
-}
-
-func storageclassYaml() (*asset, error) {
-	bytes, err := storageclassYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "storageclass.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
 // Asset loads and returns the asset for the given name.
 // It returns an error if the asset could not be found or
 // could not be loaded.
@@ -1169,7 +1121,6 @@ var _bindata = map[string]func() (*asset, error){
 	"rbac/snapshotter_binding.yaml":           rbacSnapshotter_bindingYaml,
 	"rbac/snapshotter_role.yaml":              rbacSnapshotter_roleYaml,
 	"role.yaml":                               roleYaml,
-	"storageclass.yaml":                       storageclassYaml,
 }
 
 // AssetDir returns the file names below a certain
@@ -1234,8 +1185,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		"snapshotter_binding.yaml":           {rbacSnapshotter_bindingYaml, map[string]*bintree{}},
 		"snapshotter_role.yaml":              {rbacSnapshotter_roleYaml, map[string]*bintree{}},
 	}},
-	"role.yaml":         {roleYaml, map[string]*bintree{}},
-	"storageclass.yaml": {storageclassYaml, map[string]*bintree{}},
+	"role.yaml": {roleYaml, map[string]*bintree{}},
 }}
 
 // RestoreAsset restores an asset under the given directory

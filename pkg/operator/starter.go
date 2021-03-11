@@ -3,8 +3,12 @@ package operator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+	corev1informers "k8s.io/client-go/informers/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -84,6 +88,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		kubeClient,
 		kubeInformersForNamespaces.InformersFor(defaultNamespace),
 		configInformers,
+		WithVSphereCredentials(defaultNamespace, secretName, secretInformer),
 		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,
@@ -114,4 +119,65 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	<-ctx.Done()
 
 	return fmt.Errorf("stopped")
+}
+
+func WithVSphereCredentials(
+	namespace string,
+	secretName string,
+	secretInformer corev1informers.SecretInformer,
+) csidrivercontrollerservicecontroller.DeploymentHookFunc {
+	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
+		if err != nil {
+			return err
+		}
+
+		// CCO generates a secret that contains dynamic keys, for example:
+		// oc get secret/vmware-vsphere-cloud-credentials -o json | jq .data
+		// {
+		//   "vcenter.xyz.vmwarevmc.com.password": "***",
+		//   "vcenter.xyz.vmwarevmc.com.username": "***"
+		// }
+		// So we need to figure those keys out
+		var usernameKey, passwordKey string
+		for k := range secret.Data {
+			if strings.HasSuffix(k, ".username") {
+				usernameKey = k
+			} else if strings.HasSuffix(k, ".password") {
+				passwordKey = k
+			}
+		}
+		if usernameKey == "" || passwordKey == "" {
+			return fmt.Errorf("could not find vSphere credentials in secret %s/%s", secret.Namespace, secret.Name)
+		}
+
+		// Add to csi-driver and vsphere-syncer containers the vSphere credentials, as env vars.
+		containers := deployment.Spec.Template.Spec.Containers
+		for i := range containers {
+			if containers[i].Name != "csi-driver" && containers[i].Name != "vsphere-syncer" {
+				continue
+			}
+			containers[i].Env = append(
+				containers[i].Env,
+				newEnvVar(secretName, "VSPHERE_USER", usernameKey),
+				newEnvVar(secretName, "VSPHERE_PASSWORD", passwordKey),
+			)
+		}
+		deployment.Spec.Template.Spec.Containers = containers
+		return nil
+	}
+}
+
+func newEnvVar(secretName, envVarName, key string) v1.EnvVar {
+	return v1.EnvVar{
+		Name: envVarName,
+		ValueFrom: &v1.EnvVarSource{
+			SecretKeyRef: &v1.SecretKeySelector{
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: secretName,
+				},
+				Key: key,
+			},
+		},
+	}
 }
