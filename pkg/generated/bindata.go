@@ -20,6 +20,7 @@
 // assets/rbac/snapshotter_binding.yaml
 // assets/rbac/snapshotter_role.yaml
 // assets/role.yaml
+// assets/vsphere_config.yaml
 package generated
 
 import (
@@ -177,20 +178,17 @@ spec:
       labels:
         app: vmware-vsphere-csi-driver-controller
     spec:
-      # TODO: remove nodeName
-      nodeName: "fbertina-vsphere-oper-gdjw6-worker-t944b"
       hostNetwork: true
       serviceAccountName: vmware-vsphere-csi-driver-controller-sa
       priorityClassName: system-cluster-critical
-      # TODO: should schedule on master nodes
-      # nodeSelector:
-      #   node-role.kubernetes.io/master: ""
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
       tolerations:
         - key: CriticalAddonsOnly
           operator: Exists
-        # - key: node-role.kubernetes.io/master
-        #   operator: Exists
-        #   effect: "NoSchedule"
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: "NoSchedule"
       containers:
         - name: csi-driver
           image: gcr.io/cloud-provider-vsphere/csi/release/driver:v2.1.1
@@ -198,13 +196,12 @@ spec:
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
             - --fss-namespace=$(CSI_NAMESPACE)
           env:
-            # TODO: many of these aren't used anywhere. Are they used by the driver?
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
             - name: X_CSI_MODE
               value: "controller"
             - name: VSPHERE_CSI_CONFIG
-              value: "/etc/kube/cloud.conf"
+              value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
             - name: LOGGER_LEVEL
               value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
             - name: INCLUSTER_CLIENT_QPS
@@ -227,9 +224,8 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
-            - name: cloud-sa-volume
-              # TODO: probably don't need this whole dir
-              mountPath: /etc/kube/
+            - name: vsphere-csi-config-volume
+              mountPath: /etc/kubernetes/vsphere-csi-config/
               readOnly: true
           resources:
             requests:
@@ -312,7 +308,7 @@ spec:
             - name: FULL_SYNC_INTERVAL_MINUTES
               value: "30"
             - name: VSPHERE_CSI_CONFIG
-              value: "/etc/kube/cloud.conf"
+              value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
             - name: LOGGER_LEVEL
               value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
             - name: INCLUSTER_CLIENT_QPS
@@ -324,15 +320,15 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
           volumeMounts:
-            - mountPath: /etc/kube
-              name: cloud-sa-volume
+            - mountPath: /etc/kubernetes/vsphere-csi-config
+              name: vsphere-csi-config-volume
               readOnly: true
       volumes:
         - name: socket-dir
           emptyDir: {}
-        - name: cloud-sa-volume
-          hostPath:
-            path: /etc/kube/
+        - name: vsphere-csi-config-volume
+          configMap:
+            name: vsphere-csi-config
 `)
 
 func controllerYamlBytes() ([]byte, error) {
@@ -1049,6 +1045,35 @@ func roleYaml() (*asset, error) {
 	return a, nil
 }
 
+var _vsphere_configYaml = []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: openshift-cluster-csi-drivers
+  name: vsphere-csi-config
+data:
+  cloud.conf: |
+    [Global]
+    cluster-id = "${CLUSTER_ID}"
+    [VirtualCenter "${VCENTER}"]
+    insecure-flag = "true"
+    datacenters = "${DATACENTERS}"
+`)
+
+func vsphere_configYamlBytes() ([]byte, error) {
+	return _vsphere_configYaml, nil
+}
+
+func vsphere_configYaml() (*asset, error) {
+	bytes, err := vsphere_configYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "vsphere_config.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 // Asset loads and returns the asset for the given name.
 // It returns an error if the asset could not be found or
 // could not be loaded.
@@ -1121,6 +1146,7 @@ var _bindata = map[string]func() (*asset, error){
 	"rbac/snapshotter_binding.yaml":           rbacSnapshotter_bindingYaml,
 	"rbac/snapshotter_role.yaml":              rbacSnapshotter_roleYaml,
 	"role.yaml":                               roleYaml,
+	"vsphere_config.yaml":                     vsphere_configYaml,
 }
 
 // AssetDir returns the file names below a certain
@@ -1185,7 +1211,8 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		"snapshotter_binding.yaml":           {rbacSnapshotter_bindingYaml, map[string]*bintree{}},
 		"snapshotter_role.yaml":              {rbacSnapshotter_roleYaml, map[string]*bintree{}},
 	}},
-	"role.yaml": {roleYaml, map[string]*bintree{}},
+	"role.yaml":           {roleYaml, map[string]*bintree{}},
+	"vsphere_config.yaml": {vsphere_configYaml, map[string]*bintree{}},
 }}
 
 // RestoreAsset restores an asset under the given directory

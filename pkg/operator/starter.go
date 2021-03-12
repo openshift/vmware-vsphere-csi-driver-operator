@@ -24,20 +24,22 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/generated"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 )
 
 const (
 	// Operand and operator run in the same namespace
-	defaultNamespace = "openshift-cluster-csi-drivers"
-	operatorName     = "vmware-vsphere-csi-driver-operator"
-	operandName      = "vmware-vsphere-csi-driver"
-	secretName       = "vmware-vsphere-cloud-credentials"
+	defaultNamespace     = "openshift-cluster-csi-drivers"
+	operatorName         = "vmware-vsphere-csi-driver-operator"
+	operandName          = "vmware-vsphere-csi-driver"
+	secretName           = "vmware-vsphere-cloud-credentials"
+	cloudConfigNamespace = "openshift-config"
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
 	// Create core clientset and informers
 	kubeClient := kubeclient.NewForConfigOrDie(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
-	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, "")
+	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, cloudConfigNamespace, "")
 	secretInformer := kubeInformersForNamespaces.InformersFor(defaultNamespace).Core().V1().Secrets()
 
 	// Create config clientset and informer. This is used to get the cluster ID
@@ -113,7 +115,19 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	go dynamicInformers.Start(ctx.Done())
 	go configInformers.Start(ctx.Done())
 
+	targetConfigController := targetconfigcontroller.NewTargetConfigController(
+		"VMwareVSphereDriverTargetConfigController",
+		defaultNamespace,
+		generated.MustAsset("vsphere_config.yaml"),
+		kubeClient,
+		kubeInformersForNamespaces,
+		operatorClient,
+		configInformers,
+		controllerConfig.EventRecorder,
+	)
+
 	klog.Info("Starting controllerset")
+	go targetConfigController.Run(ctx, 1)
 	go csiControllerSet.Run(ctx, 1)
 
 	<-ctx.Done()

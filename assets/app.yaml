@@ -1,0 +1,46 @@
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: thin-csi
+provisioner: csi.vsphere.vmware.com
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  datastoreurl: "ds:///vmfs/volumes/vsan:86c7dbc3da924855-b20d5cd1f4eec976/"  # Optional Parameter
+  # storagepolicyname: "vSAN Default Storage Policy"  # Optional Parameter
+  # csi.storage.k8s.io/fstype: "ext4"  # Optional Parameter
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fjb-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: thin-csi
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app
+spec:
+  containers:
+  - name: app
+    image: registry.centos.org/centos:latest
+    command: ["/bin/sh"]
+    args: ["-c", "while true; do echo $(date -u) >> /data/out.txt; sleep 5; done"]
+    volumeMounts:
+    - name: persistent-storage
+      mountPath: /data
+  volumes:
+  - name: persistent-storage
+    persistentVolumeClaim:
+      claimName: fjb-pvc
+
+---
