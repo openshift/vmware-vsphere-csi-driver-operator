@@ -30,10 +30,10 @@ import (
 const (
 	// Operand and operator run in the same namespace
 	defaultNamespace     = "openshift-cluster-csi-drivers"
+	cloudConfigNamespace = "openshift-config"
 	operatorName         = "vmware-vsphere-csi-driver-operator"
 	operandName          = "vmware-vsphere-csi-driver"
 	secretName           = "vmware-vsphere-cloud-credentials"
-	cloudConfigNamespace = "openshift-config"
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
@@ -48,8 +48,11 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	// Create GenericOperatorclient. This is used by the library-go controllers created down below
 	gvr := opv1.SchemeGroupVersion.WithResource("clustercsidrivers")
-	// TODO: use const from opv1 once it's there
-	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClientWithConfigName(controllerConfig.KubeConfig, gvr, "csi.vsphere.vmware.com")
+	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClientWithConfigName(
+		controllerConfig.KubeConfig,
+		gvr,
+		string(opv1.VSphereCSIDriver),
+	)
 	if err != nil {
 		return err
 	}
@@ -111,11 +114,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		return err
 	}
 
-	klog.Info("Starting the informers")
-	go kubeInformersForNamespaces.Start(ctx.Done())
-	go dynamicInformers.Start(ctx.Done())
-	go configInformers.Start(ctx.Done())
-
 	targetConfigController := targetconfigcontroller.NewTargetConfigController(
 		"VMwareVSphereDriverTargetConfigController",
 		defaultNamespace,
@@ -127,8 +125,15 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 	)
 
+	klog.Info("Starting the informers")
+	go kubeInformersForNamespaces.Start(ctx.Done())
+	go dynamicInformers.Start(ctx.Done())
+	go configInformers.Start(ctx.Done())
+
 	klog.Info("Starting controllerset")
 	go targetConfigController.Run(ctx, 1)
+
+	klog.Info("Starting targetconfigcontroller")
 	go csiControllerSet.Run(ctx, 1)
 
 	<-ctx.Done()
