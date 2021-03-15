@@ -66,6 +66,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		kubeInformersForNamespaces,
 		generated.Asset,
 		[]string{
+			"vsphere_features_config.yaml",
 			"controller_sa.yaml",
 			"node_sa.yaml",
 			"rbac/attacher_role.yaml",
@@ -118,7 +119,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	targetConfigController := targetconfigcontroller.NewTargetConfigController(
 		"VMwareVSphereDriverTargetConfigController",
 		defaultNamespace,
-		generated.MustAsset("vsphere_config.yaml"),
+		generated.MustAsset("vsphere_cloud_config.yaml"),
 		kubeClient,
 		kubeInformersForNamespaces,
 		operatorClient,
