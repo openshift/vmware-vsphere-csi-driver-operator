@@ -1,0 +1,11 @@
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.15-openshift-4.8 AS builder
+WORKDIR /go/src/github.com/openshift/vmware-vsphere-csi-driver-operator
+COPY . .
+RUN make
+
+FROM registry.ci.openshift.org/ocp/4.8:base
+COPY --from=builder /go/src/github.com/openshift/vmware-vsphere-csi-driver-operator/vmware-vsphere-csi-driver-operator /usr/bin/
+COPY manifests /manifests
+ENTRYPOINT ["/usr/bin/vmware-vsphere-csi-driver-operator"]
+LABEL io.k8s.display-name="OpenShift VMware vSphere CSI Driver Operator" \
+	io.k8s.description="The VMware vSphere CSI Driver Operator installs and maintains the VMware vSphere CSI Driver on a cluster."

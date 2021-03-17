@@ -1,0 +1,168 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: vmware-vsphere-csi-driver-controller
+  namespace: openshift-cluster-csi-drivers
+  annotations:
+    config.openshift.io/inject-proxy: csi-driver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vmware-vsphere-csi-driver-controller
+  template:
+    metadata:
+      labels:
+        app: vmware-vsphere-csi-driver-controller
+    spec:
+      hostNetwork: true
+      serviceAccountName: vmware-vsphere-csi-driver-controller-sa
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: "NoSchedule"
+      containers:
+        - name: csi-driver
+          image: gcr.io/cloud-provider-vsphere/csi/release/driver:v2.1.1
+          args:
+            - --fss-name=internal-feature-states.csi.vsphere.vmware.com
+            - --fss-namespace=$(CSI_NAMESPACE)
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: X_CSI_MODE
+              value: "controller"
+            - name: VSPHERE_CSI_CONFIG
+              value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
+            - name: LOGGER_LEVEL
+              value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
+            - name: INCLUSTER_CLIENT_QPS
+              value: "100"
+            - name: INCLUSTER_CLIENT_BURST
+              value: "100"
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: X_CSI_SERIAL_VOL_ACCESS_TIMEOUT
+              value: 3m
+            - name: X_CSI_SPEC_DISABLE_LEN_CHECK
+              value: "true"
+          ports:
+            - name: healthz
+              # Due to hostNetwork, this port is open on a node!
+              containerPort: 10301
+              protocol: TCP
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+            - name: vsphere-csi-config-volume
+              mountPath: /etc/kubernetes/vsphere-csi-config/
+              readOnly: true
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-provisioner
+          image: quay.io/openshift/origin-csi-external-provisioner:latest
+          args:
+            - --csi-address=$(ADDRESS)
+            - --default-fstype=ext4
+            # - --feature-gates=Topology=true
+            # - --extra-create-metadata=true
+            - --v=5
+            - --leader-election
+            # needed only for topology aware setup
+            # - "--strict-topology"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-attacher
+          image: quay.io/openshift/origin-csi-external-attacher:latest
+          args:
+            - --csi-address=$(ADDRESS)
+            - --v=5
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-resizer
+          image: quay.io/openshift/origin-csi-external-resizer:latest
+          args:
+            - --csi-address=$(ADDRESS)
+            - --v=5
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-liveness-probe
+          image: quay.io/openshift/origin-csi-livenessprobe:latest
+          args:
+            - --csi-address=$(ADDRESS)
+            - --probe-timeout=3s
+            - --health-port=10301
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: vsphere-syncer
+          image: gcr.io/cloud-provider-vsphere/csi/release/syncer:v2.1.1
+          args:
+            - --leader-election
+            - --fss-name=internal-feature-states.csi.vsphere.vmware.com
+            - --fss-namespace=$(CSI_NAMESPACE)
+          env:
+            - name: FULL_SYNC_INTERVAL_MINUTES
+              value: "30"
+            - name: VSPHERE_CSI_CONFIG
+              value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
+            - name: LOGGER_LEVEL
+              value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
+            - name: INCLUSTER_CLIENT_QPS
+              value: "100"
+            - name: INCLUSTER_CLIENT_BURST
+              value: "100"
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/kubernetes/vsphere-csi-config
+              name: vsphere-csi-config-volume
+              readOnly: true
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: vsphere-csi-config-volume
+          configMap:
+            name: vsphere-csi-config
