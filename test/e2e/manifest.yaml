@@ -1,6 +1,6 @@
+# TODO: make sure this is the ideal configuration
 StorageClass:
-  # TODO: use the default storage class created by the driver
-  FromFile: storageclass-ci.yaml
+  FromExistingClassName: standard-csi
 SnapshotClass:
   FromName: true
 DriverInfo:
@@ -9,13 +9,10 @@ DriverInfo:
     xfs: {}
     ext4: {}
   SupportedMountOption:
-    debug:
-    nouid32:
+    dirsync:
   SupportedSizeRange:
     Min: 1Gi
     Max: 64Ti
-  TopologyKeys:
-    - topology.gke.io/zone
   Capabilities:
     persistence: true
     fsGroup: true
