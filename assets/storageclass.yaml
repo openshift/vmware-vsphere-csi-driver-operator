@@ -1,0 +1,9 @@
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: standard-csi
+provisioner: csi.vsphere.vmware.com
+parameters:
+  StoragePolicyName: "${STORAGE_POLICY_NAME}"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
