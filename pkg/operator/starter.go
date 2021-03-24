@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/generated"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 )
 
@@ -125,15 +126,27 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 	)
 
+	sc := storageclasscontroller.NewStorageClassController(
+		"VMwareVSphereDriverStorageClassController",
+		defaultNamespace,
+		generated.MustAsset("storageclass.yaml"),
+		kubeClient,
+		kubeInformersForNamespaces,
+		operatorClient,
+		configInformers,
+		controllerConfig.EventRecorder,
+	)
+
 	klog.Info("Starting the informers")
 	go kubeInformersForNamespaces.Start(ctx.Done())
 	go dynamicInformers.Start(ctx.Done())
 	go configInformers.Start(ctx.Done())
 
-	klog.Info("Starting controllerset")
-	go targetConfigController.Run(ctx, 1)
-
 	klog.Info("Starting targetconfigcontroller")
+	go targetConfigController.Run(ctx, 1)
+	go sc.Run(ctx, 1)
+
+	klog.Info("Starting controllerset")
 	go csiControllerSet.Run(ctx, 1)
 
 	<-ctx.Done()
