@@ -1,6 +1,6 @@
 # TODO: make sure this is the ideal configuration
 StorageClass:
-  FromExistingClassName: standard-csi
+  FromExistingClassName: thin-csi
 SnapshotClass:
   FromName: true
 DriverInfo:

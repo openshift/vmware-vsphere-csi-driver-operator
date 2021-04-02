@@ -920,10 +920,10 @@ func rbacSnapshotter_roleYaml() (*asset, error) {
 var _storageclassYaml = []byte(`kind: StorageClass
 apiVersion: storage.k8s.io/v1
 metadata:
-  name: standard-csi
+  name: thin-csi
 provisioner: csi.vsphere.vmware.com
 parameters:
-  StoragePolicyName: "${STORAGE_POLICY_NAME}"
+  datastoreurl: "${DATASTORE_URL}"
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 `)
