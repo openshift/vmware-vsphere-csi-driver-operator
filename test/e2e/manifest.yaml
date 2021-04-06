@@ -1,9 +1,10 @@
 StorageClass:
-  FromExistingClassName: standard-csi
+  # TODO: use the default storage class created by the driver
+  FromFile: storageclass-ci.yaml
 SnapshotClass:
   FromName: true
 DriverInfo:
-  Name: pd.csi.storage.gke.io
+  Name: csi.vsphere.vmware.com
   SupportedFsType:
     xfs: {}
     ext4: {}
@@ -20,8 +21,6 @@ DriverInfo:
     fsGroup: true
     block: true
     exec: true
-    # The driver does support volume limits, however, we disable
-    # the capability to avoid creating 100+ volumes in a single test.
     volumeLimits: false
     controllerExpansion: true
     nodeExpansion: true
