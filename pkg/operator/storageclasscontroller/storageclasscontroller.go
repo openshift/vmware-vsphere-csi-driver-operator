@@ -38,10 +38,13 @@ const (
 	infraGlobalName      = "cluster"
 	cloudConfigNamespace = "openshift-config"
 	categoryName         = "container-orchestrator"
-	associatedType       = "Datastore"
 	tagName              = "openshift"
 	policyName           = "openshift-storage-policy"
+	vim25Prefix          = "urn:vim25:"
 )
+
+// associatedTypesRaw defines types with which created category can be associated with.
+var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine"}
 
 type StorageClassController struct {
 	name            string
@@ -163,13 +166,13 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context) error {
 
 	username, password, err := c.getCredentials(cfg)
 	if err != nil {
-		klog.Errorf("fjb: getCredentials: %v", err)
+		klog.Errorf("error getCredentials: %v", err)
 		return fmt.Errorf("failed to get credentials: %w", err)
 	}
 
 	client, err := c.newClient(ctx, cfg, username, password)
 	if err != nil {
-		klog.Errorf("fjb: newClient: %v", err)
+		klog.Errorf("error creating new vsphere client: %v", err)
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
@@ -193,6 +196,13 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context) error {
 		klog.Error(msg)
 		return fmt.Errorf(msg)
 	}
+
+	found, _ := c.checkForExistingPolicy(ctx, conn)
+	if found {
+		return nil
+	}
+
+	klog.V(2).Infof("creating storage policy %s for openshift", policyName)
 
 	// create tag manager for managing tags
 	tagManager := tags.NewManager(restClient)
@@ -238,11 +248,12 @@ func (c *StorageClassController) createOrUpdateTag(ctx context.Context, conn *vS
 	if err != nil && !notFoundError(err) {
 		return nil, fmt.Errorf("error finding category: %+v", err)
 	}
+	associatedTypes := appendPrefix(associatedTypesRaw)
 	if category == nil || category.ID == "" {
 		category = &tags.Category{
 			Name:            categoryName,
 			Description:     "Container Orchestrator that uses this datastore",
-			AssociableTypes: []string{associatedType},
+			AssociableTypes: associatedTypes,
 			Cardinality:     "SINGLE",
 		}
 		catId, err := tagManager.CreateCategory(ctx, category)
@@ -282,38 +293,11 @@ func (c *StorageClassController) createOrUpdateTag(ctx context.Context, conn *vS
 }
 
 func (c *StorageClassController) createProfile(ctx context.Context, conn *vSphereConnection) error {
-	rtype := types.PbmProfileResourceType{
-		ResourceType: string(types.PbmProfileResourceTypeEnumSTORAGE),
-	}
-
-	category := types.PbmProfileCategoryEnumREQUIREMENT
-
 	pbmClient, err := pbm.NewClient(ctx, conn.client.Client)
 	if err != nil {
 		msg := fmt.Sprintf("error creating pbm client: %v", err)
 		klog.Error(msg)
 		return fmt.Errorf(msg)
-	}
-
-	ids, err := pbmClient.QueryProfile(ctx, rtype, string(category))
-	if err != nil {
-		msg := fmt.Sprintf("error querying profiles: %v", err)
-		klog.Errorf(msg)
-		return fmt.Errorf(msg)
-	}
-
-	profiles, err := pbmClient.RetrieveContent(ctx, ids)
-	if err != nil {
-		msg := fmt.Sprintf("error fetching policy profiles: %v", err)
-		klog.Errorf(msg)
-		return fmt.Errorf(msg)
-	}
-
-	for _, p := range profiles {
-		if p.GetPbmProfile().Name == policyName {
-			klog.Infof("Found existing profile with same name: %s", p.GetPbmProfile().Name)
-			return nil
-		}
 	}
 
 	var policySpec types.PbmCapabilityProfileCreateSpec
@@ -353,6 +337,43 @@ func (c *StorageClassController) createProfile(ctx context.Context, conn *vSpher
 	return nil
 }
 
+func (c *StorageClassController) checkForExistingPolicy(ctx context.Context, conn *vSphereConnection) (bool, error) {
+	rtype := types.PbmProfileResourceType{
+		ResourceType: string(types.PbmProfileResourceTypeEnumSTORAGE),
+	}
+
+	category := types.PbmProfileCategoryEnumREQUIREMENT
+
+	pbmClient, err := pbm.NewClient(ctx, conn.client.Client)
+	if err != nil {
+		msg := fmt.Sprintf("error creating pbm client: %v", err)
+		klog.Error(msg)
+		return false, fmt.Errorf(msg)
+	}
+
+	ids, err := pbmClient.QueryProfile(ctx, rtype, string(category))
+	if err != nil {
+		msg := fmt.Sprintf("error querying profiles: %v", err)
+		klog.Errorf(msg)
+		return false, fmt.Errorf(msg)
+	}
+
+	profiles, err := pbmClient.RetrieveContent(ctx, ids)
+	if err != nil {
+		msg := fmt.Sprintf("error fetching policy profiles: %v", err)
+		klog.Errorf(msg)
+		return false, fmt.Errorf(msg)
+	}
+
+	for _, p := range profiles {
+		if p.GetPbmProfile().Name == policyName {
+			klog.Infof("Found existing profile with same name: %s", p.GetPbmProfile().Name)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (c *StorageClassController) applyTag(ctx context.Context, conn *vSphereConnection, tag *tags.Tag, ds *object.Datastore) error {
 	dsName := conn.config.Workspace.DefaultDatastore
 	err := conn.tagManager.AttachTag(ctx, tag.ID, ds)
@@ -385,4 +406,12 @@ func notFoundError(err error) bool {
 	errorString := err.Error()
 	r := regexp.MustCompile("404")
 	return r.MatchString(errorString)
+}
+
+func appendPrefix(associableTypes []string) []string {
+	var appendedTypes []string
+	for _, associableType := range associableTypes {
+		appendedTypes = append(appendedTypes, vim25Prefix+associableType)
+	}
+	return appendedTypes
 }
