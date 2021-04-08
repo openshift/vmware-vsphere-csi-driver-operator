@@ -126,7 +126,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 	)
 
-	sc := storageclasscontroller.NewStorageClassController(
+	storageClassController := storageclasscontroller.NewStorageClassController(
 		"VMwareVSphereDriverStorageClassController",
 		defaultNamespace,
 		generated.MustAsset("storageclass.yaml"),
@@ -144,7 +144,9 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	klog.Info("Starting targetconfigcontroller")
 	go targetConfigController.Run(ctx, 1)
-	go sc.Run(ctx, 1)
+
+	klog.Info("Starting storageclasscontroller")
+	go storageClassController.Run(ctx, 1)
 
 	klog.Info("Starting controllerset")
 	go csiControllerSet.Run(ctx, 1)

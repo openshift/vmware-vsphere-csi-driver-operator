@@ -34,7 +34,7 @@ const (
 	cloudConfigNamespace  = "openshift-config"
 	DatastoreInfoProperty = "info"
 	SummaryProperty       = "summary"
-	resyncDuration        = 5 * time.Minute
+	resyncDuration        = 20 * time.Minute
 )
 
 type StorageClassController struct {
@@ -67,6 +67,7 @@ func NewStorageClassController(
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
 	secretInformer := kubeInformers.InformersFor(targetNamespace).Core().V1().Secrets()
 	infraInformer := configInformer.Config().V1().Infrastructures()
+	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 	c := &StorageClassController{
 		name:            name,
@@ -83,6 +84,9 @@ func NewStorageClassController(
 		secretInformer.Informer(),
 		infraInformer.Informer(),
 		operatorClient.Informer(),
+		// This informer isn't used anywhere else in the code, but it's added here
+		// to make this controller resyncs when users change StorageClasses.
+		scInformer.Informer(),
 	).WithSync(
 		c.sync,
 	).ResyncEvery(
