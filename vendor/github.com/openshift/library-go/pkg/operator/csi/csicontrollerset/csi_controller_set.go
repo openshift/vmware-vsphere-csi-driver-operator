@@ -3,6 +3,7 @@ package csicontrollerset
 import (
 	"context"
 	"fmt"
+	"time"
 
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
@@ -24,6 +25,8 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 )
 
+var defaultCacheSyncTimeout = 10 * time.Minute
+
 // CSIControllerSet contains a set of controllers that are usually used to deploy CSI Drivers.
 type CSIControllerSet struct {
 	logLevelController                   factory.Controller
@@ -33,6 +36,7 @@ type CSIControllerSet struct {
 	csiConfigObserverController          factory.Controller
 	csiDriverControllerServiceController factory.Controller
 	csiDriverNodeServiceController       factory.Controller
+	serviceMonitorController             factory.Controller
 
 	preRunCachesSynced []cache.InformerSynced
 	operatorClient     v1helpers.OperatorClient
@@ -41,7 +45,15 @@ type CSIControllerSet struct {
 
 // Run starts all controllers initialized in the set.
 func (c *CSIControllerSet) Run(ctx context.Context, workers int) {
-	if !cache.WaitForCacheSync(ctx.Done(), c.preRunCachesSynced...) {
+	defer utilruntime.HandleCrash()
+
+	// Create a custom context to sync informers added  with .WithExtraInformers().
+	// This context is not used for individual controllers because factory.Factory
+	// will overwrite the timeout value.
+	cacheSyncCtx, cacheSyncCancel := context.WithTimeout(ctx, defaultCacheSyncTimeout)
+	defer cacheSyncCancel()
+
+	if !cache.WaitForCacheSync(cacheSyncCtx.Done(), c.preRunCachesSynced...) {
 		utilruntime.HandleError(fmt.Errorf("caches did not sync"))
 		return
 	}
@@ -53,6 +65,7 @@ func (c *CSIControllerSet) Run(ctx context.Context, workers int) {
 		c.csiConfigObserverController,
 		c.csiDriverControllerServiceController,
 		c.csiDriverNodeServiceController,
+		c.serviceMonitorController,
 	} {
 		if ctrl == nil {
 			continue
@@ -172,6 +185,26 @@ func (c *CSIControllerSet) WithCSIDriverNodeService(
 		c.eventRecorder,
 		optionalDaemonSetHooks...,
 	)
+	return c
+}
+
+// WithServiceMonitorController returns a *ControllerSet that creates ServiceMonitor.
+func (c *CSIControllerSet) WithServiceMonitorController(
+	name string,
+	dynamicClient dynamic.Interface,
+	assetFunc resourceapply.AssetFunc,
+	file string,
+) *CSIControllerSet {
+	// Use StaticResourceController to apply ServiceMonitors.
+	// Ensure that NotFound errors are ignored, e.g. when ServiceMonitor CRD missing.
+	c.serviceMonitorController = staticresourcecontroller.NewStaticResourceController(
+		name,
+		assetFunc,
+		[]string{file},
+		(&resourceapply.ClientHolder{}).WithDynamicClient(dynamicClient),
+		c.operatorClient,
+		c.eventRecorder,
+	).WithIgnoreNotFoundOnCreate()
 	return c
 }
 
