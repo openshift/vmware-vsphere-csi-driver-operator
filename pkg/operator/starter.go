@@ -72,6 +72,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 			"vsphere_features_config.yaml",
 			"controller_sa.yaml",
 			"node_sa.yaml",
+			"csidriver.yaml",
 			"rbac/attacher_role.yaml",
 			"rbac/attacher_binding.yaml",
 			"rbac/controller_privileged_binding.yaml",
