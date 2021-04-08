@@ -103,7 +103,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: csi-driver
-          image: gcr.io/cloud-provider-vsphere/csi/release/driver:v2.1.1
+          image: ${DRIVER_IMAGE}
           args:
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
             - --fss-namespace=$(CSI_NAMESPACE)
@@ -144,7 +144,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: csi-provisioner
-          image: quay.io/openshift/origin-csi-external-provisioner:latest
+          image: ${PROVISIONER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
             - --default-fstype=ext4
@@ -165,7 +165,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: csi-attacher
-          image: quay.io/openshift/origin-csi-external-attacher:latest
+          image: ${ATTACHER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
             - --v=5
@@ -180,7 +180,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: csi-resizer
-          image: quay.io/openshift/origin-csi-external-resizer:latest
+          image: ${RESIZER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
             - --v=5
@@ -195,7 +195,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: csi-liveness-probe
-          image: quay.io/openshift/origin-csi-livenessprobe:latest
+          image: ${LIVENESS_PROBE_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
             - --probe-timeout=3s
@@ -307,7 +307,7 @@ spec:
         - name: csi-driver
           securityContext:
             privileged: true
-          image: gcr.io/cloud-provider-vsphere/csi/release/driver:v2.1.1
+          image: ${DRIVER_IMAGE}
           args:
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
             - --fss-namespace=$(CSI_NAMESPACE)
@@ -361,7 +361,7 @@ spec:
         - name: csi-node-driver-registrar
           securityContext:
             privileged: true
-          image: quay.io/openshift/origin-csi-node-driver-registrar:latest
+          image: ${NODE_DRIVER_REGISTRAR_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
@@ -389,7 +389,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: csi-liveness-probe
-          image: quay.io/openshift/origin-csi-livenessprobe:latest
+          image: ${LIVENESS_PROBE_IMAGE}
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=3s
