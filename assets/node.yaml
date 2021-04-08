@@ -25,7 +25,7 @@ spec:
         - name: csi-driver
           securityContext:
             privileged: true
-          image: gcr.io/cloud-provider-vsphere/csi/release/driver:v2.1.1
+          image: ${DRIVER_IMAGE}
           args:
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
             - --fss-namespace=$(CSI_NAMESPACE)
@@ -79,7 +79,7 @@ spec:
         - name: csi-node-driver-registrar
           securityContext:
             privileged: true
-          image: quay.io/openshift/origin-csi-node-driver-registrar:latest
+          image: ${NODE_DRIVER_REGISTRAR_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
@@ -107,7 +107,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: csi-liveness-probe
-          image: quay.io/openshift/origin-csi-livenessprobe:latest
+          image: ${LIVENESS_PROBE_IMAGE}
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=3s
