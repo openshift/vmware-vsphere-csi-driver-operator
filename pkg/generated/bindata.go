@@ -211,7 +211,7 @@ spec:
               memory: 50Mi
               cpu: 10m
         - name: vsphere-syncer
-          image: gcr.io/cloud-provider-vsphere/csi/release/syncer:v2.1.1
+          image: ${VMWARE_VSPHERE_SYNCER_IMAGE}
           args:
             - --leader-election
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
