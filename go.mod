@@ -8,9 +8,11 @@ require (
 	github.com/openshift/build-machinery-go v0.0.0-20200917070002-f171684f77ab
 	github.com/openshift/client-go v0.0.0-20201214125552-e615e336eb49
 	github.com/openshift/library-go v0.0.0-20210113192829-cfbb3f4c80c2
+	github.com/openshift/vsphere-problem-detector v0.0.0-20210316174602-c32cbf1855ba
 	github.com/prometheus/client_golang v1.8.0
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/pflag v1.0.5
+	github.com/vmware/govmomi v0.23.1
 	gopkg.in/gcfg.v1 v1.2.3
 	k8s.io/api v0.20.4
 	k8s.io/apimachinery v0.20.4

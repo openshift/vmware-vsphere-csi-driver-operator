@@ -17,6 +17,7 @@
 // assets/rbac/resizer_role.yaml
 // assets/rbac/snapshotter_binding.yaml
 // assets/rbac/snapshotter_role.yaml
+// assets/storageclass.yaml
 // assets/vsphere_cloud_config.yaml
 // assets/vsphere_features_config.yaml
 package generated
@@ -916,6 +917,32 @@ func rbacSnapshotter_roleYaml() (*asset, error) {
 	return a, nil
 }
 
+var _storageclassYaml = []byte(`kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: thin-csi
+provisioner: csi.vsphere.vmware.com
+parameters:
+  datastoreurl: "${DATASTORE_URL}"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+`)
+
+func storageclassYamlBytes() ([]byte, error) {
+	return _storageclassYaml, nil
+}
+
+func storageclassYaml() (*asset, error) {
+	bytes, err := storageclassYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "storageclass.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
 var _vsphere_cloud_configYaml = []byte(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1038,6 +1065,7 @@ var _bindata = map[string]func() (*asset, error){
 	"rbac/resizer_role.yaml":                  rbacResizer_roleYaml,
 	"rbac/snapshotter_binding.yaml":           rbacSnapshotter_bindingYaml,
 	"rbac/snapshotter_role.yaml":              rbacSnapshotter_roleYaml,
+	"storageclass.yaml":                       storageclassYaml,
 	"vsphere_cloud_config.yaml":               vsphere_cloud_configYaml,
 	"vsphere_features_config.yaml":            vsphere_features_configYaml,
 }
@@ -1102,6 +1130,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		"snapshotter_binding.yaml":           {rbacSnapshotter_bindingYaml, map[string]*bintree{}},
 		"snapshotter_role.yaml":              {rbacSnapshotter_roleYaml, map[string]*bintree{}},
 	}},
+	"storageclass.yaml":            {storageclassYaml, map[string]*bintree{}},
 	"vsphere_cloud_config.yaml":    {vsphere_cloud_configYaml, map[string]*bintree{}},
 	"vsphere_features_config.yaml": {vsphere_features_configYaml, map[string]*bintree{}},
 }}

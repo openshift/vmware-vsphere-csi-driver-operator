@@ -1,0 +1,9 @@
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: thin-csi
+provisioner: csi.vsphere.vmware.com
+parameters:
+  datastoreurl: "${DATASTORE_URL}"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
