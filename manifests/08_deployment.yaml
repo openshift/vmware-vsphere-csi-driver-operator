@@ -32,6 +32,8 @@ spec:
           value: quay.io/openshift/origin-csi-node-driver-registrar:latest
         - name: LIVENESS_PROBE_IMAGE
           value: quay.io/openshift/origin-csi-livenessprobe:latest
+        - name: VMWARE_VSPHERE_SYNCER_IMAGE
+          value: ${VMWARE_VSPHERE_SYNCER_IMAGE}
         - name: POD_NAME
           valueFrom:
             fieldRef:

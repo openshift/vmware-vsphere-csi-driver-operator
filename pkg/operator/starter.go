@@ -3,6 +3,7 @@ package operator
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -30,11 +31,12 @@ import (
 
 const (
 	// Operand and operator run in the same namespace
-	defaultNamespace     = "openshift-cluster-csi-drivers"
-	cloudConfigNamespace = "openshift-config"
-	operatorName         = "vmware-vsphere-csi-driver-operator"
-	operandName          = "vmware-vsphere-csi-driver"
-	secretName           = "vmware-vsphere-cloud-credentials"
+	defaultNamespace                  = "openshift-cluster-csi-drivers"
+	cloudConfigNamespace              = "openshift-config"
+	operatorName                      = "vmware-vsphere-csi-driver-operator"
+	operandName                       = "vmware-vsphere-csi-driver"
+	secretName                        = "vmware-vsphere-cloud-credentials"
+	envVMWareVsphereDriverSyncerImage = "VMWARE_VSPHERE_SYNCER_IMAGE"
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
@@ -97,6 +99,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		kubeInformersForNamespaces.InformersFor(defaultNamespace),
 		configInformers,
 		WithVSphereCredentials(defaultNamespace, secretName, secretInformer),
+		WithSyncerImageHook(),
 		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,
@@ -198,6 +201,19 @@ func WithVSphereCredentials(
 				newEnvVar(secretName, "VSPHERE_USER", usernameKey),
 				newEnvVar(secretName, "VSPHERE_PASSWORD", passwordKey),
 			)
+		}
+		deployment.Spec.Template.Spec.Containers = containers
+		return nil
+	}
+}
+
+func WithSyncerImageHook() csidrivercontrollerservicecontroller.DeploymentHookFunc {
+	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		containers := deployment.Spec.Template.Spec.Containers
+		for i := range containers {
+			if containers[i].Name == "vsphere-syncer" {
+				containers[i].Image = os.Getenv(envVMWareVsphereDriverSyncerImage)
+			}
 		}
 		deployment.Spec.Template.Spec.Containers = containers
 		return nil
