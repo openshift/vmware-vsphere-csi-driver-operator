@@ -12,6 +12,7 @@ import (
 	"k8s.io/legacy-cloud-providers/vsphere"
 
 	opv1 "github.com/openshift/api/operator/v1"
+	v1 "github.com/openshift/api/operator/v1"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
@@ -76,12 +77,16 @@ func NewTargetConfigController(
 }
 
 func (c TargetConfigController) sync(ctx context.Context, syncContext factory.SyncContext) error {
-	_, _, _, err := c.operatorClient.GetOperatorState()
+	opSpec, _, _, err := c.operatorClient.GetOperatorState()
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+
+	if opSpec.ManagementState != v1.Managed {
+		return nil
 	}
 
 	infra, err := c.infraLister.Get(infraGlobalName)
