@@ -227,9 +227,6 @@ func WithSyncerImageHook() csidrivercontrollerservicecontroller.DeploymentHookFu
 // value when CR.LogLevel is Debug or higher.
 func WithLogLevelDeploymentHook() csidrivercontrollerservicecontroller.DeploymentHookFunc {
 	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
-		if loglevel.LogLevelToVerbosity(opSpec.LogLevel) < loglevel.LogLevelToVerbosity(opv1.Debug) {
-			return nil
-		}
 		deployment.Spec.Template.Spec.Containers = maybeAppendDebug(deployment.Spec.Template.Spec.Containers, opSpec)
 		return nil
 	}
@@ -239,9 +236,6 @@ func WithLogLevelDeploymentHook() csidrivercontrollerservicecontroller.Deploymen
 // value when CR.LogLevel is Debug or higher.
 func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFunc {
 	return func(opSpec *opv1.OperatorSpec, ds *appsv1.DaemonSet) error {
-		if loglevel.LogLevelToVerbosity(opSpec.LogLevel) < loglevel.LogLevelToVerbosity(opv1.Debug) {
-			return nil
-		}
 		ds.Spec.Template.Spec.Containers = maybeAppendDebug(ds.Spec.Template.Spec.Containers, opSpec)
 		return nil
 	}
