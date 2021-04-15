@@ -75,7 +75,7 @@ spec:
             - --default-fstype=ext4
             # - --feature-gates=Topology=true
             # - --extra-create-metadata=true
-            - --v=5
+            - --v=${LOG_LEVEL}
             - --leader-election
             # needed only for topology aware setup
             # - "--strict-topology"
@@ -93,7 +93,7 @@ spec:
           image: ${ATTACHER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
-            - --v=5
+            - --v=${LOG_LEVEL}
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -108,7 +108,7 @@ spec:
           image: ${RESIZER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
-            - --v=5
+            - --v=${LOG_LEVEL}
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock

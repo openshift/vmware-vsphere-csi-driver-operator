@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivercontrollerservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivernodeservicecontroller"
 	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
+	"github.com/openshift/library-go/pkg/operator/loglevel"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/generated"
@@ -100,6 +101,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		configInformers,
 		WithVSphereCredentials(defaultNamespace, secretName, secretInformer),
 		WithSyncerImageHook(),
+		WithLogLevelDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,
@@ -112,6 +114,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		"node.yaml",
 		kubeClient,
 		kubeInformersForNamespaces.InformersFor(defaultNamespace),
+		WithLogLevelDaemonSetHook(),
 		csidrivernodeservicecontroller.WithObservedProxyDaemonSetHook(),
 	).WithExtraInformers(secretInformer.Informer())
 
@@ -198,8 +201,8 @@ func WithVSphereCredentials(
 			}
 			containers[i].Env = append(
 				containers[i].Env,
-				newEnvVar(secretName, "VSPHERE_USER", usernameKey),
-				newEnvVar(secretName, "VSPHERE_PASSWORD", passwordKey),
+				newSecretEnvVar(secretName, "VSPHERE_USER", usernameKey),
+				newSecretEnvVar(secretName, "VSPHERE_PASSWORD", passwordKey),
 			)
 		}
 		deployment.Spec.Template.Spec.Containers = containers
@@ -220,7 +223,44 @@ func WithSyncerImageHook() csidrivercontrollerservicecontroller.DeploymentHookFu
 	}
 }
 
-func newEnvVar(secretName, envVarName, key string) v1.EnvVar {
+// WithLogLevelDeploymentHook sets the X_CSI_DEBUG environment variable to a positive
+// value when CR.LogLevel is Debug or higher.
+func WithLogLevelDeploymentHook() csidrivercontrollerservicecontroller.DeploymentHookFunc {
+	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		deployment.Spec.Template.Spec.Containers = maybeAppendDebug(deployment.Spec.Template.Spec.Containers, opSpec)
+		return nil
+	}
+}
+
+// WithLogLevelDaemonSetHook sets the X_CSI_DEBUG environment variable to a positive
+// value when CR.LogLevel is Debug or higher.
+func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFunc {
+	return func(opSpec *opv1.OperatorSpec, ds *appsv1.DaemonSet) error {
+		ds.Spec.Template.Spec.Containers = maybeAppendDebug(ds.Spec.Template.Spec.Containers, opSpec)
+		return nil
+	}
+}
+
+// maybeAppendDebug works like the append() builtin; it returns a new slice of containers
+// with the debug env var properly set (or not).
+func maybeAppendDebug(containers []v1.Container, opSpec *opv1.OperatorSpec) []v1.Container {
+	// Don't set the debug option when the current level is lower than debug
+	if loglevel.LogLevelToVerbosity(opSpec.LogLevel) < loglevel.LogLevelToVerbosity(opv1.Debug) {
+		return containers
+	}
+	for i := range containers {
+		if containers[i].Name != "csi-driver" && containers[i].Name != "vsphere-syncer" {
+			continue
+		}
+		containers[i].Env = append(
+			containers[i].Env,
+			v1.EnvVar{Name: "X_CSI_DEBUG", Value: "true"},
+		)
+	}
+	return containers
+}
+
+func newSecretEnvVar(secretName, envVarName, key string) v1.EnvVar {
 	return v1.EnvVar{
 		Name: envVarName,
 		ValueFrom: &v1.EnvVarSource{

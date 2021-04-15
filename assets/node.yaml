@@ -41,8 +41,6 @@ spec:
             # TODO: remove for topology-aware setup
             # - name: VSPHERE_CSI_CONFIG
             #   value: "/etc/kubernetes/cloud.conf"
-            - name: X_CSI_DEBUG
-              value: "true"
             - name: X_CSI_SPEC_DISABLE_LEN_CHECK
               value: "true"
             - name: LOGGER_LEVEL
@@ -83,7 +81,7 @@ spec:
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
-            - --v=5
+            - --v=${LOG_LEVEL}
           lifecycle:
             preStop:
               exec:

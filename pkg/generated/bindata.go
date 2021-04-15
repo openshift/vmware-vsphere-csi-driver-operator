@@ -151,7 +151,7 @@ spec:
             - --default-fstype=ext4
             # - --feature-gates=Topology=true
             # - --extra-create-metadata=true
-            - --v=5
+            - --v=${LOG_LEVEL}
             - --leader-election
             # needed only for topology aware setup
             # - "--strict-topology"
@@ -169,7 +169,7 @@ spec:
           image: ${ATTACHER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
-            - --v=5
+            - --v=${LOG_LEVEL}
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -184,7 +184,7 @@ spec:
           image: ${RESIZER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
-            - --v=5
+            - --v=${LOG_LEVEL}
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -290,7 +290,7 @@ metadata:
     csi.openshift.io/managed: "true"
 spec:
   attachRequired: true
-  podInfoOnMount: true
+  podInfoOnMount: false
 `)
 
 func csidriverYamlBytes() ([]byte, error) {
@@ -351,8 +351,6 @@ spec:
             # TODO: remove for topology-aware setup
             # - name: VSPHERE_CSI_CONFIG
             #   value: "/etc/kubernetes/cloud.conf"
-            - name: X_CSI_DEBUG
-              value: "true"
             - name: X_CSI_SPEC_DISABLE_LEN_CHECK
               value: "true"
             - name: LOGGER_LEVEL
@@ -393,7 +391,7 @@ spec:
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
-            - --v=5
+            - --v=${LOG_LEVEL}
           lifecycle:
             preStop:
               exec:
