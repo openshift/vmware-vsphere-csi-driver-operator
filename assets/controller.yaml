@@ -77,6 +77,7 @@ spec:
             # - --extra-create-metadata=true
             - --v=${LOG_LEVEL}
             - --leader-election
+            - --http-endpoint=localhost:8202
             # needed only for topology aware setup
             # - "--strict-topology"
           env:
@@ -89,10 +90,33 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          # kube-rbac-proxy for external-provisioner container.
+          # Provides https proxy for http-based external-provisioner metrics.
+        - name: provisioner-kube-rbac-proxy
+          args:
+          - --secure-listen-address=0.0.0.0:9202
+          - --upstream=http://127.0.0.1:8202/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9202
+            name: provisioner-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
         - name: csi-attacher
           image: ${ATTACHER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
+            - --http-endpoint=localhost:8203
             - --v=${LOG_LEVEL}
           env:
             - name: ADDRESS
@@ -104,10 +128,31 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+        - name: attacher-kube-rbac-proxy
+          args:
+          - --secure-listen-address=0.0.0.0:9203
+          - --upstream=http://127.0.0.1:8203/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9203
+            name: attacher-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
         - name: csi-resizer
           image: ${RESIZER_IMAGE}
           args:
             - --csi-address=$(ADDRESS)
+            - --http-endpoint=localhost:8204
             - --v=${LOG_LEVEL}
           env:
             - name: ADDRESS
@@ -119,6 +164,26 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+        - name: resizer-kube-rbac-proxy
+          args:
+          - --secure-listen-address=0.0.0.0:9204
+          - --upstream=http://127.0.0.1:8204/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9204
+            name: resizer-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
         - name: csi-liveness-probe
           image: ${LIVENESS_PROBE_IMAGE}
           args:
@@ -166,3 +231,6 @@ spec:
         - name: vsphere-csi-config-volume
           configMap:
             name: vsphere-csi-config
+        - name: metrics-serving-cert
+          secret:
+            secretName: vmware-vsphere-csi-driver-controller-metrics-serving-cert
