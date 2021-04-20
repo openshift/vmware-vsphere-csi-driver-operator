@@ -393,6 +393,10 @@ spec:
   selector:
     matchLabels:
       app: vmware-vsphere-csi-driver-node
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 10%
   template:
     metadata:
       labels:
