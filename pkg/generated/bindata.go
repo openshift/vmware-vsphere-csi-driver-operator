@@ -111,6 +111,7 @@ spec:
       containers:
         - name: csi-driver
           image: ${DRIVER_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
             - --fss-namespace=$(CSI_NAMESPACE)
@@ -152,6 +153,7 @@ spec:
               cpu: 10m
         - name: csi-provisioner
           image: ${PROVISIONER_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --csi-address=$(ADDRESS)
             - --default-fstype=ext4
@@ -196,6 +198,7 @@ spec:
             name: metrics-serving-cert
         - name: csi-attacher
           image: ${ATTACHER_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --csi-address=$(ADDRESS)
             - --http-endpoint=localhost:8203
@@ -232,6 +235,7 @@ spec:
             name: metrics-serving-cert
         - name: csi-resizer
           image: ${RESIZER_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --csi-address=$(ADDRESS)
             - --http-endpoint=localhost:8204
@@ -268,6 +272,7 @@ spec:
             name: metrics-serving-cert
         - name: csi-liveness-probe
           image: ${LIVENESS_PROBE_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --csi-address=$(ADDRESS)
             - --probe-timeout=3s
@@ -284,6 +289,7 @@ spec:
               cpu: 10m
         - name: vsphere-syncer
           image: ${VMWARE_VSPHERE_SYNCER_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --leader-election
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
@@ -410,6 +416,7 @@ spec:
           securityContext:
             privileged: true
           image: ${DRIVER_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --fss-name=internal-feature-states.csi.vsphere.vmware.com
             - --fss-namespace=$(CSI_NAMESPACE)
@@ -462,6 +469,7 @@ spec:
           securityContext:
             privileged: true
           image: ${NODE_DRIVER_REGISTRAR_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --csi-address=$(ADDRESS)
             - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
@@ -490,6 +498,7 @@ spec:
               cpu: 10m
         - name: csi-liveness-probe
           image: ${LIVENESS_PROBE_IMAGE}
+          imagePullPolicy: IfNotPresent
           args:
             - --csi-address=/csi/csi.sock
             - --probe-timeout=3s
