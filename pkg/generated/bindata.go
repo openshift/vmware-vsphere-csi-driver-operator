@@ -1308,6 +1308,8 @@ func vsphere_cloud_configYaml() (*asset, error) {
 var _vsphere_features_configYaml = []byte(`apiVersion: v1
 data:
   "csi-migration": "false" # csi-migration feature is only available for vSphere 7.0U1
+  "csi-auth-check": "true"
+  "online-volume-extend": "true"
 kind: ConfigMap
 metadata:
   name: internal-feature-states.csi.vsphere.vmware.com
