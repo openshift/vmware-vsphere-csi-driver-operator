@@ -1258,7 +1258,12 @@ provisioner: csi.vsphere.vmware.com
 parameters:
   datastoreurl: "${DATASTORE_URL}"
 volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
+# Volume expansion is disabled here because volume expansion in the vSphere
+# CSI driver is still in beta and has several limitations. (see
+# https://vsphere-csi-driver.sigs.k8s.io/supported_features_matrix.html).
+# It is not supported for all datastores (vSAN only right now) and there is
+# not yet an e2e test for it.
+allowVolumeExpansion: false
 `)
 
 func storageclassYamlBytes() ([]byte, error) {
