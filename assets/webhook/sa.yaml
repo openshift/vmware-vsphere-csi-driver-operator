@@ -1,0 +1,5 @@
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: vmware-vsphere-csi-driver-webhook-sa
+  namespace: openshift-cluster-csi-drivers

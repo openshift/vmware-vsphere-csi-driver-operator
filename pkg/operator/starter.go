@@ -7,9 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/library-go/pkg/controller/factory"
-	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/dynamic"
@@ -22,13 +19,16 @@ import (
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/csi/csicontrollerset"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivercontrollerservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivernodeservicecontroller"
+	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 )
@@ -103,6 +103,13 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 			"rbac/kube_rbac_proxy_binding.yaml",
 			"rbac/prometheus_role.yaml",
 			"rbac/prometheus_rolebinding.yaml",
+			// Static assets used by the webhook
+			"webhook/config.yaml",
+			"webhook/sa.yaml",
+			"webhook/service.yaml",
+			"webhook/configuration.yaml",
+			"webhook/rbac/role.yaml",
+			"webhook/rbac/rolebinding.yaml",
 		},
 	).WithCSIConfigObserverController(
 		"VMwareVSphereDriverCSIConfigObserverController",
@@ -118,7 +125,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 			secretInformer.Informer(),
 		},
 		WithVSphereCredentials(defaultNamespace, secretName, secretInformer),
-		WithSyncerImageHook(),
+		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
@@ -141,7 +148,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		assets.ReadFile,
 		"servicemonitor.yaml",
 	)
-
 	if err != nil {
 		return err
 	}
@@ -176,6 +182,22 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 	)
 
+	webhookBytes, err := assets.ReadFile("webhook/deployment.yaml")
+	if err != nil {
+		return err
+	}
+	webhookController := deploymentcontroller.NewDeploymentController(
+		"VMwareVSphereDriverWebhookController",
+		webhookBytes,
+		controllerConfig.EventRecorder,
+		operatorClient,
+		kubeClient,
+		kubeInformersForNamespaces.InformersFor(defaultNamespace).Apps().V1().Deployments(),
+		nil, // optionalInformers
+		nil, // optionalManifestHooks
+		WithSyncerImageHook("vsphere-webhook"),
+	)
+
 	klog.Info("Starting the informers")
 	go kubeInformersForNamespaces.Start(ctx.Done())
 	go dynamicInformers.Start(ctx.Done())
@@ -186,6 +208,9 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	klog.Info("Starting storageclasscontroller")
 	go storageClassController.Run(ctx, 1)
+
+	klog.Info("Starting webhookcontroller")
+	go webhookController.Run(ctx, 1)
 
 	klog.Info("Starting controllerset")
 	go csiControllerSet.Run(ctx, 1)
@@ -242,11 +267,11 @@ func WithVSphereCredentials(
 	}
 }
 
-func WithSyncerImageHook() deploymentcontroller.DeploymentHookFunc {
+func WithSyncerImageHook(containerName string) deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
 		containers := deployment.Spec.Template.Spec.Containers
 		for i := range containers {
-			if containers[i].Name == "vsphere-syncer" {
+			if containers[i].Name == containerName {
 				containers[i].Image = os.Getenv(envVMWareVsphereDriverSyncerImage)
 			}
 		}

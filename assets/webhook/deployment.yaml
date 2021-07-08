@@ -1,0 +1,63 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: vmware-vsphere-csi-driver-webhook
+  namespace: openshift-cluster-csi-drivers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vmware-vsphere-csi-driver-webhook
+  template:
+    metadata:
+      labels:
+        app: vmware-vsphere-csi-driver-webhook
+    spec:
+      serviceName: vmware-vsphere-csi-driver-webhook-svc
+      serviceAccountName: vmware-vsphere-csi-driver-webhook-sa
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: "NoSchedule"
+      containers:
+        - name: vsphere-webhook
+          image: ${VMWARE_VSPHERE_SYNCER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--operation-mode=WEBHOOK_SERVER"
+            - "--fss-name=internal-feature-states.csi.vsphere.vmware.com"
+            - "--fss-namespace=$(CSI_NAMESPACE)"
+          ports:
+          - containerPort: 8443
+            name: webhook
+            protocol: TCP
+          env:
+            - name: WEBHOOK_CONFIG_PATH
+              value: "/etc/webhook/config/webhook.conf"
+            - name: LOGGER_LEVEL
+              value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/webhook/certs
+              name: certs
+              readOnly: true
+            - mountPath: /etc/webhook/config
+              name: config
+              readOnly: true
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: certs
+          secret:
+            secretName: vmware-vsphere-csi-driver-webhook-secret
+        - name: config
+          configMap:
+            name: vsphere-csi-webhook-config
