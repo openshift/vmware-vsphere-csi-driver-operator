@@ -8,10 +8,10 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/onsi/gomega v1.10.1 // indirect
-	github.com/openshift/api v0.0.0-20210331193751-3acddb19d360
-	github.com/openshift/build-machinery-go v0.0.0-20210209125900-0da259a2c359
-	github.com/openshift/client-go v0.0.0-20210331195552-cf6c2669e01f
-	github.com/openshift/library-go v0.0.0-20210408164723-7a65fdb398e2
+	github.com/openshift/api v0.0.0-20210521075222-e273a339932a
+	github.com/openshift/build-machinery-go v0.0.0-20210423112049-9415d7ebd33e
+	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142
+	github.com/openshift/library-go v0.0.0-20210622153508-f77a17e0269f
 	github.com/prometheus/client_golang v1.8.0
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/pflag v1.0.5
@@ -22,10 +22,10 @@ require (
 	google.golang.org/genproto v0.0.0-20201112120144-2985b7af83de // indirect
 	gopkg.in/gcfg.v1 v1.2.3
 	honnef.co/go/tools v0.0.1-2020.1.4 // indirect
-	k8s.io/api v0.21.0
-	k8s.io/apimachinery v0.21.0
-	k8s.io/client-go v0.21.0
-	k8s.io/component-base v0.21.0
+	k8s.io/api v0.21.1
+	k8s.io/apimachinery v0.21.1
+	k8s.io/client-go v0.21.1
+	k8s.io/component-base v0.21.1
 	k8s.io/klog/v2 v2.8.0
 	k8s.io/legacy-cloud-providers v0.20.4
 )

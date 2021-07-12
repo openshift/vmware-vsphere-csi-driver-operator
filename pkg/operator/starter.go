@@ -7,6 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/dynamic"
@@ -26,7 +29,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/loglevel"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/generated"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 )
@@ -76,8 +78,9 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	).WithStaticResourcesController(
 		"VMwareVSphereDriverStaticResourcesController",
 		kubeClient,
+		dynamicClient,
 		kubeInformersForNamespaces,
-		generated.Asset,
+		assets.ReadFile,
 		[]string{
 			"vsphere_features_config.yaml",
 			"controller_sa.yaml",
@@ -105,11 +108,14 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		configInformers,
 	).WithCSIDriverControllerService(
 		"VMwareVSphereDriverControllerServiceController",
-		generated.MustAsset,
+		assets.ReadFile,
 		"controller.yaml",
 		kubeClient,
 		kubeInformersForNamespaces.InformersFor(defaultNamespace),
 		configInformers,
+		[]factory.Informer{
+			secretInformer.Informer(),
+		},
 		WithVSphereCredentials(defaultNamespace, secretName, secretInformer),
 		WithSyncerImageHook(),
 		WithLogLevelDeploymentHook(),
@@ -121,27 +127,32 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		),
 	).WithCSIDriverNodeService(
 		"VMwareVSphereDriverNodeServiceController",
-		generated.MustAsset,
+		assets.ReadFile,
 		"node.yaml",
 		kubeClient,
 		kubeInformersForNamespaces.InformersFor(defaultNamespace),
+		nil,
 		WithLogLevelDaemonSetHook(),
 		csidrivernodeservicecontroller.WithObservedProxyDaemonSetHook(),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		dynamicClient,
-		generated.Asset,
+		assets.ReadFile,
 		"servicemonitor.yaml",
-	).WithExtraInformers(secretInformer.Informer())
+	)
 
 	if err != nil {
 		return err
 	}
 
+	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config.yaml")
+	if err != nil {
+		return err
+	}
 	targetConfigController := targetconfigcontroller.NewTargetConfigController(
 		"VMwareVSphereDriverTargetConfigController",
 		defaultNamespace,
-		generated.MustAsset("vsphere_cloud_config.yaml"),
+		cloudConfigBytes,
 		kubeClient,
 		kubeInformersForNamespaces,
 		operatorClient,
@@ -149,10 +160,14 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 	)
 
+	scBytes, err := assets.ReadFile("storageclass.yaml")
+	if err != nil {
+		return err
+	}
 	storageClassController := storageclasscontroller.NewStorageClassController(
 		"VMwareVSphereDriverStorageClassController",
 		defaultNamespace,
-		generated.MustAsset("storageclass.yaml"),
+		scBytes,
 		kubeClient,
 		kubeInformersForNamespaces,
 		operatorClient,
@@ -183,7 +198,7 @@ func WithVSphereCredentials(
 	namespace string,
 	secretName string,
 	secretInformer corev1informers.SecretInformer,
-) csidrivercontrollerservicecontroller.DeploymentHookFunc {
+) deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
 		secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
 		if err != nil {
@@ -226,7 +241,7 @@ func WithVSphereCredentials(
 	}
 }
 
-func WithSyncerImageHook() csidrivercontrollerservicecontroller.DeploymentHookFunc {
+func WithSyncerImageHook() deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
 		containers := deployment.Spec.Template.Spec.Containers
 		for i := range containers {
@@ -241,7 +256,7 @@ func WithSyncerImageHook() csidrivercontrollerservicecontroller.DeploymentHookFu
 
 // WithLogLevelDeploymentHook sets the X_CSI_DEBUG environment variable to a positive
 // value when CR.LogLevel is Debug or higher.
-func WithLogLevelDeploymentHook() csidrivercontrollerservicecontroller.DeploymentHookFunc {
+func WithLogLevelDeploymentHook() deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
 		deployment.Spec.Template.Spec.Containers = maybeAppendDebug(deployment.Spec.Template.Spec.Containers, opSpec)
 		return nil
