@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	"k8s.io/legacy-cloud-providers/vsphere"
 
@@ -27,10 +28,9 @@ const (
 	secretName = "vmware-vsphere-cloud-credentials"
 	apiTimeout = 10 * time.Minute
 
-	categoryName       = "container-orchestrator"
-	tagNameTemplate    = "openshift-%s"
-	policyNameTemplate = "openshift-storage-policy-%s"
-	vim25Prefix        = "urn:vim25:"
+	categoryNameTemplate = "openshift-%s"
+	policyNameTemplate   = "openshift-storage-policy-%s"
+	vim25Prefix          = "urn:vim25:"
 )
 
 var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine"}
@@ -44,10 +44,11 @@ type vCenterInterface interface {
 }
 
 type vCenterAPI struct {
-	connection *vSphereConnection
-	infra      *v1.Infrastructure
-	policyName string
-	tagName    string
+	connection   *vSphereConnection
+	infra        *v1.Infrastructure
+	policyName   string
+	tagName      string
+	categoryName string
 }
 
 var _ vCenterInterface = &vCenterAPI{}
@@ -85,10 +86,11 @@ func newVCenterAPI(ctx context.Context, cfg *vsphere.VSphereConfig, username, pa
 		restClient: restClient,
 	}
 	apiClient := &vCenterAPI{
-		connection: apiConn,
-		infra:      infra,
-		policyName: fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
-		tagName:    fmt.Sprintf(tagNameTemplate, infra.Status.InfrastructureName),
+		connection:   apiConn,
+		infra:        infra,
+		categoryName: fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+		policyName:   fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+		tagName:      infra.Status.InfrastructureName,
 	}
 	return apiClient, nil
 }
@@ -154,7 +156,7 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 	// create tag manager for managing tags
 	tagManager := tags.NewManager(v.connection.restClient)
 
-	category, err := tagManager.GetCategory(ctx, categoryName)
+	category, err := tagManager.GetCategory(ctx, v.categoryName)
 	if err != nil && !notFoundError(err) {
 		return fmt.Errorf("error finding category: %+v", err)
 	}
@@ -162,16 +164,26 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 	associatedTypes := appendPrefix(associatedTypesRaw)
 	if category == nil || category.ID == "" {
 		category = &tags.Category{
-			Name:            categoryName,
+			Name:            v.categoryName,
 			Description:     "Container Orchestrator that uses this datastore",
 			AssociableTypes: associatedTypes,
 			Cardinality:     "SINGLE",
 		}
 		catId, err := tagManager.CreateCategory(ctx, category)
 		if err != nil {
-			return fmt.Errorf("error creating category %s: %v", categoryName, err)
+			return fmt.Errorf("error creating category %s: %v", v.categoryName, err)
 		}
 		category.ID = catId
+	} else {
+		existingAssociatedTypes := category.AssociableTypes
+		associatedTypes = updateAssociatedTypes(existingAssociatedTypes)
+		klog.Infof("existing categories are: %+v", existingAssociatedTypes)
+		category.AssociableTypes = associatedTypes
+		klog.Infof("final categories are: %+v", associatedTypes)
+		err := tagManager.UpdateCategory(ctx, category)
+		if err != nil {
+			return fmt.Errorf("error updating category %s: %v", v.categoryName, err)
+		}
 	}
 
 	tag, err := tagManager.GetTag(ctx, v.tagName)
@@ -224,11 +236,11 @@ func (v *vCenterAPI) createStorageProfile(ctx context.Context) error {
 	policySpec.Name = v.policyName
 	policySpec.ResourceType.ResourceType = string(types.PbmProfileResourceTypeEnumSTORAGE)
 
-	policyID := fmt.Sprintf("com.vmware.storage.tag.%s.property", categoryName)
+	policyID := fmt.Sprintf("com.vmware.storage.tag.%s.property", v.categoryName)
 	instance := types.PbmCapabilityInstance{
 		Id: types.PbmCapabilityMetadataUniqueId{
 			Namespace: "http://www.vmware.com/storage/tag",
-			Id:        categoryName,
+			Id:        v.categoryName,
 		},
 		Constraint: []types.PbmCapabilityConstraintInstance{{
 			PropertyInstance: []types.PbmCapabilityPropertyInstance{{
@@ -317,6 +329,13 @@ func notFoundError(err error) bool {
 	errorString := err.Error()
 	r := regexp.MustCompile("404")
 	return r.MatchString(errorString)
+}
+
+func updateAssociatedTypes(associatedTypes []string) []string {
+	incomingTypesSet := sets.NewString(appendPrefix(associatedTypes)...)
+	additionTypes := appendPrefix(associatedTypesRaw)
+	finalAssociatedTypes := incomingTypesSet.Insert(additionTypes...)
+	return finalAssociatedTypes.List()
 }
 
 func appendPrefix(associableTypes []string) []string {
