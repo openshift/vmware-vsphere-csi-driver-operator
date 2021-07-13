@@ -4,7 +4,7 @@ metadata:
   name: thin-csi
 provisioner: csi.vsphere.vmware.com
 parameters:
-  datastoreurl: "${DATASTORE_URL}"
+  StoragePolicyName: "${STORAGE_POLICY_NAME}"
 volumeBindingMode: WaitForFirstConsumer
 # Volume expansion is disabled here because volume expansion in the vSphere
 # CSI driver is still in beta and has several limitations. (see
