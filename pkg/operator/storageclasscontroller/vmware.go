@@ -33,7 +33,7 @@ const (
 	vim25Prefix          = "urn:vim25:"
 )
 
-var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine"}
+var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine", "Folder"}
 
 type vCenterInterface interface {
 	getDefaultDatastore(ctx context.Context) (*mo.Datastore, error)
@@ -163,9 +163,10 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 
 	associatedTypes := appendPrefix(associatedTypesRaw)
 	if category == nil || category.ID == "" {
+		klog.Warningf("Unexpected missing category %s - creating it", v.categoryName)
 		category = &tags.Category{
 			Name:            v.categoryName,
-			Description:     "Container Orchestrator that uses this datastore",
+			Description:     "Added by openshift-install do not remove",
 			AssociableTypes: associatedTypes,
 			Cardinality:     "SINGLE",
 		}
@@ -173,17 +174,18 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 		if err != nil {
 			return fmt.Errorf("error creating category %s: %v", v.categoryName, err)
 		}
+		klog.V(2).Infof("Created category %s", v.categoryName)
 		category.ID = catId
 	} else {
 		existingAssociatedTypes := category.AssociableTypes
 		associatedTypes = updateAssociatedTypes(existingAssociatedTypes)
-		klog.Infof("existing categories are: %+v", existingAssociatedTypes)
 		category.AssociableTypes = associatedTypes
-		klog.Infof("final categories are: %+v", associatedTypes)
+		klog.V(4).Infof("Final categories are: %+v", associatedTypes)
 		err := tagManager.UpdateCategory(ctx, category)
 		if err != nil {
 			return fmt.Errorf("error updating category %s: %v", v.categoryName, err)
 		}
+		klog.V(2).Infof("Updated category %s with associated types", v.categoryName)
 	}
 
 	tag, err := tagManager.GetTag(ctx, v.tagName)
@@ -191,20 +193,22 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 		return fmt.Errorf("error finding tag %s: %v", v.tagName, err)
 	}
 	if tag == nil || tag.ID == "" {
+		klog.Warningf("Unexpected missing tag %s - creating it", v.tagName)
 		tag = &tags.Tag{
 			Name:        v.tagName,
-			Description: "Datastore is used by openshift",
+			Description: "Added by openshift-install do not remove",
 			CategoryID:  category.ID,
 		}
 		tagID, err := tagManager.CreateTag(ctx, tag)
 		if err != nil {
 			return fmt.Errorf("error creating tag %s: %v", v.tagName, err)
 		}
+		klog.V(2).Infof("Created tag %s", v.tagName)
 		tag.ID = tagID
 	} else if tag.CategoryID != category.ID {
 		tag = &tags.Tag{
 			Name:        v.tagName,
-			Description: "Datastore is used by openshift",
+			Description: "Added by openshift-install do not remove",
 			CategoryID:  category.ID,
 			ID:          tag.ID,
 		}
@@ -212,6 +216,7 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 		if err != nil {
 			return fmt.Errorf("error updating tag %s: %v", v.tagName, err)
 		}
+		klog.V(2).Infof("Updated tag %s", v.tagName)
 	}
 
 	dsName := v.connection.config.Workspace.DefaultDatastore
@@ -265,7 +270,7 @@ func (v *vCenterAPI) createStorageProfile(ctx context.Context) error {
 		klog.Errorf(msg)
 		return fmt.Errorf(msg)
 	}
-	klog.Infof("Successfully created profile %s", pid.UniqueId)
+	klog.V(2).Infof("Successfully created profile %s", pid.UniqueId)
 	return nil
 }
 
@@ -299,7 +304,7 @@ func (v *vCenterAPI) checkForExistingPolicy(ctx context.Context) (bool, error) {
 
 	for _, p := range profiles {
 		if p.GetPbmProfile().Name == v.policyName {
-			klog.Infof("Found existing profile with same name: %s", p.GetPbmProfile().Name)
+			klog.V(2).Infof("Found existing profile with same name: %s", p.GetPbmProfile().Name)
 			return true, nil
 		}
 	}

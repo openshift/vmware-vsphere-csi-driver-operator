@@ -116,7 +116,7 @@ func (c *StorageClassController) sync(ctx context.Context, syncContext factory.S
 		Status: v1.ConditionTrue,
 	}
 
-	policyName, err := c.syncStorgePolicy(ctx)
+	policyName, err := c.syncStoragePolicy(ctx)
 	if err != nil {
 		klog.Errorf("error syncing storage policy: %v", err)
 		return err
@@ -133,7 +133,7 @@ func (c *StorageClassController) sync(ctx context.Context, syncContext factory.S
 	return err
 }
 
-func (c *StorageClassController) syncStorgePolicy(ctx context.Context) (string, error) {
+func (c *StorageClassController) syncStoragePolicy(ctx context.Context) (string, error) {
 	infra, err := c.infraLister.Get(infraGlobalName)
 	if err != nil {
 		return "", err
