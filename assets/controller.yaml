@@ -65,6 +65,9 @@ spec:
             - name: vsphere-csi-config-volume
               mountPath: /etc/kubernetes/vsphere-csi-config/
               readOnly: true
+            - name: trusted-ca-bundle
+              mountPath: /etc/pki/ca-trust/extracted/pem
+              readOnly: true
           resources:
             requests:
               memory: 50Mi
@@ -240,3 +243,9 @@ spec:
         - name: metrics-serving-cert
           secret:
             secretName: vmware-vsphere-csi-driver-controller-metrics-serving-cert
+        - name: trusted-ca-bundle
+          configMap:
+            name: vsphere-csi-driver-trusted-ca-bundle
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem
