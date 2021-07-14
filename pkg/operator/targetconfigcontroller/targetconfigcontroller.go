@@ -127,7 +127,7 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 	requiredCM := resourceread.ReadConfigMapV1OrDie([]byte(cmString))
 
 	// TODO: check if configMap has been deployed and set appropriate conditions
-	_, _, err = resourceapply.ApplyConfigMap(c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
+	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
 	if err != nil {
 		return err
 	}
