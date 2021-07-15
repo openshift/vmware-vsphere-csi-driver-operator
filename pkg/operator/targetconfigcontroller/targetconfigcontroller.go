@@ -12,7 +12,6 @@ import (
 	"k8s.io/legacy-cloud-providers/vsphere"
 
 	opv1 "github.com/openshift/api/operator/v1"
-	v1 "github.com/openshift/api/operator/v1"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
@@ -85,7 +84,7 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		return err
 	}
 
-	if opSpec.ManagementState != v1.Managed {
+	if opSpec.ManagementState != opv1.Managed {
 		return nil
 	}
 
