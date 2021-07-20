@@ -6,6 +6,9 @@ subjects:
   - kind: ServiceAccount
     name: vmware-vsphere-csi-driver-controller-sa
     namespace: openshift-cluster-csi-drivers
+  - kind: ServiceAccount
+    name: vmware-vsphere-csi-driver-node-sa
+    namespace: openshift-cluster-csi-drivers
 roleRef:
   kind: ClusterRole
   name: vmware-vsphere-csi-driver-role
