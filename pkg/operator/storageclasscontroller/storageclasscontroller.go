@@ -23,10 +23,8 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/find"
-	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
-	"github.com/vmware/govmomi/vim25/mo"
 )
 
 const (
@@ -51,6 +49,7 @@ type StorageClassController struct {
 type vSphereConnection struct {
 	client     *govmomi.Client
 	config     *vsphere.VSphereConfig
+	restClient *rest.Client
 	tagManager *tags.Manager
 }
 
@@ -117,13 +116,13 @@ func (c *StorageClassController) sync(ctx context.Context, syncContext factory.S
 		Status: v1.ConditionTrue,
 	}
 
-	datastoreURL, err := c.getDatastoreURL(ctx)
+	policyName, err := c.syncStoragePolicy(ctx)
 	if err != nil {
-		klog.Errorf("error fetching datastore: %v", err)
+		klog.Errorf("error syncing storage policy: %v", err)
 		return err
 	}
 
-	err = c.syncStorageClass(ctx, syncContext, datastoreURL)
+	err = c.syncStorageClass(ctx, syncContext, policyName)
 	if err != nil {
 		klog.Errorf("error syncing storage class: %v", err)
 		return err
@@ -134,7 +133,7 @@ func (c *StorageClassController) sync(ctx context.Context, syncContext factory.S
 	return err
 }
 
-func (c *StorageClassController) getDatastoreURL(ctx context.Context) (string, error) {
+func (c *StorageClassController) syncStoragePolicy(ctx context.Context) (string, error) {
 	infra, err := c.infraLister.Get(infraGlobalName)
 	if err != nil {
 		return "", err
@@ -143,7 +142,7 @@ func (c *StorageClassController) getDatastoreURL(ctx context.Context) (string, e
 	cloudConfig := infra.Spec.CloudConfig
 	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
 	if err != nil {
-		return "", fmt.Errorf("failed to get cloud config: %w", err)
+		return "", fmt.Errorf("failed to get cloud config: %v", err)
 	}
 
 	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
@@ -159,29 +158,25 @@ func (c *StorageClassController) getDatastoreURL(ctx context.Context) (string, e
 
 	username, password, err := c.getCredentials(cfg)
 	if err != nil {
-		return "", fmt.Errorf("failed to get credentials: %w", err)
+		return "", fmt.Errorf("failed to get credentials: %v", err)
+	}
+	apiClient, err := newVCenterAPI(ctx, cfg, username, password, infra)
+
+	if err != nil {
+		return "", fmt.Errorf("error connecting to vcenter API: %v", err)
 	}
 
-	client, err := c.newClient(ctx, cfg, username, password)
-	if err != nil {
-		return "", fmt.Errorf("failed to create client: %w", err)
-	}
+	// we expect all API calls to finish within apiTimeout or else operator might be stuck
+	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
+	defer cancel()
 
-	conn := &vSphereConnection{
-		client: client,
-		config: cfg,
-	}
-	ds, err := c.getDefaultDatastore(ctx, conn)
-	if err != nil {
-		return "", fmt.Errorf("error getting default datastore: %v", err)
-	}
-	return ds.Summary.Url, nil
+	return apiClient.createStoragePolicy(tctx)
 }
 
-func (c *StorageClassController) syncStorageClass(ctx context.Context, syncContext factory.SyncContext, datastoreURL string) error {
+func (c *StorageClassController) syncStorageClass(ctx context.Context, syncContext factory.SyncContext, policyName string) error {
 	scString := string(c.manifest)
 	pairs := []string{
-		"${DATASTORE_URL}", datastoreURL,
+		"${STORAGE_POLICY_NAME}", policyName,
 	}
 
 	policyReplacer := strings.NewReplacer(pairs...)
@@ -190,30 +185,4 @@ func (c *StorageClassController) syncStorageClass(ctx context.Context, syncConte
 	sc := resourceread.ReadStorageClassV1OrDie([]byte(scString))
 	_, _, err := resourceapply.ApplyStorageClass(c.kubeClient.StorageV1(), syncContext.Recorder(), sc)
 	return err
-}
-
-func (c *StorageClassController) getDefaultDatastore(ctx context.Context, conn *vSphereConnection) (*mo.Datastore, error) {
-	finder := find.NewFinder(conn.client.Client, false)
-	dcName := conn.config.Workspace.Datacenter
-	dsName := conn.config.Workspace.DefaultDatastore
-	dc, err := finder.Datacenter(ctx, dcName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to access datacenter %s: %s", dcName, err)
-	}
-
-	finder = find.NewFinder(conn.client.Client, false)
-	finder.SetDatacenter(dc)
-	ds, err := finder.Datastore(ctx, dsName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to access datastore %s: %s", dsName, err)
-	}
-
-	var dsMo mo.Datastore
-	pc := property.DefaultCollector(dc.Client())
-	properties := []string{DatastoreInfoProperty, SummaryProperty}
-	err = pc.RetrieveOne(ctx, ds.Reference(), properties, &dsMo)
-	if err != nil {
-		return nil, fmt.Errorf("error getting properties of datastore %s: %v", dsName, err)
-	}
-	return &dsMo, nil
 }
