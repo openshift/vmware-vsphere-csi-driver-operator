@@ -96,7 +96,7 @@ github.com/modern-go/reflect2
 github.com/munnerz/goautoneg
 # github.com/onsi/gomega v1.10.1
 ## explicit
-# github.com/openshift/api v0.0.0-20210521075222-e273a339932a
+# github.com/openshift/api v0.0.0-20210706092853-b63d499a70ce
 ## explicit
 github.com/openshift/api
 github.com/openshift/api/apiserver
@@ -174,7 +174,7 @@ github.com/openshift/client-go/config/informers/externalversions/config
 github.com/openshift/client-go/config/informers/externalversions/config/v1
 github.com/openshift/client-go/config/informers/externalversions/internalinterfaces
 github.com/openshift/client-go/config/listers/config/v1
-# github.com/openshift/library-go v0.0.0-20210622153508-f77a17e0269f
+# github.com/openshift/library-go v0.0.0-20210720151324-cfbfc8feace0
 ## explicit
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
 github.com/openshift/library-go/pkg/config/client
@@ -200,6 +200,7 @@ github.com/openshift/library-go/pkg/operator/events
 github.com/openshift/library-go/pkg/operator/genericoperatorclient
 github.com/openshift/library-go/pkg/operator/loglevel
 github.com/openshift/library-go/pkg/operator/management
+github.com/openshift/library-go/pkg/operator/managementstatecontroller
 github.com/openshift/library-go/pkg/operator/resource/resourceapply
 github.com/openshift/library-go/pkg/operator/resource/resourcehash
 github.com/openshift/library-go/pkg/operator/resource/resourcehelper

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: openshift-cluster-csi-drivers
+  name: vsphere-csi-webhook-config
+data:
+  webhook.conf: |
+    [WebHookConfig]
+    port = "8443"
+    cert-file = "/etc/webhook/certs/tls.crt"
+    key-file = "/etc/webhook/certs/tls.key"
