@@ -104,12 +104,12 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 			"rbac/prometheus_role.yaml",
 			"rbac/prometheus_rolebinding.yaml",
 			// Static assets used by the webhook
-			"webhook/config.yaml",
-			"webhook/sa.yaml",
-			"webhook/service.yaml",
-			"webhook/configuration.yaml",
-			"webhook/rbac/role.yaml",
-			"webhook/rbac/rolebinding.yaml",
+			// "webhook/config.yaml",
+			// "webhook/sa.yaml",
+			// "webhook/service.yaml",
+			// "webhook/configuration.yaml",
+			// "webhook/rbac/role.yaml",
+			// "webhook/rbac/rolebinding.yaml",
 		},
 	).WithCSIConfigObserverController(
 		"VMwareVSphereDriverCSIConfigObserverController",
@@ -182,21 +182,21 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 	)
 
-	webhookBytes, err := assets.ReadFile("webhook/deployment.yaml")
-	if err != nil {
-		return err
-	}
-	webhookController := deploymentcontroller.NewDeploymentController(
-		"VMwareVSphereDriverWebhookController",
-		webhookBytes,
-		controllerConfig.EventRecorder,
-		operatorClient,
-		kubeClient,
-		kubeInformersForNamespaces.InformersFor(defaultNamespace).Apps().V1().Deployments(),
-		nil, // optionalInformers
-		nil, // optionalManifestHooks
-		WithSyncerImageHook("vsphere-webhook"),
-	)
+	// webhookBytes, err := assets.ReadFile("webhook/deployment.yaml")
+	// if err != nil {
+	// 	return err
+	// }
+	// webhookController := deploymentcontroller.NewDeploymentController(
+	// 	"VMwareVSphereDriverWebhookController",
+	// 	webhookBytes,
+	// 	controllerConfig.EventRecorder,
+	// 	operatorClient,
+	// 	kubeClient,
+	// 	kubeInformersForNamespaces.InformersFor(defaultNamespace).Apps().V1().Deployments(),
+	// 	nil, // optionalInformers
+	// 	nil, // optionalManifestHooks
+	// 	WithSyncerImageHook("vsphere-webhook"),
+	// )
 
 	klog.Info("Starting the informers")
 	go kubeInformersForNamespaces.Start(ctx.Done())
@@ -209,8 +209,8 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	klog.Info("Starting storageclasscontroller")
 	go storageClassController.Run(ctx, 1)
 
-	klog.Info("Starting webhookcontroller")
-	go webhookController.Run(ctx, 1)
+	// klog.Info("Starting webhookcontroller")
+	// go webhookController.Run(ctx, 1)
 
 	klog.Info("Starting controllerset")
 	go csiControllerSet.Run(ctx, 1)
