@@ -12,3 +12,4 @@ volumeBindingMode: WaitForFirstConsumer
 # It is not supported for all datastores (vSAN only right now) and there is
 # not yet an e2e test for it.
 allowVolumeExpansion: false
+reclaimPolicy: Delete
