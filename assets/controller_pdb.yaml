@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vmware-vsphere-csi-driver-controller-pdb
+  namespace: openshift-cluster-csi-drivers
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: vmware-vsphere-csi-driver-controller

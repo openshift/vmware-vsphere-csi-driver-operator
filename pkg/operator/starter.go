@@ -84,6 +84,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		[]string{
 			"vsphere_features_config.yaml",
 			"controller_sa.yaml",
+			"controller_pdb.yaml",
 			"node_sa.yaml",
 			"csidriver.yaml",
 			"service.yaml",
