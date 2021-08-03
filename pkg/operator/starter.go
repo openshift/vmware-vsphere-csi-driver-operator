@@ -48,6 +48,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	kubeClient := kubeclient.NewForConfigOrDie(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
 	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, cloudConfigNamespace, "")
 	secretInformer := kubeInformersForNamespaces.InformersFor(defaultNamespace).Core().V1().Secrets()
+	nodeInformer := kubeInformersForNamespaces.InformersFor("").Core().V1().Nodes()
 
 	// Create config clientset and informer. This is used to get the cluster ID
 	configClient := configclient.NewForConfigOrDie(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
@@ -124,6 +125,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		configInformers,
 		[]factory.Informer{
 			secretInformer.Informer(),
+			nodeInformer.Informer(),
 		},
 		WithVSphereCredentials(defaultNamespace, secretName, secretInformer),
 		WithSyncerImageHook("vsphere-syncer"),
@@ -134,6 +136,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 			secretName,
 			secretInformer,
 		),
+		csidrivercontrollerservicecontroller.WithReplicasHook(nodeInformer.Lister()),
 	).WithCSIDriverNodeService(
 		"VMwareVSphereDriverNodeServiceController",
 		assets.ReadFile,
