@@ -8,7 +8,7 @@ metadata:
   name: csi-ci
 parameters:
   # Datastore URL in OCP CI
-  datastoreurl: ds:///vmfs/volumes/vsan:86c7dbc3da924855-b20d5cd1f4eec976/
+  datastoreurl: ${VSPHERE_DATASTORE_PATH}
 provisioner: csi.vsphere.vmware.com
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
