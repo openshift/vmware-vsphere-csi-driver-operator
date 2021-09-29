@@ -266,6 +266,10 @@ spec:
             - mountPath: /etc/kubernetes/vsphere-csi-config
               name: vsphere-csi-config-volume
               readOnly: true
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
       volumes:
         - name: socket-dir
           emptyDir: {}
