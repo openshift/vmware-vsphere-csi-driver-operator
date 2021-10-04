@@ -41,6 +41,7 @@ type vCenterInterface interface {
 	checkForExistingPolicy(ctx context.Context) (bool, error)
 	createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error
 	createStorageProfile(ctx context.Context) error
+	close(ctx context.Context) error
 }
 
 type vCenterAPI struct {
@@ -70,9 +71,11 @@ func newVCenterAPI(ctx context.Context, cfg *vsphere.VSphereConfig, username, pa
 	if err != nil {
 		return nil, err
 	}
+
 	// We also need to authenticate with the restClient
 	restClient := rest.NewClient(client.Client)
 	userInfo := url.UserPassword(username, password)
+
 	err = restClient.Login(ctx, userInfo)
 	if err != nil {
 		msg := fmt.Sprintf("error logging into vcenter: %v", err)
@@ -272,6 +275,10 @@ func (v *vCenterAPI) createStorageProfile(ctx context.Context) error {
 	}
 	klog.V(2).Infof("Successfully created profile %s", pid.UniqueId)
 	return nil
+}
+
+func (v *vCenterAPI) close(ctx context.Context) error {
+	return v.connection.client.Logout(ctx)
 }
 
 func (v *vCenterAPI) checkForExistingPolicy(ctx context.Context) (bool, error) {

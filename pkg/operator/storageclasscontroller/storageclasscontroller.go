@@ -160,11 +160,17 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to get credentials: %v", err)
 	}
-	apiClient, err := newVCenterAPI(ctx, cfg, username, password, infra)
 
+	apiClient, err := newVCenterAPI(ctx, cfg, username, password, infra)
 	if err != nil {
 		return "", fmt.Errorf("error connecting to vcenter API: %v", err)
 	}
+	defer func() {
+		err := apiClient.close(ctx)
+		if err != nil {
+			klog.Errorf("error closing connection to vCenter API: %v", err)
+		}
+	}()
 
 	// we expect all API calls to finish within apiTimeout or else operator might be stuck
 	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
