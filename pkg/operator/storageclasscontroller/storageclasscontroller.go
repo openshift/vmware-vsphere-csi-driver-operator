@@ -171,6 +171,14 @@ func (c *StorageClassController) getDatastoreURL(ctx context.Context) (string, e
 		client: client,
 		config: cfg,
 	}
+
+	defer func() {
+		err := client.Logout(ctx)
+		if err != nil {
+			klog.Errorf("error closing connection to vCenter API: %v", err)
+		}
+	}()
+
 	ds, err := c.getDefaultDatastore(ctx, conn)
 	if err != nil {
 		return "", fmt.Errorf("error getting default datastore: %v", err)
