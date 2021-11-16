@@ -35,6 +35,9 @@ const (
 	resyncDuration        = 20 * time.Minute
 )
 
+// StorageClassController ultimately creates a StorageClass that
+// uses the vSphere CSI driver to provision volumes. On error,
+// this controller does not set any degraded condition.
 type StorageClassController struct {
 	name            string
 	targetNamespace string
@@ -90,8 +93,6 @@ func NewStorageClassController(
 		c.sync,
 	).ResyncEvery(
 		resyncDuration,
-	).WithSyncDegradedOnError(
-		operatorClient,
 	).ToController(
 		c.name,
 		rc,
