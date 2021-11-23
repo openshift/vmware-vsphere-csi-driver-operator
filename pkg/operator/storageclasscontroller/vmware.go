@@ -3,6 +3,7 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
 	"net/url"
 	"regexp"
 	"time"
@@ -60,22 +61,36 @@ func newVCenterAPI(ctx context.Context, cfg *vsphere.VSphereConfig, username, pa
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %s", err)
 	}
-	serverURL.User = url.UserPassword(username, password)
 	insecure := cfg.Global.InsecureFlag
 
 	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
 	defer cancel()
 
 	klog.V(4).Infof("Connecting to %s as %s, insecure %t", serverAddress, username, insecure)
+
+	// Set user to nil to prevent login during client creation.
+	// See https://github.com/vmware/govmomi/blob/master/client.go#L91
+	serverURL.User = nil
 	client, err := govmomi.NewClient(tctx, serverURL, insecure)
 	if err != nil {
 		return nil, err
 	}
 
-	// We also need to authenticate with the restClient
-	restClient := rest.NewClient(client.Client)
+	// Set up user agent before login
+	operatorVersion := version.Get()
+	client.UserAgent = fmt.Sprintf("vmware-vsphere-csi-driver-operator/%s", operatorVersion)
+
 	userInfo := url.UserPassword(username, password)
 
+	err = client.Login(ctx, userInfo)
+	if err != nil {
+		msg := fmt.Sprintf("error logging into vcenter: %v", err)
+		klog.Error(msg)
+		return nil, fmt.Errorf(msg)
+	}
+
+	// We also need to authenticate with the restClient
+	restClient := rest.NewClient(client.Client)
 	err = restClient.Login(ctx, userInfo)
 	if err != nil {
 		msg := fmt.Sprintf("error logging into vcenter: %v", err)
