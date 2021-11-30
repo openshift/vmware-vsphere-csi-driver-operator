@@ -3,7 +3,13 @@ data:
   "csi-migration": "true" # csi-migration feature is only available for vSphere 7.0U1
   "csi-auth-check": "true"
   "online-volume-extend": "true"
+  "trigger-csi-fullsync": "false"
+  "async-query-volume": "true"
   "improved-csi-idempotency": "true"
+  "improved-volume-topology": "false"
+  "block-volume-snapshot": "false"
+  "csi-windows-support": "false"
+  "use-csinode-id": "false"
 kind: ConfigMap
 metadata:
   name: internal-feature-states.csi.vsphere.vmware.com
