@@ -142,6 +142,7 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 	}
 
 	_, _, err = v1helpers.UpdateStatus(
+		ctx,
 		c.operatorClient,
 		v1helpers.UpdateConditionFn(availableCondition),
 		v1helpers.UpdateConditionFn(progressingCondition),

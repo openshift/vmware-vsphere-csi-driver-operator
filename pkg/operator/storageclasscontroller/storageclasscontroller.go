@@ -127,7 +127,9 @@ func (c *StorageClassController) sync(ctx context.Context, syncContext factory.S
 		klog.Errorf("error syncing storage class: %v", err)
 		return err
 	}
-	_, _, err = v1helpers.UpdateStatus(c.operatorClient,
+	_, _, err = v1helpers.UpdateStatus(
+		ctx,
+		c.operatorClient,
 		v1helpers.UpdateConditionFn(controllerAvailableCondition),
 	)
 	return err
