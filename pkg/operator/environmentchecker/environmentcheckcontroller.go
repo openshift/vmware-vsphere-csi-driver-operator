@@ -3,13 +3,14 @@ package environmentchecker
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
-	"gopkg.in/gcfg.v1"
-	"k8s.io/legacy-cloud-providers/vsphere"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
+	"gopkg.in/gcfg.v1"
+	"k8s.io/legacy-cloud-providers/vsphere"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 
@@ -106,6 +107,7 @@ func NewEnvironmentCheckController(
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
+	c.createWebHookController()
 	c.storageClassController = c.createStorageClassController()
 
 	return factory.New().WithInformers(
@@ -182,13 +184,13 @@ func (c *EnvironmentCheckController) sync(ctx context.Context, syncContext facto
 		return storageClassSyncResult.CheckError
 	}
 
-	storageClassUpdateConditionError := c.updateConditions(storageClassControllerName, storageClassSyncResult)
+	storageClassUpdateConditionError := c.updateConditions(ctx, storageClassControllerName, storageClassSyncResult)
 
 	if storageClassUpdateConditionError != nil {
 		return storageClassUpdateConditionError
 	}
 
-	return c.updateConditions(c.name, result)
+	return c.updateConditions(ctx, c.name, result)
 }
 
 func (c *EnvironmentCheckController) shouldDegradeCluster(result checks.ClusterCheckResult) bool {
@@ -353,7 +355,7 @@ func (c *EnvironmentCheckController) getSecretConfigMapHash(ctx context.Context,
 	return secretHash + "." + cfgHash, nil
 }
 
-func (c *EnvironmentCheckController) updateConditions(name string, lastCheckResult checks.ClusterCheckResult) error {
+func (c *EnvironmentCheckController) updateConditions(ctx context.Context, name string, lastCheckResult checks.ClusterCheckResult) error {
 	availableCnd := operatorapi.OperatorCondition{
 		Type:   name + operatorapi.OperatorStatusTypeAvailable,
 		Status: operatorapi.ConditionTrue,
@@ -380,7 +382,7 @@ func (c *EnvironmentCheckController) updateConditions(name string, lastCheckResu
 	}
 
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(allowUpgradeCond))
-	if _, _, updateErr := v1helpers.UpdateStatus(c.operatorClient, updateFuncs...); updateErr != nil {
+	if _, _, updateErr := v1helpers.UpdateStatus(ctx, c.operatorClient, updateFuncs...); updateErr != nil {
 		return updateErr
 	}
 	return nil
