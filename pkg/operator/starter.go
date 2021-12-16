@@ -3,14 +3,12 @@ package operator
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller"
+
 	"k8s.io/client-go/dynamic"
-	corev1informers "k8s.io/client-go/informers/core/v1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -19,17 +17,10 @@ import (
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
-	"github.com/openshift/library-go/pkg/controller/factory"
-	"github.com/openshift/library-go/pkg/operator/csi/csicontrollerset"
-	"github.com/openshift/library-go/pkg/operator/csi/csidrivercontrollerservicecontroller"
-	"github.com/openshift/library-go/pkg/operator/csi/csidrivernodeservicecontroller"
-	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
-	"github.com/openshift/library-go/pkg/operator/loglevel"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 )
 
@@ -70,88 +61,23 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		return err
 	}
 
-	csiControllerSet := csicontrollerset.NewCSIControllerSet(
-		operatorClient,
-		controllerConfig.EventRecorder,
-	).WithLogLevelController().WithManagementStateController(
-		operandName,
-		false,
-	).WithStaticResourcesController(
-		"VMwareVSphereDriverStaticResourcesController",
-		kubeClient,
-		dynamicClient,
-		kubeInformersForNamespaces,
-		assets.ReadFile,
-		[]string{
-			"vsphere_features_config.yaml",
-			"controller_sa.yaml",
-			"controller_pdb.yaml",
-			"node_sa.yaml",
-			"csidriver.yaml",
-			"service.yaml",
-			"ca_configmap.yaml",
-			"rbac/csi_driver_role.yaml",
-			"rbac/csi_driver_binding.yaml",
-			"rbac/attacher_role.yaml",
-			"rbac/attacher_binding.yaml",
-			"rbac/privileged_role.yaml",
-			"rbac/controller_privileged_binding.yaml",
-			"rbac/node_privileged_binding.yaml",
-			"rbac/provisioner_role.yaml",
-			"rbac/provisioner_binding.yaml",
-			"rbac/resizer_role.yaml",
-			"rbac/resizer_binding.yaml",
-			"rbac/kube_rbac_proxy_role.yaml",
-			"rbac/kube_rbac_proxy_binding.yaml",
-			"rbac/prometheus_role.yaml",
-			"rbac/prometheus_rolebinding.yaml",
-			// Static assets used by the webhook
-			"webhook/config.yaml",
-			"webhook/sa.yaml",
-			"webhook/service.yaml",
-			"webhook/configuration.yaml",
-			"webhook/rbac/role.yaml",
-			"webhook/rbac/rolebinding.yaml",
-		},
-	).WithCSIConfigObserverController(
-		"VMwareVSphereDriverCSIConfigObserverController",
-		configInformers,
-	).WithCSIDriverControllerService(
-		"VMwareVSphereDriverControllerServiceController",
-		assets.ReadFile,
-		"controller.yaml",
-		kubeClient,
-		kubeInformersForNamespaces.InformersFor(defaultNamespace),
-		configInformers,
-		[]factory.Informer{
-			secretInformer.Informer(),
-			nodeInformer.Informer(),
-		},
-		WithVSphereCredentials(defaultNamespace, secretName, secretInformer),
-		WithSyncerImageHook("vsphere-syncer"),
-		WithLogLevelDeploymentHook(),
-		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
-		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
-			defaultNamespace,
-			secretName,
-			secretInformer,
-		),
-		csidrivercontrollerservicecontroller.WithReplicasHook(nodeInformer.Lister()),
-	).WithCSIDriverNodeService(
-		"VMwareVSphereDriverNodeServiceController",
-		assets.ReadFile,
-		"node.yaml",
-		kubeClient,
-		kubeInformersForNamespaces.InformersFor(defaultNamespace),
-		nil,
-		WithLogLevelDaemonSetHook(),
-		csidrivernodeservicecontroller.WithObservedProxyDaemonSetHook(),
-	).WithServiceMonitorController(
-		"VMWareVSphereDriverServiceMonitorController",
-		dynamicClient,
-		assets.ReadFile,
-		"servicemonitor.yaml",
-	)
+	commonAPIClient := utils.APIClient{
+		OperatorClient:  operatorClient,
+		KubeClient:      kubeClient,
+		KubeInformers:   kubeInformersForNamespaces,
+		SecretInformer:  secretInformer,
+		NodeInformer:    nodeInformer,
+		ConfigClientSet: configClient,
+		ConfigInformers: configInformers,
+		DynamicClient:   dynamicClient,
+	}
+
+	vSphereController := vspherecontroller.NewVSphereController(
+		"VMwareVSphereController",
+		defaultNamespace,
+		commonAPIClient,
+		controllerConfig.EventRecorder)
+
 	if err != nil {
 		return err
 	}
@@ -171,37 +97,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		controllerConfig.EventRecorder,
 	)
 
-	scBytes, err := assets.ReadFile("storageclass.yaml")
-	if err != nil {
-		return err
-	}
-	storageClassController := storageclasscontroller.NewStorageClassController(
-		"VMwareVSphereDriverStorageClassController",
-		defaultNamespace,
-		scBytes,
-		kubeClient,
-		kubeInformersForNamespaces,
-		operatorClient,
-		configInformers,
-		controllerConfig.EventRecorder,
-	)
-
-	webhookBytes, err := assets.ReadFile("webhook/deployment.yaml")
-	if err != nil {
-		return err
-	}
-	webhookController := deploymentcontroller.NewDeploymentController(
-		"VMwareVSphereDriverWebhookController",
-		webhookBytes,
-		controllerConfig.EventRecorder,
-		operatorClient,
-		kubeClient,
-		kubeInformersForNamespaces.InformersFor(defaultNamespace).Apps().V1().Deployments(),
-		nil, // optionalInformers
-		nil, // optionalManifestHooks
-		WithSyncerImageHook("vsphere-webhook"),
-	)
-
 	klog.Info("Starting the informers")
 	go kubeInformersForNamespaces.Start(ctx.Done())
 	go dynamicInformers.Start(ctx.Done())
@@ -210,127 +105,10 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	klog.Info("Starting targetconfigcontroller")
 	go targetConfigController.Run(ctx, 1)
 
-	klog.Info("Starting storageclasscontroller")
-	go storageClassController.Run(ctx, 1)
-
-	klog.Info("Starting webhookcontroller")
-	go webhookController.Run(ctx, 1)
-
-	klog.Info("Starting controllerset")
-	go csiControllerSet.Run(ctx, 1)
+	klog.Info("Starting environment check controller")
+	go vSphereController.Run(ctx, 1)
 
 	<-ctx.Done()
 
 	return fmt.Errorf("stopped")
-}
-
-func WithVSphereCredentials(
-	namespace string,
-	secretName string,
-	secretInformer corev1informers.SecretInformer,
-) deploymentcontroller.DeploymentHookFunc {
-	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
-		secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
-		if err != nil {
-			return err
-		}
-
-		// CCO generates a secret that contains dynamic keys, for example:
-		// oc get secret/vmware-vsphere-cloud-credentials -o json | jq .data
-		// {
-		//   "vcenter.xyz.vmwarevmc.com.password": "***",
-		//   "vcenter.xyz.vmwarevmc.com.username": "***"
-		// }
-		// So we need to figure those keys out
-		var usernameKey, passwordKey string
-		for k := range secret.Data {
-			if strings.HasSuffix(k, ".username") {
-				usernameKey = k
-			} else if strings.HasSuffix(k, ".password") {
-				passwordKey = k
-			}
-		}
-		if usernameKey == "" || passwordKey == "" {
-			return fmt.Errorf("could not find vSphere credentials in secret %s/%s", secret.Namespace, secret.Name)
-		}
-
-		// Add to csi-driver and vsphere-syncer containers the vSphere credentials, as env vars.
-		containers := deployment.Spec.Template.Spec.Containers
-		for i := range containers {
-			if containers[i].Name != "csi-driver" && containers[i].Name != "vsphere-syncer" {
-				continue
-			}
-			containers[i].Env = append(
-				containers[i].Env,
-				newSecretEnvVar(secretName, "VSPHERE_USER", usernameKey),
-				newSecretEnvVar(secretName, "VSPHERE_PASSWORD", passwordKey),
-			)
-		}
-		deployment.Spec.Template.Spec.Containers = containers
-		return nil
-	}
-}
-
-func WithSyncerImageHook(containerName string) deploymentcontroller.DeploymentHookFunc {
-	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
-		containers := deployment.Spec.Template.Spec.Containers
-		for i := range containers {
-			if containers[i].Name == containerName {
-				containers[i].Image = os.Getenv(envVMWareVsphereDriverSyncerImage)
-			}
-		}
-		deployment.Spec.Template.Spec.Containers = containers
-		return nil
-	}
-}
-
-// WithLogLevelDeploymentHook sets the X_CSI_DEBUG environment variable to a positive
-// value when CR.LogLevel is Debug or higher.
-func WithLogLevelDeploymentHook() deploymentcontroller.DeploymentHookFunc {
-	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
-		deployment.Spec.Template.Spec.Containers = maybeAppendDebug(deployment.Spec.Template.Spec.Containers, opSpec)
-		return nil
-	}
-}
-
-// WithLogLevelDaemonSetHook sets the X_CSI_DEBUG environment variable to a positive
-// value when CR.LogLevel is Debug or higher.
-func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFunc {
-	return func(opSpec *opv1.OperatorSpec, ds *appsv1.DaemonSet) error {
-		ds.Spec.Template.Spec.Containers = maybeAppendDebug(ds.Spec.Template.Spec.Containers, opSpec)
-		return nil
-	}
-}
-
-// maybeAppendDebug works like the append() builtin; it returns a new slice of containers
-// with the debug env var properly set (or not).
-func maybeAppendDebug(containers []v1.Container, opSpec *opv1.OperatorSpec) []v1.Container {
-	// Don't set the debug option when the current level is lower than debug
-	if loglevel.LogLevelToVerbosity(opSpec.LogLevel) < loglevel.LogLevelToVerbosity(opv1.Debug) {
-		return containers
-	}
-	for i := range containers {
-		if containers[i].Name != "csi-driver" && containers[i].Name != "vsphere-syncer" {
-			continue
-		}
-		containers[i].Env = append(
-			containers[i].Env,
-			v1.EnvVar{Name: "X_CSI_DEBUG", Value: "true"},
-		)
-	}
-	return containers
-}
-
-func newSecretEnvVar(secretName, envVarName, key string) v1.EnvVar {
-	return v1.EnvVar{
-		Name: envVarName,
-		ValueFrom: &v1.EnvVarSource{
-			SecretKeyRef: &v1.SecretKeySelector{
-				LocalObjectReference: v1.LocalObjectReference{
-					Name: secretName,
-				},
-				Key: key,
-			},
-		},
-	}
 }

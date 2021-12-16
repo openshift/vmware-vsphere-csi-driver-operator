@@ -3,36 +3,22 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	operatorapi "github.com/openshift/api/operator/v1"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	"strings"
-	"time"
 
-	"gopkg.in/gcfg.v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/kubernetes"
-	corelister "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/vsphere"
-
-	v1 "github.com/openshift/api/operator/v1"
-	configinformers "github.com/openshift/client-go/config/informers/externalversions"
-	infralister "github.com/openshift/client-go/config/listers/config/v1"
-	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
-
-	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/vapi/rest"
-	"github.com/vmware/govmomi/vapi/tags"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 )
 
 const (
-	infraGlobalName       = "cluster"
-	cloudConfigNamespace  = "openshift-config"
 	DatastoreInfoProperty = "info"
 	SummaryProperty       = "summary"
-	resyncDuration        = 20 * time.Minute
 )
 
 type StorageClassController struct {
@@ -41,16 +27,7 @@ type StorageClassController struct {
 	manifest        []byte
 	kubeClient      kubernetes.Interface
 	operatorClient  v1helpers.OperatorClient
-	configMapLister corelister.ConfigMapLister
-	secretLister    corelister.SecretLister
-	infraLister     infralister.InfrastructureLister
-}
-
-type vSphereConnection struct {
-	client     *govmomi.Client
-	config     *vsphere.VSphereConfig
-	restClient *rest.Client
-	tagManager *tags.Manager
+	recorder        events.Recorder
 }
 
 func NewStorageClassController(
@@ -58,130 +35,109 @@ func NewStorageClassController(
 	targetNamespace string,
 	manifest []byte,
 	kubeClient kubernetes.Interface,
-	kubeInformers v1helpers.KubeInformersForNamespaces,
 	operatorClient v1helpers.OperatorClient,
-	configInformer configinformers.SharedInformerFactory,
 	recorder events.Recorder,
-) factory.Controller {
-	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
-	secretInformer := kubeInformers.InformersFor(targetNamespace).Core().V1().Secrets()
-	infraInformer := configInformer.Config().V1().Infrastructures()
-	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
-	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
+) *StorageClassController {
 	c := &StorageClassController{
 		name:            name,
 		targetNamespace: targetNamespace,
 		manifest:        manifest,
 		kubeClient:      kubeClient,
 		operatorClient:  operatorClient,
-		configMapLister: configMapInformer.Lister(),
-		secretLister:    secretInformer.Lister(),
-		infraLister:     infraInformer.Lister(),
+		recorder:        recorder,
 	}
-	return factory.New().WithInformers(
-		configMapInformer.Informer(),
-		secretInformer.Informer(),
-		infraInformer.Informer(),
-		operatorClient.Informer(),
-		// This informer isn't used anywhere else in the code, but it's added here
-		// to make this controller resyncs when users change StorageClasses.
-		scInformer.Informer(),
-	).WithSync(
-		c.sync,
-	).ResyncEvery(
-		resyncDuration,
-	).WithSyncDegradedOnError(
-		operatorClient,
-	).ToController(
-		c.name,
-		rc,
-	)
+	return c
 }
 
-func (c *StorageClassController) sync(ctx context.Context, syncContext factory.SyncContext) error {
-	opSpec, _, _, err := c.operatorClient.GetOperatorState()
-	if apierrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	if opSpec.ManagementState != v1.Managed {
-		return nil
-	}
-
-	controllerAvailableCondition := v1.OperatorCondition{
-		Type:   c.name + v1.OperatorStatusTypeAvailable,
-		Status: v1.ConditionTrue,
-	}
-
-	policyName, err := c.syncStoragePolicy(ctx)
-	if err != nil {
-		klog.Errorf("error syncing storage policy: %v", err)
-		return err
-	}
-
-	err = c.syncStorageClass(ctx, syncContext, policyName)
-	if err != nil {
-		klog.Errorf("error syncing storage class: %v", err)
-		return err
-	}
-	_, _, err = v1helpers.UpdateStatus(
-		ctx,
-		c.operatorClient,
-		v1helpers.UpdateConditionFn(controllerAvailableCondition),
-	)
-	return err
-}
-
-func (c *StorageClassController) syncStoragePolicy(ctx context.Context) (string, error) {
-	infra, err := c.infraLister.Get(infraGlobalName)
-	if err != nil {
-		return "", err
-	}
-
-	cloudConfig := infra.Spec.CloudConfig
-	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
-	if err != nil {
-		return "", fmt.Errorf("failed to get cloud config: %v", err)
-	}
-
-	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
-	if !ok {
-		return "", fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
-	}
-
-	cfg := new(vsphere.VSphereConfig)
-	err = gcfg.ReadStringInto(cfg, cfgString)
-	if err != nil {
-		return "", err
-	}
-
-	username, password, err := c.getCredentials(cfg)
-	if err != nil {
-		return "", fmt.Errorf("failed to get credentials: %v", err)
-	}
-
-	apiClient, err := newVCenterAPI(ctx, cfg, username, password, infra)
-	if err != nil {
-		return "", fmt.Errorf("error connecting to vcenter API: %v", err)
-	}
-	defer func() {
-		err := apiClient.close(ctx)
-		if err != nil {
-			klog.Errorf("error closing connection to vCenter API: %v", err)
+func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+	checkResultFunc := func() checks.ClusterCheckResult {
+		policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps)
+		if syncResult.CheckError != nil {
+			klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
+			return syncResult
 		}
-	}()
+
+		err := c.syncStorageClass(ctx, policyName)
+		if err != nil {
+			klog.Errorf("error syncing storage class: %v", err)
+			return checks.MakeClusterDegradedError(checks.CheckStatusOpenshiftAPIError, err)
+		}
+		return checks.MakeClusterCheckResultPass()
+	}
+	clusterStatus, checkResult := checks.CheckClusterStatus(checkResultFunc(), apiDeps)
+	return c.updateConditions(ctx, checkResult, clusterStatus)
+}
+
+func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) (string, checks.ClusterCheckResult) {
+	infra := apiDeps.GetInfrastructure()
+
+	apiClient, err := newStoragePolicyAPI(ctx, connection, infra)
+	if err != nil {
+		reason := fmt.Errorf("error connecting to vcenter API: %v", err)
+		return "", checks.MakeGenericVCenterAPIError(reason)
+	}
 
 	// we expect all API calls to finish within apiTimeout or else operator might be stuck
 	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
 	defer cancel()
 
-	return apiClient.createStoragePolicy(tctx)
+	policyName, err := apiClient.createStoragePolicy(tctx)
+	if err != nil {
+		return "", checks.MakeGenericVCenterAPIError(err)
+	}
+	return policyName, checks.MakeClusterCheckResultPass()
 }
 
-func (c *StorageClassController) syncStorageClass(ctx context.Context, syncContext factory.SyncContext, policyName string) error {
+func (c *StorageClassController) updateConditions(ctx context.Context, lastCheckResult checks.ClusterCheckResult, clusterStatus checks.ClusterCheckStatus) error {
+	availableCnd := operatorapi.OperatorCondition{
+		Type:   c.name + operatorapi.OperatorStatusTypeAvailable,
+		Status: operatorapi.ConditionTrue,
+	}
+
+	degradedCondition := operatorapi.OperatorCondition{
+		Type:   c.name + operatorapi.OperatorStatusTypeDegraded,
+		Status: operatorapi.ConditionFalse,
+	}
+	allowUpgradeCond := operatorapi.OperatorCondition{
+		Type:   c.name + operatorapi.OperatorStatusTypeUpgradeable,
+		Status: operatorapi.ConditionTrue,
+	}
+
+	switch clusterStatus {
+	case checks.ClusterCheckDegrade:
+		degradedMessage := fmt.Sprintf("Marking cluster degraded because %s", lastCheckResult.Reason)
+		klog.Warningf(degradedMessage)
+		c.recorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster degraded because %s", lastCheckResult.Reason)
+		degradedCondition.Status = operatorapi.ConditionTrue
+		degradedCondition.Message = lastCheckResult.Reason
+		degradedCondition.Reason = string(lastCheckResult.CheckStatus)
+
+		// also mark available as false
+		availableCnd.Status = operatorapi.ConditionFalse
+		availableCnd.Message = degradedMessage
+		availableCnd.Reason = string(lastCheckResult.Reason)
+	case checks.ClusterCheckBlockUpgrade:
+		blockUpgradeMessage := fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+		klog.Warningf(blockUpgradeMessage)
+		c.recorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+		allowUpgradeCond.Status = operatorapi.ConditionFalse
+		allowUpgradeCond.Message = lastCheckResult.Reason
+		allowUpgradeCond.Reason = string(lastCheckResult.CheckStatus)
+	default:
+		klog.V(4).Infof("StorageClass install for vsphere CSI driver succeeded")
+	}
+
+	var updateFuncs []v1helpers.UpdateStatusFunc
+	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(availableCnd))
+	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(degradedCondition))
+	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(allowUpgradeCond))
+	if _, _, updateErr := v1helpers.UpdateStatus(ctx, c.operatorClient, updateFuncs...); updateErr != nil {
+		return updateErr
+	}
+	return nil
+}
+
+func (c *StorageClassController) syncStorageClass(ctx context.Context, policyName string) error {
 	scString := string(c.manifest)
 	pairs := []string{
 		"${STORAGE_POLICY_NAME}", policyName,
@@ -191,6 +147,6 @@ func (c *StorageClassController) syncStorageClass(ctx context.Context, syncConte
 	scString = policyReplacer.Replace(scString)
 
 	sc := resourceread.ReadStorageClassV1OrDie([]byte(scString))
-	_, _, err := resourceapply.ApplyStorageClass(ctx, c.kubeClient.StorageV1(), syncContext.Recorder(), sc)
+	_, _, err := resourceapply.ApplyStorageClass(ctx, c.kubeClient.StorageV1(), c.recorder, sc)
 	return err
 }
