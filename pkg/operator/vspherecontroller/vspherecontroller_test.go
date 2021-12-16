@@ -1,0 +1,327 @@
+package vspherecontroller
+
+import (
+	"context"
+	"fmt"
+	ocpv1 "github.com/openshift/api/config/v1"
+	opv1 "github.com/openshift/api/operator/v1"
+	fakeconfig "github.com/openshift/client-go/config/clientset/versioned/fake"
+	cfginformers "github.com/openshift/client-go/config/informers/externalversions"
+	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
+	v1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	fakecore "k8s.io/client-go/kubernetes/fake"
+	"testing"
+)
+
+const (
+	testControllerName = "VMwareVSphereController"
+)
+
+// fakeInstance is a fake CSI driver instance that also fullfils the OperatorClient interface
+type fakeDriverInstance struct {
+	metav1.ObjectMeta
+	Spec   opv1.OperatorSpec
+	Status opv1.OperatorStatus
+}
+
+func waitForSync(clients *utils.APIClient, stopCh <-chan struct{}) {
+	clients.KubeInformers.InformersFor(defaultNamespace).WaitForCacheSync(stopCh)
+	clients.KubeInformers.InformersFor("").WaitForCacheSync(stopCh)
+	clients.KubeInformers.InformersFor(cloudConfigNamespace).WaitForCacheSync(stopCh)
+	clients.ConfigInformers.WaitForCacheSync(stopCh)
+}
+
+func startFakeInformer(clients *utils.APIClient, stopCh <-chan struct{}) {
+	for _, informer := range []interface {
+		Start(stopCh <-chan struct{})
+	}{
+		clients.KubeInformers,
+		clients.ConfigInformers,
+	} {
+		informer.Start(stopCh)
+	}
+}
+
+func newFakeClients(coreObjects []runtime.Object, operatorObject *fakeDriverInstance, configObject runtime.Object) *utils.APIClient {
+	dynamicClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	kubeClient := fakecore.NewSimpleClientset(coreObjects...)
+	kubeInformers := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, cloudConfigNamespace, "")
+	nodeInformer := kubeInformers.InformersFor("").Core().V1().Nodes()
+	secretInformer := kubeInformers.InformersFor(defaultNamespace).Core().V1().Secrets()
+
+	apiClient := &utils.APIClient{}
+	apiClient.KubeClient = kubeClient
+	apiClient.KubeInformers = kubeInformers
+	apiClient.NodeInformer = nodeInformer
+	apiClient.SecretInformer = secretInformer
+	apiClient.DynamicClient = dynamicClient
+
+	operatorClient := v1helpers.NewFakeOperatorClientWithObjectMeta(&operatorObject.ObjectMeta, &operatorObject.Spec, &operatorObject.Status, nil)
+	apiClient.OperatorClient = operatorClient
+
+	configClient := fakeconfig.NewSimpleClientset(configObject)
+	configInformerFactory := cfginformers.NewSharedInformerFactory(configClient, 0)
+	configInformer := configInformerFactory.Config().V1().Infrastructures().Informer()
+	configInformer.GetIndexer().Add(configObject)
+
+	apiClient.ConfigClientSet = configClient
+	apiClient.ConfigInformers = configInformerFactory
+	return apiClient
+}
+
+func newVsphereController(apiClients *utils.APIClient) *VSphereController {
+	kubeInformers := apiClients.KubeInformers
+	ocpConfigInformer := apiClients.ConfigInformers
+	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
+
+	infraInformer := ocpConfigInformer.Config().V1().Infrastructures()
+	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
+	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
+	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
+	nodeLister := apiClients.NodeInformer.Lister()
+	rc := events.NewInMemoryRecorder(testControllerName)
+
+	c := &VSphereController{
+		name:            testControllerName,
+		targetNamespace: defaultNamespace,
+		kubeClient:      apiClients.KubeClient,
+		operatorClient:  apiClients.OperatorClient,
+		configMapLister: configMapInformer.Lister(),
+		secretLister:    apiClients.SecretInformer.Lister(),
+		csiNodeLister:   csiNodeLister,
+		scLister:        scInformer.Lister(),
+		csiDriverLister: csiDriverLister,
+		nodeLister:      nodeLister,
+		apiClients:      *apiClients,
+		eventRecorder:   rc,
+		vSphereChecker:  newVSphereEnvironmentChecker(),
+		infraLister:     infraInformer.Lister(),
+	}
+	c.controllers = []conditionalController{}
+	return c
+}
+
+func TestSync(t *testing.T) {
+	tests := []struct {
+		name                   string
+		clusterCSIDriverObject *fakeDriverInstance
+		initialObjects         []runtime.Object
+		configObjects          runtime.Object
+		vcenterVersion         string
+		expectedConditions     []opv1.OperatorCondition
+		expectError            error
+	}{
+		{
+			name:                   "when all configuration is right",
+			clusterCSIDriverObject: makeFakeDriverInstance(),
+			vcenterVersion:         "7.0.2",
+			initialObjects:         []runtime.Object{getConfigMap(), getSecret()},
+			configObjects:          runtime.Object(getInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+			},
+		},
+		{
+			name:                   "when vcenter version is older, block upgrades",
+			clusterCSIDriverObject: makeFakeDriverInstance(),
+			initialObjects:         []runtime.Object{getConfigMap(), getSecret()},
+			configObjects:          runtime.Object(getInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+		},
+		{
+			name:                   "when vcenter version is older but csi driver exists, degrade cluster",
+			clusterCSIDriverObject: makeFakeDriverInstance(),
+			initialObjects:         []runtime.Object{getConfigMap(), getSecret(), getCSIDriver(true)},
+			configObjects:          runtime.Object(getInfraObject()),
+			expectError:            fmt.Errorf("found older vcenter version, expected is 6.7.3"),
+		},
+	}
+
+	for i := range tests {
+		test := tests[i]
+		t.Run(test.name, func(t *testing.T) {
+			commonApiClient := newFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			go startFakeInformer(commonApiClient, stopCh)
+			waitForSync(commonApiClient, stopCh)
+
+			ctrl := newVsphereController(commonApiClient)
+
+			var cleanUpFunc func()
+			var conn *vclib.VSphereConnection
+			var connError error
+			conn, cleanUpFunc, connError = setupSimulator(defaultModel)
+			if test.vcenterVersion != "" {
+				customizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
+			}
+
+			ctrl.vsphereConnectionFunc = func() (*vclib.VSphereConnection, checks.ClusterCheckResult) {
+				if connError != nil {
+					return nil, checks.MakeGenericVCenterAPIError(connError)
+				}
+				return conn, checks.MakeClusterCheckResultPass()
+			}
+			defer func() {
+				if cleanUpFunc != nil {
+					cleanUpFunc()
+				}
+			}()
+
+			err := ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
+			if test.expectError == nil && err != nil {
+				t.Fatalf("Unexpected error that could degrade cluster: %+v", err)
+			}
+
+			if test.expectError != nil && err == nil {
+				t.Fatalf("expected cluster to be degraded with: %v, got none", test.expectError)
+			}
+
+			_, status, _, err := ctrl.operatorClient.GetOperatorState()
+			if err != nil {
+				t.Errorf("failed to get operator state: %+v", err)
+			}
+			for i := range test.expectedConditions {
+				expectedCondition := test.expectedConditions[i]
+				matchingCondition := getMatchingCondition(status.Conditions, expectedCondition.Type)
+				if matchingCondition == nil {
+					t.Fatalf("found no matching condition for: %s", expectedCondition.Type)
+				}
+				if matchingCondition.Status != expectedCondition.Status {
+					t.Fatalf("for condition %s: expected status: %v, got: %v", expectedCondition.Type, expectedCondition.Status, matchingCondition.Status)
+				}
+			}
+		})
+	}
+}
+
+func getMatchingCondition(status []opv1.OperatorCondition, conditionType string) *opv1.OperatorCondition {
+	for _, condition := range status {
+		if condition.Type == conditionType {
+			return &condition
+		}
+	}
+	return nil
+}
+
+type driverModifier func(*fakeDriverInstance) *fakeDriverInstance
+
+func makeFakeDriverInstance(modifiers ...driverModifier) *fakeDriverInstance {
+	instance := &fakeDriverInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "cluster",
+			Generation: 0,
+		},
+		Spec: opv1.OperatorSpec{
+			ManagementState: opv1.Managed,
+		},
+		Status: opv1.OperatorStatus{},
+	}
+	for _, modifier := range modifiers {
+		instance = modifier(instance)
+	}
+	return instance
+}
+
+func getCSIDriver(withOCPAnnotation bool) *storagev1.CSIDriver {
+	driver := &storagev1.CSIDriver{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: utils.VSphereDriverName,
+		},
+		Spec: storagev1.CSIDriverSpec{},
+	}
+	if withOCPAnnotation {
+		driver.Annotations = map[string]string{
+			utils.OpenshiftCSIDriverAnnotationKey: "true",
+		}
+	}
+	return driver
+}
+
+func getInfraObject() *ocpv1.Infrastructure {
+	return &ocpv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: infraGlobalName,
+		},
+		Spec: ocpv1.InfrastructureSpec{
+			CloudConfig: ocpv1.ConfigMapFileReference{
+				Name: "cloud-provider-config",
+				Key:  "config",
+			},
+			PlatformSpec: ocpv1.PlatformSpec{
+				Type: ocpv1.VSpherePlatformType,
+			},
+		},
+		Status: ocpv1.InfrastructureStatus{
+			InfrastructureName: "vsphere",
+			PlatformStatus: &ocpv1.PlatformStatus{
+				Type: ocpv1.VSpherePlatformType,
+			},
+		},
+	}
+}
+
+func getConfigMap() *v1.ConfigMap {
+	return &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cloud-provider-config",
+			Namespace: cloudConfigNamespace,
+		},
+		Data: map[string]string{
+			"config": `
+[Global]
+secret-name = "vsphere-creds"
+secret-namespace = "kube-system"
+insecure-flag = "1"
+
+[Workspace]
+server = "localhost"
+datacenter = "DC0"
+default-datastore = "LocalDS_0"
+folder = "/DC0/vm"
+
+[VirtualCenter "dc0"]
+datacenters = "DC0"
+`,
+		},
+	}
+}
+
+func getSecret() *v1.Secret {
+	return &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: defaultNamespace,
+		},
+		Data: map[string][]byte{
+			"localhost.password": []byte("vsphere-user"),
+			"localhost.username": []byte("vsphere-password"),
+		},
+	}
+}

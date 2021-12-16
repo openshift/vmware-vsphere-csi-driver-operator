@@ -3,26 +3,20 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
-	"net/url"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"regexp"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/vsphere"
-
 	v1 "github.com/openshift/api/config/v1"
-	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/pbm"
 	"github.com/vmware/govmomi/pbm/types"
 	"github.com/vmware/govmomi/property"
-	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"
 	"github.com/vmware/govmomi/vim25/mo"
-	"github.com/vmware/govmomi/vim25/soap"
 	vim "github.com/vmware/govmomi/vim25/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -42,80 +36,33 @@ type vCenterInterface interface {
 	checkForExistingPolicy(ctx context.Context) (bool, error)
 	createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error
 	createStorageProfile(ctx context.Context) error
-	close(ctx context.Context) error
 }
 
-type vCenterAPI struct {
-	connection   *vSphereConnection
-	infra        *v1.Infrastructure
-	policyName   string
-	tagName      string
-	categoryName string
+type storagePolicyAPI struct {
+	vcenterApiConnection *vclib.VSphereConnection
+	tagManager           *tags.Manager
+	infra                *v1.Infrastructure
+	policyName           string
+	tagName              string
+	categoryName         string
 }
 
-var _ vCenterInterface = &vCenterAPI{}
+var _ vCenterInterface = &storagePolicyAPI{}
 
-func newVCenterAPI(ctx context.Context, cfg *vsphere.VSphereConfig, username, password string, infra *v1.Infrastructure) (vCenterInterface, error) {
-	serverAddress := cfg.Workspace.VCenterIP
-	serverURL, err := soap.ParseURL(serverAddress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %s", err)
+func newStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) (vCenterInterface, error) {
+	storagePolicyAPIClient := &storagePolicyAPI{
+		vcenterApiConnection: connection,
+		infra:                infra,
+		categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+		policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+		tagName:              infra.Status.InfrastructureName,
 	}
-	insecure := cfg.Global.InsecureFlag
-
-	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
-	defer cancel()
-
-	klog.V(4).Infof("Connecting to %s as %s, insecure %t", serverAddress, username, insecure)
-
-	// Set user to nil to prevent login during client creation.
-	// See https://github.com/vmware/govmomi/blob/master/client.go#L91
-	serverURL.User = nil
-	client, err := govmomi.NewClient(tctx, serverURL, insecure)
-	if err != nil {
-		return nil, err
-	}
-
-	// Set up user agent before login
-	operatorVersion := version.Get()
-	client.UserAgent = fmt.Sprintf("vmware-vsphere-csi-driver-operator/%s", operatorVersion)
-
-	userInfo := url.UserPassword(username, password)
-
-	err = client.Login(ctx, userInfo)
-	if err != nil {
-		msg := fmt.Sprintf("error logging into vcenter: %v", err)
-		klog.Error(msg)
-		return nil, fmt.Errorf(msg)
-	}
-
-	// We also need to authenticate with the restClient
-	restClient := rest.NewClient(client.Client)
-	err = restClient.Login(ctx, userInfo)
-	if err != nil {
-		msg := fmt.Sprintf("error logging into vcenter: %v", err)
-		klog.Error(msg)
-		return nil, fmt.Errorf(msg)
-	}
-
-	apiConn := &vSphereConnection{
-		client:     client,
-		config:     cfg,
-		restClient: restClient,
-	}
-	apiClient := &vCenterAPI{
-		connection:   apiConn,
-		infra:        infra,
-		categoryName: fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
-		policyName:   fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
-		tagName:      infra.Status.InfrastructureName,
-	}
-	return apiClient, nil
+	return storagePolicyAPIClient, nil
 }
 
-func (v *vCenterAPI) getDefaultDatastore(ctx context.Context) (*mo.Datastore, error) {
-	vmClient := v.connection.client
-	config := v.connection.config
+func (v *storagePolicyAPI) getDefaultDatastore(ctx context.Context) (*mo.Datastore, error) {
+	vmClient := v.vcenterApiConnection.Client
+	config := v.vcenterApiConnection.Config
 	finder := find.NewFinder(vmClient.Client, false)
 	dcName := config.Workspace.Datacenter
 	dsName := config.Workspace.DefaultDatastore
@@ -141,7 +88,7 @@ func (v *vCenterAPI) getDefaultDatastore(ctx context.Context) (*mo.Datastore, er
 	return &dsMo, nil
 }
 
-func (v *vCenterAPI) createStoragePolicy(ctx context.Context) (string, error) {
+func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, error) {
 	found, err := v.checkForExistingPolicy(ctx)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error finding existing policy: %v", err)
@@ -152,7 +99,7 @@ func (v *vCenterAPI) createStoragePolicy(ctx context.Context) (string, error) {
 		return v.policyName, nil
 	}
 
-	dsName := v.connection.config.Workspace.DefaultDatastore
+	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
 	ds, err := v.getDefaultDatastore(ctx)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error fetching default datastore %s: %v", dsName, err)
@@ -170,9 +117,9 @@ func (v *vCenterAPI) createStoragePolicy(ctx context.Context) (string, error) {
 	return v.policyName, nil
 }
 
-func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error {
+func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error {
 	// create tag manager for managing tags
-	tagManager := tags.NewManager(v.connection.restClient)
+	tagManager := tags.NewManager(v.vcenterApiConnection.RestClient)
 
 	category, err := tagManager.GetCategory(ctx, v.categoryName)
 	if err != nil && !notFoundError(err) {
@@ -237,7 +184,7 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 		klog.V(2).Infof("Updated tag %s", v.tagName)
 	}
 
-	dsName := v.connection.config.Workspace.DefaultDatastore
+	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
 	err = tagManager.AttachTag(ctx, tag.ID, ds)
 	if err != nil {
 		klog.Errorf("error attaching tag %s to datastore %s: %v", v.tagName, dsName, err)
@@ -247,8 +194,8 @@ func (v *vCenterAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) er
 
 }
 
-func (v *vCenterAPI) createStorageProfile(ctx context.Context) error {
-	pbmClient, err := pbm.NewClient(ctx, v.connection.client.Client)
+func (v *storagePolicyAPI) createStorageProfile(ctx context.Context) error {
+	pbmClient, err := pbm.NewClient(ctx, v.vcenterApiConnection.Client.Client)
 	if err != nil {
 		msg := fmt.Sprintf("error creating pbm client: %v", err)
 		klog.Error(msg)
@@ -292,18 +239,14 @@ func (v *vCenterAPI) createStorageProfile(ctx context.Context) error {
 	return nil
 }
 
-func (v *vCenterAPI) close(ctx context.Context) error {
-	return v.connection.client.Logout(ctx)
-}
-
-func (v *vCenterAPI) checkForExistingPolicy(ctx context.Context) (bool, error) {
+func (v *storagePolicyAPI) checkForExistingPolicy(ctx context.Context) (bool, error) {
 	rtype := types.PbmProfileResourceType{
 		ResourceType: string(types.PbmProfileResourceTypeEnumSTORAGE),
 	}
 
 	category := types.PbmProfileCategoryEnumREQUIREMENT
 
-	pbmClient, err := pbm.NewClient(ctx, v.connection.client.Client)
+	pbmClient, err := pbm.NewClient(ctx, v.vcenterApiConnection.Client.Client)
 	if err != nil {
 		msg := fmt.Sprintf("error creating pbm client: %v", err)
 		klog.Error(msg)
@@ -331,25 +274,6 @@ func (v *vCenterAPI) checkForExistingPolicy(ctx context.Context) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-func (c *StorageClassController) getCredentials(cfg *vsphere.VSphereConfig) (string, string, error) {
-	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(secretName)
-	if err != nil {
-		return "", "", err
-	}
-	userKey := cfg.Workspace.VCenterIP + "." + "username"
-	username, ok := secret.Data[userKey]
-	if !ok {
-		return "", "", fmt.Errorf("error parsing secret %q: key %q not found", secretName, userKey)
-	}
-	passwordKey := cfg.Workspace.VCenterIP + "." + "password"
-	password, ok := secret.Data[passwordKey]
-	if !ok {
-		return "", "", fmt.Errorf("error parsing secret %q: key %q not found", secretName, passwordKey)
-	}
-
-	return string(username), string(password), nil
 }
 
 func notFoundError(err error) bool {
