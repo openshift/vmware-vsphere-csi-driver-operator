@@ -119,6 +119,7 @@ func TestSync(t *testing.T) {
 		vcenterVersion         string
 		expectedConditions     []opv1.OperatorCondition
 		expectError            error
+		operandStarted         bool
 	}{
 		{
 			name:                   "when all configuration is right",
@@ -136,6 +137,7 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
+			operandStarted: true,
 		},
 		{
 			name:                   "when vcenter version is older, block upgrades",
@@ -152,6 +154,7 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
+			operandStarted: false,
 		},
 		{
 			name:                   "when vcenter version is older but csi driver exists, degrade cluster",
@@ -159,6 +162,43 @@ func TestSync(t *testing.T) {
 			initialObjects:         []runtime.Object{getConfigMap(), getSecret(), getCSIDriver(true)},
 			configObjects:          runtime.Object(getInfraObject()),
 			expectError:            fmt.Errorf("found older vcenter version, expected is 6.7.3"),
+			operandStarted:         true,
+		},
+		{
+			name:                   "when all configuration is right, but an existing upstream CSI driver exists",
+			clusterCSIDriverObject: makeFakeDriverInstance(),
+			vcenterVersion:         "7.0.2",
+			initialObjects:         []runtime.Object{getConfigMap(), getSecret(), getCSIDriver(false)},
+			configObjects:          runtime.Object(getInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted: false,
+		},
+		{
+			name:                   "when all configuration is right, but an existing upstream CSI node object exists",
+			clusterCSIDriverObject: makeFakeDriverInstance(),
+			vcenterVersion:         "7.0.2",
+			initialObjects:         []runtime.Object{getConfigMap(), getSecret(), getCSINode()},
+			configObjects:          runtime.Object(getInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted: false,
 		},
 	}
 
@@ -201,6 +241,10 @@ func TestSync(t *testing.T) {
 
 			if test.expectError != nil && err == nil {
 				t.Fatalf("expected cluster to be degraded with: %v, got none", test.expectError)
+			}
+
+			if test.operandStarted != ctrl.operandControllerStarted {
+				t.Fatalf("expected operandStarted to be %v, got %v", test.operandStarted, ctrl.operandControllerStarted)
 			}
 
 			_, status, _, err := ctrl.operatorClient.GetOperatorState()
@@ -262,6 +306,21 @@ func getCSIDriver(withOCPAnnotation bool) *storagev1.CSIDriver {
 		}
 	}
 	return driver
+}
+
+func getCSINode() *storagev1.CSINode {
+	return &storagev1.CSINode{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-abcd",
+		},
+		Spec: storagev1.CSINodeSpec{
+			Drivers: []storagev1.CSINodeDriver{
+				{
+					Name: utils.VSphereDriverName,
+				},
+			},
+		},
+	}
 }
 
 func getInfraObject() *ocpv1.Infrastructure {
