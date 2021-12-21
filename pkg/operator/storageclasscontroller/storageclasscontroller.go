@@ -3,10 +3,11 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
-	"strings"
 
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -71,11 +72,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) (string, checks.ClusterCheckResult) {
 	infra := apiDeps.GetInfrastructure()
 
-	apiClient, err := newStoragePolicyAPI(ctx, connection, infra)
-	if err != nil {
-		reason := fmt.Errorf("error connecting to vcenter API: %v", err)
-		return "", checks.MakeGenericVCenterAPIError(reason)
-	}
+	apiClient := newStoragePolicyAPI(ctx, connection, infra)
 
 	// we expect all API calls to finish within apiTimeout or else operator might be stuck
 	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
@@ -98,10 +95,6 @@ func (c *StorageClassController) updateConditions(ctx context.Context, lastCheck
 		Type:   c.name + operatorapi.OperatorStatusTypeDegraded,
 		Status: operatorapi.ConditionFalse,
 	}
-	allowUpgradeCond := operatorapi.OperatorCondition{
-		Type:   c.name + operatorapi.OperatorStatusTypeUpgradeable,
-		Status: operatorapi.ConditionTrue,
-	}
 
 	switch clusterStatus {
 	case checks.ClusterCheckDegrade:
@@ -116,13 +109,6 @@ func (c *StorageClassController) updateConditions(ctx context.Context, lastCheck
 		availableCnd.Status = operatorapi.ConditionFalse
 		availableCnd.Message = degradedMessage
 		availableCnd.Reason = string(lastCheckResult.Reason)
-	case checks.ClusterCheckBlockUpgrade:
-		blockUpgradeMessage := fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
-		klog.Warningf(blockUpgradeMessage)
-		c.recorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
-		allowUpgradeCond.Status = operatorapi.ConditionFalse
-		allowUpgradeCond.Message = lastCheckResult.Reason
-		allowUpgradeCond.Reason = string(lastCheckResult.CheckStatus)
 	default:
 		klog.V(4).Infof("StorageClass install for vsphere CSI driver succeeded")
 	}
@@ -130,7 +116,6 @@ func (c *StorageClassController) updateConditions(ctx context.Context, lastCheck
 	var updateFuncs []v1helpers.UpdateStatusFunc
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(availableCnd))
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(degradedCondition))
-	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(allowUpgradeCond))
 	if _, _, updateErr := v1helpers.UpdateStatus(ctx, c.operatorClient, updateFuncs...); updateErr != nil {
 		return updateErr
 	}
