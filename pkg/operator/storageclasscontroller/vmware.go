@@ -3,9 +3,10 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"regexp"
 	"time"
+
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 
 	v1 "github.com/openshift/api/config/v1"
 	"github.com/vmware/govmomi/find"
@@ -49,7 +50,7 @@ type storagePolicyAPI struct {
 
 var _ vCenterInterface = &storagePolicyAPI{}
 
-func newStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) (vCenterInterface, error) {
+func newStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
 	storagePolicyAPIClient := &storagePolicyAPI{
 		vcenterApiConnection: connection,
 		infra:                infra,
@@ -57,7 +58,7 @@ func newStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnectio
 		policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
 		tagName:              infra.Status.InfrastructureName,
 	}
-	return storagePolicyAPIClient, nil
+	return storagePolicyAPIClient
 }
 
 func (v *storagePolicyAPI) getDefaultDatastore(ctx context.Context) (*mo.Datastore, error) {
