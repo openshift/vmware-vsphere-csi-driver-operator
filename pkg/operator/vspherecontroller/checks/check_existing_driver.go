@@ -25,7 +25,7 @@ func (c *CheckExistingDriver) Check(ctx context.Context, checkOpts CheckArgs) []
 	}
 	annotations := csiDriver.GetAnnotations()
 	if _, ok := annotations[utils.OpenshiftCSIDriverAnnotationKey]; !ok {
-		reason := fmt.Errorf("found existing %s driver", utils.VSphereDriverName)
+		reason := fmt.Errorf("found existing unsupported %s driver", utils.VSphereDriverName)
 		return []ClusterCheckResult{makeFoundExistingDriverResult(reason)}
 	}
 	return []ClusterCheckResult{}
@@ -48,7 +48,7 @@ func (c *CheckExistingDriver) checkForCSINode(ctx context.Context, checkOpts Che
 		for j := range drivers {
 			driver := drivers[j]
 			if driver.Name == utils.VSphereDriverName {
-				reason := fmt.Errorf("found existing %s driver on node %s", driver.Name, csiNode.Name)
+				reason := fmt.Errorf("found existing unsupported %s driver on node %s", driver.Name, csiNode.Name)
 				return []ClusterCheckResult{makeFoundExistingDriverResult(reason)}
 			}
 		}
