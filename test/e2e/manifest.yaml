@@ -11,7 +11,7 @@ DriverInfo:
   SupportedMountOption:
     dirsync:
   SupportedSizeRange:
-    Min: 1Gi
+    Min: 100Mi
     Max: 64Ti
   Capabilities:
     persistence: true
