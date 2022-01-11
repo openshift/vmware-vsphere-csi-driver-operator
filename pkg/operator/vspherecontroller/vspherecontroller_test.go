@@ -211,6 +211,10 @@ func TestSync(t *testing.T) {
 			defer close(stopCh)
 
 			go startFakeInformer(commonApiClient, stopCh)
+			if err := addInitialObjects(test.initialObjects, commonApiClient); err != nil {
+				t.Fatalf("error adding initial objects: %v", err)
+			}
+
 			waitForSync(commonApiClient, stopCh)
 
 			ctrl := newVsphereController(commonApiClient)
@@ -264,6 +268,28 @@ func TestSync(t *testing.T) {
 			}
 		})
 	}
+}
+
+func addInitialObjects(objects []runtime.Object, clients *utils.APIClient) error {
+	for _, obj := range objects {
+		switch obj.(type) {
+		case *v1.ConfigMap:
+			configMapInformer := clients.KubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps().Informer()
+			configMapInformer.GetStore().Add(obj)
+		case *v1.Secret:
+			secretInformer := clients.SecretInformer.Informer()
+			secretInformer.GetStore().Add(obj)
+		case *storagev1.CSIDriver:
+			csiDriverInformer := clients.KubeInformers.InformersFor("").Storage().V1().CSIDrivers().Informer()
+			csiDriverInformer.GetStore().Add(obj)
+		case *storagev1.CSINode:
+			csiNodeInformer := clients.KubeInformers.InformersFor("").Storage().V1().CSINodes().Informer()
+			csiNodeInformer.GetStore().Add(obj)
+		default:
+			return fmt.Errorf("Unknown initalObject type: %+v", obj)
+		}
+	}
+	return nil
 }
 
 func getMatchingCondition(status []opv1.OperatorCondition, conditionType string) *opv1.OperatorCondition {

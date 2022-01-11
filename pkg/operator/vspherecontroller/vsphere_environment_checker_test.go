@@ -62,6 +62,9 @@ func TestEnvironmentCheck(t *testing.T) {
 			defer close(stopCh)
 
 			go startFakeInformer(commonApiClient, stopCh)
+			if err := addInitialObjects(test.initialObjects, commonApiClient); err != nil {
+				t.Fatalf("error adding initial objects: %v", err)
+			}
 			waitForSync(commonApiClient, stopCh)
 
 			checker := newVSphereEnvironmentChecker()
