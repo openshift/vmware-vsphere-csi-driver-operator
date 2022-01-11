@@ -91,20 +91,21 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	rc := events.NewInMemoryRecorder(testControllerName)
 
 	c := &VSphereController{
-		name:            testControllerName,
-		targetNamespace: defaultNamespace,
-		kubeClient:      apiClients.KubeClient,
-		operatorClient:  apiClients.OperatorClient,
-		configMapLister: configMapInformer.Lister(),
-		secretLister:    apiClients.SecretInformer.Lister(),
-		csiNodeLister:   csiNodeLister,
-		scLister:        scInformer.Lister(),
-		csiDriverLister: csiDriverLister,
-		nodeLister:      nodeLister,
-		apiClients:      *apiClients,
-		eventRecorder:   rc,
-		vSphereChecker:  newVSphereEnvironmentChecker(),
-		infraLister:     infraInformer.Lister(),
+		name:                testControllerName,
+		targetNamespace:     defaultNamespace,
+		kubeClient:          apiClients.KubeClient,
+		operatorClient:      apiClients.OperatorClient,
+		configMapLister:     configMapInformer.Lister(),
+		secretLister:        apiClients.SecretInformer.Lister(),
+		csiNodeLister:       csiNodeLister,
+		scLister:            scInformer.Lister(),
+		csiDriverLister:     csiDriverLister,
+		nodeLister:          nodeLister,
+		apiClients:          *apiClients,
+		eventRecorder:       rc,
+		meteredEventEmitter: newWarningEventEmitter(rc),
+		vSphereChecker:      newVSphereEnvironmentChecker(),
+		infraLister:         infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
 	return c

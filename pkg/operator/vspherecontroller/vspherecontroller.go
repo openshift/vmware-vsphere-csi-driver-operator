@@ -51,6 +51,7 @@ type VSphereController struct {
 	operandControllerStarted bool
 	vSphereConnection        *vclib.VSphereConnection
 	vSphereChecker           vSphereEnvironmentCheckInterface
+	meteredEventEmitter      *warningEventEmitter
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() (*vclib.VSphereConnection, checks.ClusterCheckResult)
 }
@@ -106,20 +107,21 @@ func NewVSphereController(
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 
 	c := &VSphereController{
-		name:            name,
-		targetNamespace: targetNamespace,
-		kubeClient:      apiClients.KubeClient,
-		operatorClient:  apiClients.OperatorClient,
-		configMapLister: configMapInformer.Lister(),
-		secretLister:    apiClients.SecretInformer.Lister(),
-		csiNodeLister:   csiNodeLister,
-		scLister:        scInformer.Lister(),
-		csiDriverLister: csiDriverLister,
-		nodeLister:      nodeLister,
-		apiClients:      apiClients,
-		eventRecorder:   rc,
-		vSphereChecker:  newVSphereEnvironmentChecker(),
-		infraLister:     infraInformer.Lister(),
+		name:                name,
+		targetNamespace:     targetNamespace,
+		kubeClient:          apiClients.KubeClient,
+		operatorClient:      apiClients.OperatorClient,
+		configMapLister:     configMapInformer.Lister(),
+		secretLister:        apiClients.SecretInformer.Lister(),
+		csiNodeLister:       csiNodeLister,
+		scLister:            scInformer.Lister(),
+		csiDriverLister:     csiDriverLister,
+		nodeLister:          nodeLister,
+		apiClients:          apiClients,
+		eventRecorder:       rc,
+		vSphereChecker:      newVSphereEnvironmentChecker(),
+		meteredEventEmitter: newWarningEventEmitter(rc),
+		infraLister:         infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -390,7 +392,7 @@ func (c *VSphereController) updateConditions(ctx context.Context, name string, l
 	if lastCheckResult.BlockUpgrade {
 		blockUpgradeMessage := fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
 		klog.Warningf(blockUpgradeMessage)
-		c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+		c.meteredEventEmitter.Warn(lastCheckResult)
 		allowUpgradeCond.Status = operatorapi.ConditionFalse
 		allowUpgradeCond.Message = lastCheckResult.Reason
 		allowUpgradeCond.Reason = string(lastCheckResult.CheckStatus)
@@ -401,6 +403,10 @@ func (c *VSphereController) updateConditions(ctx context.Context, name string, l
 		return updateErr
 	}
 	return nil
+}
+
+func (c *VSphereController) emitBlockUpgradeWarning(lastCheckResult checks.ClusterCheckResult) {
+
 }
 
 func (c *VSphereController) createStorageClassController() *storageclasscontroller.StorageClassController {
