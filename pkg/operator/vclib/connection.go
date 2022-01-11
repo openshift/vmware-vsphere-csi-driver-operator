@@ -116,5 +116,11 @@ func (connection *VSphereConnection) Logout(ctx context.Context) error {
 	if c == nil {
 		return fmt.Errorf("no connection found to vcenter")
 	}
+	if connection.RestClient != nil {
+		restLogoutError := connection.RestClient.Logout(ctx)
+		if restLogoutError != nil {
+			klog.Errorf("error logging out from rest session: %v", restLogoutError)
+		}
+	}
 	return connection.Client.Logout(ctx)
 }
