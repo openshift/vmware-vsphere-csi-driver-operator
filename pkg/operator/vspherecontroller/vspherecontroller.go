@@ -51,7 +51,6 @@ type VSphereController struct {
 	operandControllerStarted bool
 	vSphereConnection        *vclib.VSphereConnection
 	vSphereChecker           vSphereEnvironmentCheckInterface
-	meteredEventEmitter      *warningEventEmitter
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() (*vclib.VSphereConnection, checks.ClusterCheckResult)
 }
@@ -107,21 +106,20 @@ func NewVSphereController(
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 
 	c := &VSphereController{
-		name:                name,
-		targetNamespace:     targetNamespace,
-		kubeClient:          apiClients.KubeClient,
-		operatorClient:      apiClients.OperatorClient,
-		configMapLister:     configMapInformer.Lister(),
-		secretLister:        apiClients.SecretInformer.Lister(),
-		csiNodeLister:       csiNodeLister,
-		scLister:            scInformer.Lister(),
-		csiDriverLister:     csiDriverLister,
-		nodeLister:          nodeLister,
-		apiClients:          apiClients,
-		eventRecorder:       rc,
-		vSphereChecker:      newVSphereEnvironmentChecker(),
-		meteredEventEmitter: newWarningEventEmitter(rc),
-		infraLister:         infraInformer.Lister(),
+		name:            name,
+		targetNamespace: targetNamespace,
+		kubeClient:      apiClients.KubeClient,
+		operatorClient:  apiClients.OperatorClient,
+		configMapLister: configMapInformer.Lister(),
+		secretLister:    apiClients.SecretInformer.Lister(),
+		csiNodeLister:   csiNodeLister,
+		scLister:        scInformer.Lister(),
+		csiDriverLister: csiDriverLister,
+		nodeLister:      nodeLister,
+		apiClients:      apiClients,
+		eventRecorder:   rc,
+		vSphereChecker:  newVSphereEnvironmentChecker(),
+		infraLister:     infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -142,7 +140,7 @@ func NewVSphereController(
 func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncContext) error {
 	klog.V(4).Infof("%s: sync started", c.name)
 	defer klog.V(4).Infof("%s: sync complete", c.name)
-	opSpec, _, _, err := c.operatorClient.GetOperatorState()
+	opSpec, opStatus, _, err := c.operatorClient.GetOperatorState()
 	if err != nil {
 		return err
 	}
@@ -198,7 +196,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 
 	// if there was an OCP error we should degrade the cluster or if we previously created CSIDriver
 	// but we can't connect to vcenter now, we should also degrade the cluster
-	err, degradedOrBlockedFromUpgrades := c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra)
+	err, degradedOrBlockedFromUpgrades := c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra, opStatus)
 	if err != nil {
 		return err
 	}
@@ -231,7 +229,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		queue.Add(queueKey)
 	})
 
-	err, degradedOrBlockedFromUpgrades = c.blockUpgradeOrDegradeCluster(ctx, result, infra)
+	err, degradedOrBlockedFromUpgrades = c.blockUpgradeOrDegradeCluster(ctx, result, infra, opStatus)
 	if err != nil {
 		return err
 	}
@@ -247,7 +245,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		go c.runConditionalController(ctx)
 		c.operandControllerStarted = true
 	}
-	return c.updateConditions(ctx, c.name, checks.MakeClusterCheckResultPass())
+	return c.updateConditions(ctx, c.name, checks.MakeClusterCheckResultPass(), opStatus)
 }
 
 func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, error) {
@@ -267,7 +265,12 @@ func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, err
 	return false, nil
 }
 
-func (c *VSphereController) blockUpgradeOrDegradeCluster(ctx context.Context, result checks.ClusterCheckResult, infra *ocpv1.Infrastructure) (error, bool) {
+func (c *VSphereController) blockUpgradeOrDegradeCluster(
+	ctx context.Context,
+	result checks.ClusterCheckResult,
+	infra *ocpv1.Infrastructure,
+	status *operatorapi.OperatorStatus) (error, bool) {
+
 	var clusterCondition string
 	clusterStatus, result := checks.CheckClusterStatus(result, c.getCheckAPIDependency(infra))
 	if clusterStatus == checks.ClusterCheckDegrade {
@@ -278,7 +281,7 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(ctx context.Context, re
 	if clusterStatus == checks.ClusterCheckBlockUpgrade {
 		clusterCondition = "upgrade_blocked"
 		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		updateError := c.updateConditions(ctx, c.name, result)
+		updateError := c.updateConditions(ctx, c.name, result, status)
 		return updateError, true
 	}
 	return nil, false
@@ -376,7 +379,11 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 	return nil
 }
 
-func (c *VSphereController) updateConditions(ctx context.Context, name string, lastCheckResult checks.ClusterCheckResult) error {
+func (c *VSphereController) updateConditions(
+	ctx context.Context,
+	name string,
+	lastCheckResult checks.ClusterCheckResult,
+	status *operatorapi.OperatorStatus) error {
 	availableCnd := operatorapi.OperatorCondition{
 		Type:   name + operatorapi.OperatorStatusTypeAvailable,
 		Status: operatorapi.ConditionTrue,
@@ -391,11 +398,12 @@ func (c *VSphereController) updateConditions(ctx context.Context, name string, l
 
 	if lastCheckResult.BlockUpgrade {
 		blockUpgradeMessage := fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+		conditionChanged := false
+		allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status)
+		if conditionChanged {
+			c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+		}
 		klog.Warningf(blockUpgradeMessage)
-		c.meteredEventEmitter.Warn(lastCheckResult)
-		allowUpgradeCond.Status = operatorapi.ConditionFalse
-		allowUpgradeCond.Message = lastCheckResult.Reason
-		allowUpgradeCond.Reason = string(lastCheckResult.CheckStatus)
 	}
 
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(allowUpgradeCond))
@@ -405,8 +413,32 @@ func (c *VSphereController) updateConditions(ctx context.Context, name string, l
 	return nil
 }
 
-func (c *VSphereController) emitBlockUpgradeWarning(lastCheckResult checks.ClusterCheckResult) {
+func (c *VSphereController) addUpgradeableBlockCondition(
+	lastCheckResult checks.ClusterCheckResult,
+	name string,
+	status *operatorapi.OperatorStatus) (operatorapi.OperatorCondition, bool) {
+	conditionType := name + operatorapi.OperatorStatusTypeUpgradeable
 
+	blockUpgradeCondition := operatorapi.OperatorCondition{
+		Type:    conditionType,
+		Status:  operatorapi.ConditionFalse,
+		Message: lastCheckResult.Reason,
+		Reason:  string(lastCheckResult.CheckStatus),
+	}
+
+	oldConditions := status.Conditions
+	for _, condition := range oldConditions {
+		if condition.Type == conditionType {
+			if condition.Status != blockUpgradeCondition.Status ||
+				condition.Message != blockUpgradeCondition.Message ||
+				condition.Reason != blockUpgradeCondition.Reason {
+				return blockUpgradeCondition, true
+			} else {
+				return blockUpgradeCondition, false
+			}
+		}
+	}
+	return blockUpgradeCondition, true
 }
 
 func (c *VSphereController) createStorageClassController() *storageclasscontroller.StorageClassController {

@@ -18,7 +18,7 @@ func TestEnvironmentCheck(t *testing.T) {
 		initialObjects         []runtime.Object
 		configObjects          runtime.Object
 		clusterCSIDriverObject *fakeDriverInstance
-		delayFunc              func() time.Duration
+		expectedBackOffSteps   int
 		runCount               int
 	}{
 		{
@@ -29,10 +29,9 @@ func TestEnvironmentCheck(t *testing.T) {
 			vcenterVersion:         "7.0.2",
 			result:                 checks.CheckStatusPass,
 			checksRan:              true,
-			delayFunc: func() time.Duration {
-				return defaultBackoff.Cap
-			},
-			runCount: 1,
+			// should reset the steps back to maximum in defaultBackoff
+			expectedBackOffSteps: defaultBackoff.Steps,
+			runCount:             1,
 		},
 		{
 			name:                   "when tests fail, delay should backoff exponentially",
@@ -42,15 +41,8 @@ func TestEnvironmentCheck(t *testing.T) {
 			vcenterVersion:         "6.5.0",
 			result:                 checks.CheckStatusDeprecatedVCenter,
 			checksRan:              true,
-			delayFunc: func() time.Duration {
-				backoffCopy := defaultBackoff
-				var result time.Duration
-				for i := 0; i < 2; i++ {
-					result = backoffCopy.Step()
-				}
-				return result
-			},
-			runCount: 2,
+			expectedBackOffSteps:   defaultBackoff.Steps - 2,
+			runCount:               2,
 		},
 	}
 
@@ -93,11 +85,10 @@ func TestEnvironmentCheck(t *testing.T) {
 				NodeLister:      nodeLister,
 			}
 			checkOpts := checks.NewCheckArgs(conn, checkerApiClient)
-			var delay time.Duration
 			var result checks.ClusterCheckResult
 			var checkRan bool
 			for i := 0; i < test.runCount; i++ {
-				delay, result, checkRan = checker.Check(context.TODO(), checkOpts)
+				_, result, checkRan = checker.Check(context.TODO(), checkOpts)
 			}
 			if result.CheckStatus != test.result {
 				t.Fatalf("expected test status to be %s, got %s", test.result, result.CheckStatus)
@@ -105,9 +96,8 @@ func TestEnvironmentCheck(t *testing.T) {
 			if checkRan != test.checksRan {
 				t.Fatalf("expected checkRan to be %v got %v", test.checksRan, checkRan)
 			}
-			expectedDelay := test.delayFunc()
-			if !compareTimeDiffWithinTimeFactor(expectedDelay, delay) {
-				t.Fatalf("expected delay to %v, got %v", expectedDelay, delay)
+			if test.expectedBackOffSteps != checker.backoff.Steps {
+				t.Fatalf("expected delay to %v, got %v", test.expectedBackOffSteps, checker.backoff.Steps)
 			}
 		})
 	}
