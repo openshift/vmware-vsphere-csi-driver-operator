@@ -210,6 +210,10 @@ func TestSync(t *testing.T) {
 			defer close(stopCh)
 
 			go startFakeInformer(commonApiClient, stopCh)
+			if err := addInitialObjects(test.initialObjects, commonApiClient); err != nil {
+				t.Fatalf("error adding initial objects: %v", err)
+			}
+
 			waitForSync(commonApiClient, stopCh)
 
 			ctrl := newVsphereController(commonApiClient)
@@ -263,6 +267,121 @@ func TestSync(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAddUpgradeableBlockCondition(t *testing.T) {
+	controllerName := "VSphereController"
+	conditionType := controllerName + opv1.OperatorStatusTypeUpgradeable
+
+	tests := []struct {
+		name              string
+		clusterCSIDriver  *fakeDriverInstance
+		clusterResult     checks.ClusterCheckResult
+		expectedCondition opv1.OperatorCondition
+		conditionModified bool
+	}{
+		{
+			name:             "when no existing condition is found, should add condition",
+			clusterCSIDriver: makeFakeDriverInstance(),
+			clusterResult:    getTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
+			expectedCondition: opv1.OperatorCondition{
+				Type:   conditionType,
+				Status: opv1.ConditionFalse,
+				Reason: string(checks.CheckStatusVSphereConnectionFailed),
+			},
+			conditionModified: true,
+		},
+		{
+			name: "when an existing condition is found, should not modify condition",
+			clusterCSIDriver: makeFakeDriverInstance(func(instance *fakeDriverInstance) *fakeDriverInstance {
+				instance.Status.Conditions = []opv1.OperatorCondition{
+					{
+						Type:   conditionType,
+						Status: opv1.ConditionFalse,
+						Reason: string(checks.CheckStatusVSphereConnectionFailed),
+					},
+				}
+				return instance
+			}),
+			clusterResult: getTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
+			expectedCondition: opv1.OperatorCondition{
+				Type:   conditionType,
+				Status: opv1.ConditionFalse,
+				Reason: string(checks.CheckStatusVSphereConnectionFailed),
+			},
+			conditionModified: false,
+		},
+		{
+			name: "when an existing condition is found not has different reason, should modify condition",
+			clusterCSIDriver: makeFakeDriverInstance(func(instance *fakeDriverInstance) *fakeDriverInstance {
+				instance.Status.Conditions = []opv1.OperatorCondition{
+					{
+						Type:   conditionType,
+						Status: opv1.ConditionFalse,
+						Reason: string(checks.CheckStatusDeprecatedVCenter),
+					},
+				}
+				return instance
+			}),
+			clusterResult: getTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
+			expectedCondition: opv1.OperatorCondition{
+				Type:   conditionType,
+				Status: opv1.ConditionFalse,
+				Reason: string(checks.CheckStatusVSphereConnectionFailed),
+			},
+			conditionModified: true,
+		},
+	}
+
+	for i := range tests {
+		test := tests[i]
+		t.Run(test.name, func(t *testing.T) {
+			commonApiClient := newFakeClients([]runtime.Object{}, test.clusterCSIDriver, getInfraObject())
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			go startFakeInformer(commonApiClient, stopCh)
+			if err := addInitialObjects([]runtime.Object{}, commonApiClient); err != nil {
+				t.Fatalf("error adding initial objects: %v", err)
+			}
+
+			waitForSync(commonApiClient, stopCh)
+
+			ctrl := newVsphereController(commonApiClient)
+			condition, modified := ctrl.addUpgradeableBlockCondition(test.clusterResult, controllerName, &test.clusterCSIDriver.Status)
+			if modified != test.conditionModified {
+				t.Fatalf("expected modified condition to be %v, got %v", test.conditionModified, modified)
+			}
+			if condition.Type != test.expectedCondition.Type ||
+				condition.Status != test.expectedCondition.Status ||
+				condition.Reason != test.expectedCondition.Reason {
+				t.Fatalf("expected condition to be %+v, got %+v", test.expectedCondition, condition)
+			}
+		})
+
+	}
+}
+
+func addInitialObjects(objects []runtime.Object, clients *utils.APIClient) error {
+	for _, obj := range objects {
+		switch obj.(type) {
+		case *v1.ConfigMap:
+			configMapInformer := clients.KubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps().Informer()
+			configMapInformer.GetStore().Add(obj)
+		case *v1.Secret:
+			secretInformer := clients.SecretInformer.Informer()
+			secretInformer.GetStore().Add(obj)
+		case *storagev1.CSIDriver:
+			csiDriverInformer := clients.KubeInformers.InformersFor("").Storage().V1().CSIDrivers().Informer()
+			csiDriverInformer.GetStore().Add(obj)
+		case *storagev1.CSINode:
+			csiNodeInformer := clients.KubeInformers.InformersFor("").Storage().V1().CSINodes().Informer()
+			csiNodeInformer.GetStore().Add(obj)
+		default:
+			return fmt.Errorf("Unknown initalObject type: %+v", obj)
+		}
+	}
+	return nil
 }
 
 func getMatchingCondition(status []opv1.OperatorCondition, conditionType string) *opv1.OperatorCondition {
@@ -382,5 +501,12 @@ func getSecret() *v1.Secret {
 			"localhost.password": []byte("vsphere-user"),
 			"localhost.username": []byte("vsphere-password"),
 		},
+	}
+}
+
+func getTestClusterResult(statusType checks.CheckStatusType) checks.ClusterCheckResult {
+	return checks.ClusterCheckResult{
+		CheckError:  fmt.Errorf("some error"),
+		CheckStatus: statusType,
 	}
 }
