@@ -3,10 +3,11 @@ package vspherecontroller
 import (
 	"context"
 	"fmt"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"strings"
 	"sync"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"gopkg.in/gcfg.v1"
@@ -273,12 +274,17 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 
 	var clusterCondition string
 	clusterStatus, result := checks.CheckClusterStatus(result, c.getCheckAPIDependency(infra))
-	if clusterStatus == checks.ClusterCheckDegrade {
+	switch clusterStatus {
+	case checks.ClusterCheckDegrade:
 		clusterCondition = "degraded"
 		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		return result.CheckError, true
-	}
-	if clusterStatus == checks.ClusterCheckBlockUpgrade {
+	case checks.ClusterCheckUpgradeStateUnknown:
+		clusterCondition = "upgrade_unknown"
+		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
+		updateError := c.updateConditions(ctx, c.name, result, status)
+		return updateError, true
+	case checks.ClusterCheckBlockUpgrade:
 		clusterCondition = "upgrade_blocked"
 		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status)
@@ -397,13 +403,23 @@ func (c *VSphereController) updateConditions(
 	}
 
 	if lastCheckResult.BlockUpgrade {
-		blockUpgradeMessage := fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
-		conditionChanged := false
-		allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status)
-		if conditionChanged {
-			c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+		if lastCheckResult.CheckStatus == checks.CheckStatusVSphereConnectionFailed {
+			blockUpgradeMessage := fmt.Sprintf("Marking cluster upgrade status unknown because %s", lastCheckResult.Reason)
+			klog.Warningf(blockUpgradeMessage)
+			conditionChanged := false
+			allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionUnknown)
+			if conditionChanged {
+				c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster upgrade status unknown because %s", lastCheckResult.Reason)
+			}
+		} else {
+			blockUpgradeMessage := fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+			klog.Warningf(blockUpgradeMessage)
+			conditionChanged := false
+			allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionFalse)
+			if conditionChanged {
+				c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+			}
 		}
-		klog.Warningf(blockUpgradeMessage)
 	}
 
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(allowUpgradeCond))
@@ -416,12 +432,13 @@ func (c *VSphereController) updateConditions(
 func (c *VSphereController) addUpgradeableBlockCondition(
 	lastCheckResult checks.ClusterCheckResult,
 	name string,
-	status *operatorapi.OperatorStatus) (operatorapi.OperatorCondition, bool) {
+	status *operatorapi.OperatorStatus,
+	upgradeStatus operatorapi.ConditionStatus) (operatorapi.OperatorCondition, bool) {
 	conditionType := name + operatorapi.OperatorStatusTypeUpgradeable
 
 	blockUpgradeCondition := operatorapi.OperatorCondition{
 		Type:    conditionType,
-		Status:  operatorapi.ConditionFalse,
+		Status:  upgradeStatus,
 		Message: lastCheckResult.Reason,
 		Reason:  string(lastCheckResult.CheckStatus),
 	}
