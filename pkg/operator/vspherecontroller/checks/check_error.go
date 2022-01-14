@@ -24,9 +24,10 @@ const (
 type ClusterCheckStatus string
 
 const (
-	ClusterCheckAllGood      ClusterCheckStatus = "pass"
-	ClusterCheckBlockUpgrade ClusterCheckStatus = "upgrades_blocked"
-	ClusterCheckDegrade      ClusterCheckStatus = "degraded"
+	ClusterCheckAllGood             ClusterCheckStatus = "pass"
+	ClusterCheckBlockUpgrade        ClusterCheckStatus = "upgrades_blocked"
+	ClusterCheckUpgradeStateUnknown ClusterCheckStatus = "upgrades_unknown"
+	ClusterCheckDegrade             ClusterCheckStatus = "degraded"
 )
 
 type ClusterCheckResult struct {
@@ -92,6 +93,12 @@ func MakeClusterDegradedError(checkStatus CheckStatusType, reason error) Cluster
 func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterface) (ClusterCheckStatus, ClusterCheckResult) {
 	if result.ClusterDegrade {
 		return ClusterCheckDegrade, result
+	}
+
+	// if we can't connect to vcenter, we can't really block upgrades but
+	// we should mark upgradeable to be unknown
+	if result.CheckStatus == CheckStatusVSphereConnectionFailed && result.BlockUpgrade {
+		return ClusterCheckUpgradeStateUnknown, result
 	}
 
 	// a failed check that previously only blocked upgrades can degrade the cluster, if we previously successfully installed

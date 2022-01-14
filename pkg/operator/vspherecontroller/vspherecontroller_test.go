@@ -3,6 +3,8 @@ package vspherecontroller
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	ocpv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfig "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -19,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	fakecore "k8s.io/client-go/kubernetes/fake"
-	"testing"
 )
 
 const (
@@ -119,6 +120,7 @@ func TestSync(t *testing.T) {
 		vcenterVersion         string
 		expectedConditions     []opv1.OperatorCondition
 		expectError            error
+		failVCenterConnection  bool
 		operandStarted         bool
 	}{
 		{
@@ -138,6 +140,25 @@ func TestSync(t *testing.T) {
 				},
 			},
 			operandStarted: true,
+		},
+		{
+			name:                   "when we can't connect to vcenter",
+			clusterCSIDriverObject: makeFakeDriverInstance(),
+			vcenterVersion:         "7.0.2",
+			initialObjects:         []runtime.Object{getConfigMap(), getSecret()},
+			configObjects:          runtime.Object(getInfraObject()),
+			failVCenterConnection:  true,
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionUnknown,
+				},
+			},
+			operandStarted: false,
 		},
 		{
 			name:                   "when vcenter version is older, block upgrades",
@@ -227,10 +248,21 @@ func TestSync(t *testing.T) {
 			}
 
 			ctrl.vsphereConnectionFunc = func() (*vclib.VSphereConnection, checks.ClusterCheckResult) {
-				if connError != nil {
-					return nil, checks.MakeGenericVCenterAPIError(connError)
+				if test.failVCenterConnection {
+					err := fmt.Errorf("connection to vcenter failed")
+					result := checks.ClusterCheckResult{
+						CheckError:   err,
+						BlockUpgrade: true,
+						CheckStatus:  checks.CheckStatusVSphereConnectionFailed,
+						Reason:       fmt.Sprintf("Failed to connect to vSphere: %v", err),
+					}
+					return nil, result
+				} else {
+					if connError != nil {
+						return nil, checks.MakeGenericVCenterAPIError(connError)
+					}
+					return conn, checks.MakeClusterCheckResultPass()
 				}
-				return conn, checks.MakeClusterCheckResultPass()
 			}
 			defer func() {
 				if cleanUpFunc != nil {
@@ -348,7 +380,7 @@ func TestAddUpgradeableBlockCondition(t *testing.T) {
 			waitForSync(commonApiClient, stopCh)
 
 			ctrl := newVsphereController(commonApiClient)
-			condition, modified := ctrl.addUpgradeableBlockCondition(test.clusterResult, controllerName, &test.clusterCSIDriver.Status)
+			condition, modified := ctrl.addUpgradeableBlockCondition(test.clusterResult, controllerName, &test.clusterCSIDriver.Status, opv1.ConditionFalse)
 			if modified != test.conditionModified {
 				t.Fatalf("expected modified condition to be %v, got %v", test.conditionModified, modified)
 			}
