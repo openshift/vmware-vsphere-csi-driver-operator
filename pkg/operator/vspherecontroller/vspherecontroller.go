@@ -246,7 +246,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		go c.runConditionalController(ctx)
 		c.operandControllerStarted = true
 	}
-	return c.updateConditions(ctx, c.name, checks.MakeClusterCheckResultPass(), opStatus)
+	return c.updateConditions(ctx, c.name, checks.MakeClusterCheckResultPass(), opStatus, operatorapi.ConditionTrue)
 }
 
 func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, error) {
@@ -282,12 +282,12 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	case checks.ClusterCheckUpgradeStateUnknown:
 		clusterCondition = "upgrade_unknown"
 		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		updateError := c.updateConditions(ctx, c.name, result, status)
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionUnknown)
 		return updateError, true
 	case checks.ClusterCheckBlockUpgrade:
 		clusterCondition = "upgrade_blocked"
 		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		updateError := c.updateConditions(ctx, c.name, result, status)
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
 		return updateError, true
 	}
 	return nil, false
@@ -389,7 +389,8 @@ func (c *VSphereController) updateConditions(
 	ctx context.Context,
 	name string,
 	lastCheckResult checks.ClusterCheckResult,
-	status *operatorapi.OperatorStatus) error {
+	status *operatorapi.OperatorStatus,
+	upgradeStatus operatorapi.ConditionStatus) error {
 	availableCnd := operatorapi.OperatorCondition{
 		Type:   name + operatorapi.OperatorStatusTypeAvailable,
 		Status: operatorapi.ConditionTrue,
@@ -402,24 +403,26 @@ func (c *VSphereController) updateConditions(
 		Status: operatorapi.ConditionTrue,
 	}
 
-	if lastCheckResult.BlockUpgrade {
-		if lastCheckResult.CheckStatus == checks.CheckStatusVSphereConnectionFailed {
-			blockUpgradeMessage := fmt.Sprintf("Marking cluster upgrade status unknown because %s", lastCheckResult.Reason)
-			klog.Warningf(blockUpgradeMessage)
-			conditionChanged := false
-			allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionUnknown)
-			if conditionChanged {
-				c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster upgrade status unknown because %s", lastCheckResult.Reason)
-			}
-		} else {
-			blockUpgradeMessage := fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
-			klog.Warningf(blockUpgradeMessage)
-			conditionChanged := false
-			allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionFalse)
-			if conditionChanged {
-				c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
-			}
-		}
+	conditionChanged := false
+	var blockUpgradeMessage string
+
+	switch upgradeStatus {
+	case operatorapi.ConditionFalse:
+		blockUpgradeMessage = fmt.Sprintf("Marking cluster un-upgradeable because %s", lastCheckResult.Reason)
+		allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionFalse)
+	case operatorapi.ConditionUnknown:
+		blockUpgradeMessage = fmt.Sprintf("Marking cluster upgrade status unknown because %s", lastCheckResult.Reason)
+		allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionUnknown)
+	default:
+		conditionChanged = false
+		blockUpgradeMessage = ""
+	}
+
+	if len(blockUpgradeMessage) > 0 {
+		klog.Warningf(blockUpgradeMessage)
+	}
+	if conditionChanged {
+		c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), blockUpgradeMessage)
 	}
 
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(allowUpgradeCond))
