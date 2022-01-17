@@ -39,6 +39,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	kubeClient := kubeclient.NewForConfigOrDie(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
 	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, cloudConfigNamespace, "")
 	secretInformer := kubeInformersForNamespaces.InformersFor(defaultNamespace).Core().V1().Secrets()
+	configMapInformer := kubeInformersForNamespaces.InformersFor(defaultNamespace).Core().V1().ConfigMaps()
 	nodeInformer := kubeInformersForNamespaces.InformersFor("").Core().V1().Nodes()
 
 	// Create config clientset and informer. This is used to get the cluster ID
@@ -62,14 +63,15 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	}
 
 	commonAPIClient := utils.APIClient{
-		OperatorClient:  operatorClient,
-		KubeClient:      kubeClient,
-		KubeInformers:   kubeInformersForNamespaces,
-		SecretInformer:  secretInformer,
-		NodeInformer:    nodeInformer,
-		ConfigClientSet: configClient,
-		ConfigInformers: configInformers,
-		DynamicClient:   dynamicClient,
+		OperatorClient:    operatorClient,
+		KubeClient:        kubeClient,
+		KubeInformers:     kubeInformersForNamespaces,
+		SecretInformer:    secretInformer,
+		ConfigMapInformer: configMapInformer,
+		NodeInformer:      nodeInformer,
+		ConfigClientSet:   configClient,
+		ConfigInformers:   configInformers,
+		DynamicClient:     dynamicClient,
 	}
 
 	vSphereController := vspherecontroller.NewVSphereController(

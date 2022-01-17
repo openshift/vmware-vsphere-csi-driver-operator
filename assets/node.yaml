@@ -5,6 +5,7 @@ metadata:
   namespace: openshift-cluster-csi-drivers
   annotations:
     config.openshift.io/inject-proxy: csi-driver
+    config.openshift.io/inject-proxy-cabundle: csi-driver
 spec:
   selector:
     matchLabels:
@@ -62,9 +63,6 @@ spec:
               mountPath: /csi
             - name: device-dir
               mountPath: /dev
-            - name: trusted-ca-bundle
-              mountPath: /etc/pki/ca-trust/extracted/pem
-              readOnly: true
           ports:
             - name: healthz
               # Due to hostNetwork, this port is open on all nodes!
@@ -145,9 +143,3 @@ spec:
           hostPath:
             path: /dev
             type: Directory
-        - name: trusted-ca-bundle
-          configMap:
-            name: vsphere-csi-driver-trusted-ca-bundle
-            items:
-              - key: ca-bundle.crt
-                path: tls-ca-bundle.pem

@@ -5,5 +5,5 @@ metadata:
     # This label ensures that the OpenShift Certificate Authority bundle
     # is added to the ConfigMap.
     config.openshift.io/inject-trusted-cabundle: "true"
-  name: vsphere-csi-driver-trusted-ca-bundle
+  name: vmware-vsphere-csi-driver-trusted-ca-bundle
   namespace: openshift-cluster-csi-drivers
