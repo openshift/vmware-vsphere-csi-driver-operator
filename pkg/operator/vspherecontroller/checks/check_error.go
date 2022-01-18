@@ -95,29 +95,34 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 		return ClusterCheckDegrade, result
 	}
 
-	// if we can't connect to vcenter, we can't really block upgrades but
-	// we should mark upgradeable to be unknown
-	if result.CheckStatus == CheckStatusVSphereConnectionFailed && result.BlockUpgrade {
-		return ClusterCheckUpgradeStateUnknown, result
-	}
-
 	// a failed check that previously only blocked upgrades can degrade the cluster, if we previously successfully installed
 	// OCP version of CSIDriver
 	if result.BlockUpgrade {
+		driverFound := false
 		csiDriver, err := apiDependencies.GetCSIDriver(utils.VSphereDriverName)
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return ClusterCheckBlockUpgrade, result
+			if !apierrors.IsNotFound(err) {
+				reason := fmt.Errorf("vsphere driver install failed with %s, unable to verify CSIDriver status: %v", result.Reason, err)
+				klog.Errorf(reason.Error())
+				return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
 			}
-			reason := fmt.Errorf("vsphere driver install failed with %s, unable to verify CSIDriver status: %v", result.Reason, err)
-			klog.Errorf(reason.Error())
-			return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
+		} else {
+			annotations := csiDriver.GetAnnotations()
+			if _, ok := annotations[utils.OpenshiftCSIDriverAnnotationKey]; ok {
+				klog.Errorf("vsphere driver install failed with %s, found existing driver", result.Reason)
+				driverFound = true
+			}
 		}
-		annotations := csiDriver.GetAnnotations()
-		if _, ok := annotations[utils.OpenshiftCSIDriverAnnotationKey]; ok {
-			klog.Errorf("vsphere driver install failed with %s, found existing driver", result.Reason)
+
+		if driverFound {
 			return ClusterCheckDegrade, result
 		}
+		// if we can't connect to vcenter, we can't really block upgrades but
+		// we should mark upgradeable to be unknown
+		if result.CheckStatus == CheckStatusVSphereConnectionFailed {
+			return ClusterCheckUpgradeStateUnknown, result
+		}
+
 		return ClusterCheckBlockUpgrade, result
 	}
 	return ClusterCheckAllGood, result

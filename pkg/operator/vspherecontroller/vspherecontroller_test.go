@@ -161,6 +161,16 @@ func TestSync(t *testing.T) {
 			operandStarted: false,
 		},
 		{
+			name:                   "when we can't connect to vcenter but CSI driver was installed previously, degrade cluster",
+			clusterCSIDriverObject: makeFakeDriverInstance(),
+			vcenterVersion:         "7.0.2",
+			initialObjects:         []runtime.Object{getConfigMap(), getSecret(), getCSIDriver(true /*withOCPAnnotation*/)},
+			configObjects:          runtime.Object(getInfraObject()),
+			failVCenterConnection:  true,
+			expectError:            fmt.Errorf("can't talk to vcenter"),
+			operandStarted:         true,
+		},
+		{
 			name:                   "when vcenter version is older, block upgrades",
 			clusterCSIDriverObject: makeFakeDriverInstance(),
 			initialObjects:         []runtime.Object{getConfigMap(), getSecret()},
