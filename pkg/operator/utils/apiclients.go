@@ -19,8 +19,9 @@ type APIClient struct {
 	// Kubernetes API informers, per namespace
 	KubeInformers v1helpers.KubeInformersForNamespaces
 
-	SecretInformer v1.SecretInformer
-	NodeInformer   v1.NodeInformer
+	SecretInformer    v1.SecretInformer
+	ConfigMapInformer v1.ConfigMapInformer
+	NodeInformer      v1.NodeInformer
 
 	// config.openshift.io client
 	ConfigClientSet cfgclientset.Interface

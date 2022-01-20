@@ -60,6 +60,7 @@ const (
 	cloudConfigNamespace              = "openshift-config"
 	infraGlobalName                   = "cluster"
 	secretName                        = "vmware-vsphere-cloud-credentials"
+	trustedCAConfigMap                = "vmware-vsphere-csi-driver-trusted-ca-bundle"
 	defaultNamespace                  = "openshift-cluster-csi-drivers"
 	driverOperandName                 = "vmware-vsphere-csi-driver"
 	resyncDuration                    = 20 * time.Minute

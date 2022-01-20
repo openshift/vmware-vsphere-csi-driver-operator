@@ -74,12 +74,18 @@ func (c *VSphereController) createCSIDriver() {
 		c.apiClients.ConfigInformers,
 		[]factory.Informer{
 			c.apiClients.SecretInformer.Informer(),
+			c.apiClients.ConfigMapInformer.Informer(),
 			c.apiClients.NodeInformer.Informer(),
 		},
 		WithVSphereCredentials(defaultNamespace, secretName, c.apiClients.SecretInformer),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
+		csidrivercontrollerservicecontroller.WithCABundleDeploymentHook(
+			defaultNamespace,
+			trustedCAConfigMap,
+			c.apiClients.ConfigMapInformer,
+		),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,
 			secretName,
@@ -92,9 +98,14 @@ func (c *VSphereController) createCSIDriver() {
 		"node.yaml",
 		c.apiClients.KubeClient,
 		c.apiClients.KubeInformers.InformersFor(defaultNamespace),
-		nil,
+		[]factory.Informer{c.apiClients.ConfigMapInformer.Informer()},
 		WithLogLevelDaemonSetHook(),
 		csidrivernodeservicecontroller.WithObservedProxyDaemonSetHook(),
+		csidrivernodeservicecontroller.WithCABundleDaemonSetHook(
+			defaultNamespace,
+			trustedCAConfigMap,
+			c.apiClients.ConfigMapInformer,
+		),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
