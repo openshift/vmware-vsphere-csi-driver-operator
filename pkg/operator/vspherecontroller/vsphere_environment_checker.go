@@ -85,10 +85,12 @@ func (v *vSphereEnvironmentCheckerComposite) Check(
 	}
 
 	if degradeClusterResult.ClusterDegrade {
+		v.nextCheck = v.lastCheck.Add(nextErrorDelay)
 		return nextErrorDelay, degradeClusterResult, true
 	}
 
 	if blockUpgradeResult.BlockUpgrade {
+		v.nextCheck = v.lastCheck.Add(nextErrorDelay)
 		return nextErrorDelay, blockUpgradeResult, true
 	}
 

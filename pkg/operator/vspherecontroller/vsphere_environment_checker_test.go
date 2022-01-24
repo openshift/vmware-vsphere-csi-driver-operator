@@ -2,9 +2,10 @@ package vspherecontroller
 
 import (
 	"context"
-	"k8s.io/apimachinery/pkg/runtime"
 	"testing"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 )
@@ -19,6 +20,7 @@ func TestEnvironmentCheck(t *testing.T) {
 		configObjects          runtime.Object
 		clusterCSIDriverObject *fakeDriverInstance
 		expectedBackOffSteps   int
+		expectedNextCheck      time.Time
 		runCount               int
 	}{
 		{
@@ -31,6 +33,7 @@ func TestEnvironmentCheck(t *testing.T) {
 			checksRan:              true,
 			// should reset the steps back to maximum in defaultBackoff
 			expectedBackOffSteps: defaultBackoff.Steps,
+			expectedNextCheck:    time.Now().Add(defaultBackoff.Cap),
 			runCount:             1,
 		},
 		{
@@ -41,8 +44,9 @@ func TestEnvironmentCheck(t *testing.T) {
 			vcenterVersion:         "6.5.0",
 			result:                 checks.CheckStatusDeprecatedVCenter,
 			checksRan:              true,
-			expectedBackOffSteps:   defaultBackoff.Steps - 2,
-			runCount:               2,
+			expectedBackOffSteps:   defaultBackoff.Steps - 1,
+			expectedNextCheck:      time.Now().Add(1 * time.Minute),
+			runCount:               1,
 		},
 	}
 
@@ -70,6 +74,8 @@ func TestEnvironmentCheck(t *testing.T) {
 					cleanUpFunc()
 				}
 			}()
+			// add a sleep so as we can calculate nextCheck accurately
+			time.Sleep(5 * time.Second)
 
 			if test.vcenterVersion != "" {
 				customizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
@@ -90,14 +96,17 @@ func TestEnvironmentCheck(t *testing.T) {
 			for i := 0; i < test.runCount; i++ {
 				_, result, checkRan = checker.Check(context.TODO(), checkOpts)
 			}
-			if result.CheckStatus != test.result {
-				t.Fatalf("expected test status to be %s, got %s", test.result, result.CheckStatus)
-			}
 			if checkRan != test.checksRan {
 				t.Fatalf("expected checkRan to be %v got %v", test.checksRan, checkRan)
 			}
+			if result.CheckStatus != test.result {
+				t.Fatalf("expected test status to be %s, got %s", test.result, result.CheckStatus)
+			}
 			if test.expectedBackOffSteps != checker.backoff.Steps {
 				t.Fatalf("expected delay to %v, got %v", test.expectedBackOffSteps, checker.backoff.Steps)
+			}
+			if !checker.nextCheck.After(test.expectedNextCheck) {
+				t.Fatalf("expected nextCheck %v to be after expectedNextCheck %v", checker.nextCheck, test.expectedNextCheck)
 			}
 		})
 	}
