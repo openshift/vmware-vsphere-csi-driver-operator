@@ -51,22 +51,22 @@ func NewStorageClassController(
 }
 
 func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
-	checkResultFunc := func() checks.ClusterCheckResult {
+	checkResultFunc := func() (checks.ClusterCheckResult, checks.ClusterCheckStatus) {
 		policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps)
 		if syncResult.CheckError != nil {
 			klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
-			return syncResult
+			return syncResult, checks.ClusterCheckAllGood
 		}
 
 		err := c.syncStorageClass(ctx, policyName)
 		if err != nil {
 			klog.Errorf("error syncing storage class: %v", err)
-			return checks.MakeClusterDegradedError(checks.CheckStatusOpenshiftAPIError, err)
+			return checks.MakeClusterDegradedError(checks.CheckStatusOpenshiftAPIError, err), checks.ClusterCheckDegrade
 		}
-		return checks.MakeClusterCheckResultPass()
+		return checks.MakeClusterCheckResultPass(), checks.ClusterCheckAllGood
 	}
-	clusterStatus, checkResult := checks.CheckClusterStatus(checkResultFunc(), apiDeps)
-	return c.updateConditions(ctx, checkResult, clusterStatus)
+	checkResult, overallClusterStatus := checkResultFunc()
+	return c.updateConditions(ctx, checkResult, overallClusterStatus)
 }
 
 func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) (string, checks.ClusterCheckResult) {
