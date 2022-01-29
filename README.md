@@ -27,7 +27,7 @@ oc apply -f https://raw.githubusercontent.com/openshift/cluster-storage-operator
 make
 
 # Set the environment variables
-export DRIVER_IMAGE=quay.io/openshift/origin-vmware-vsphere-csi-driver:latest
+export DRIVER_IMAGE=quay.io/openshift/origin-vsphere-csi-driver:latest
 export PROVISIONER_IMAGE=quay.io/openshift/origin-csi-external-provisioner:latest
 export ATTACHER_IMAGE=quay.io/openshift/origin-csi-external-attacher:latest
 export RESIZER_IMAGE=quay.io/openshift/origin-csi-external-resizer:latest
@@ -35,6 +35,7 @@ export SNAPSHOTTER_IMAGE=quay.io/openshift/origin-csi-external-snapshotter:lates
 export NODE_DRIVER_REGISTRAR_IMAGE=quay.io/openshift/origin-csi-node-driver-registrar:latest
 export LIVENESS_PROBE_IMAGE=quay.io/openshift/origin-csi-livenessprobe:latest
 export KUBE_RBAC_PROXY_IMAGE=quay.io/openshift/origin-kube-rbac-proxy:latest
+export VMWARE_VSPHERE_SYNCER_IMAGE=quay.io/openshift/origin-vsphere-csi-driver-syncer
 
 # Run the operator via CLI
 ./vmware-vsphere-csi-driver-operator start --kubeconfig $MY_KUBECONFIG --namespace openshift-cluster-csi-drivers
