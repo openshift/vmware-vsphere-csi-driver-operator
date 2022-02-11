@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	operatorapi "github.com/openshift/api/operator/v1"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 
@@ -55,6 +56,8 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 		policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps)
 		if syncResult.CheckError != nil {
 			klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
+			clusterCondition := "storage_class_sync_failed"
+			utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
 			return syncResult, checks.ClusterCheckAllGood
 		}
 
