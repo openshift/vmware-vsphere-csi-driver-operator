@@ -28,7 +28,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
 	storagelister "k8s.io/client-go/listers/storage/v1"
-	"k8s.io/component-base/metrics"
 	"k8s.io/klog/v2"
 )
 
@@ -67,19 +66,6 @@ const (
 	envVMWareVsphereDriverSyncerImage = "VMWARE_VSPHERE_SYNCER_IMAGE"
 	storageClassControllerName        = "VMwareVSphereDriverStorageClassController"
 	storageClassName                  = "thin-csi"
-	failureReason                     = "failure_reason"
-	condition                         = "condition"
-)
-
-var (
-	installErrorMetric = metrics.NewGaugeVec(
-		&metrics.GaugeOpts{
-			Name:           "vsphere_csi_driver_error",
-			Help:           "vSphere driver installation error",
-			StabilityLevel: metrics.ALPHA,
-		},
-		[]string{failureReason, condition},
-	)
 )
 
 type conditionalControllerInterface interface {
@@ -278,16 +264,16 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	switch clusterStatus {
 	case checks.ClusterCheckDegrade:
 		clusterCondition = "degraded"
-		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
+		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		return result.CheckError, true
 	case checks.ClusterCheckUpgradeStateUnknown:
 		clusterCondition = "upgrade_unknown"
-		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
+		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionUnknown)
 		return updateError, true
 	case checks.ClusterCheckBlockUpgrade:
 		clusterCondition = "upgrade_blocked"
-		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
+		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
 		return updateError, true
 	}
