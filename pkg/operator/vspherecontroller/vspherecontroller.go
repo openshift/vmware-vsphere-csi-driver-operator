@@ -52,7 +52,7 @@ type VSphereController struct {
 	vSphereConnection        *vclib.VSphereConnection
 	vSphereChecker           vSphereEnvironmentCheckInterface
 	// creates a new vSphereConnection - mainly used for testing
-	vsphereConnectionFunc func() (*vclib.VSphereConnection, checks.ClusterCheckResult)
+	vsphereConnectionFunc func() (*vclib.VSphereConnection, checks.ClusterCheckResult, bool)
 }
 
 const (
@@ -165,15 +165,16 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	}
 
 	var connectionResult checks.ClusterCheckResult
+	logout := true
 
 	if c.vsphereConnectionFunc != nil {
-		c.vSphereConnection, connectionResult = c.vsphereConnectionFunc()
+		c.vSphereConnection, connectionResult, logout = c.vsphereConnectionFunc()
 	} else {
 		connectionResult = c.loginToVCenter(ctx, infra)
 	}
 	defer func() {
 		klog.V(4).Infof("%s: vcenter-csi logging out from vcenter", c.name)
-		if c.vSphereConnection != nil {
+		if c.vSphereConnection != nil && logout {
 			err := c.vSphereConnection.Logout(ctx)
 			if err != nil {
 				klog.Errorf("%s: error closing connection to vCenter API: %v", c.name, err)
