@@ -2,7 +2,9 @@ package resourceapply
 
 import (
 	"context"
-
+	"fmt"
+	"strings"
+	
 	"k8s.io/klog/v2"
 
 	storagev1 "k8s.io/api/storage/v1"
@@ -21,6 +23,10 @@ import (
 func ApplyStorageClass(ctx context.Context, client storageclientv1.StorageClassesGetter, recorder events.Recorder, required *storagev1.StorageClass) (*storagev1.StorageClass, bool,
 	error) {
 	existing, err := client.StorageClasses().Get(ctx, required.Name, metav1.GetOptions{})
+	if strings.Contains(existing.Provisioner, "kubernetes.io") {
+		return nil, false, fmt.Errorf("upstream storage class detected: %v aborting sync action") //TODO: probably needs a better check
+	}
+
 	if apierrors.IsNotFound(err) {
 		requiredCopy := required.DeepCopy()
 		actual, err := client.StorageClasses().Create(
@@ -56,6 +62,10 @@ func ApplyStorageClass(ctx context.Context, client storageclientv1.StorageClasse
 	// TODO if provisioner, parameters, reclaimpolicy, or volumebindingmode are different, update will fail so delete and recreate
 	actual, err := client.StorageClasses().Update(ctx, requiredCopy, metav1.UpdateOptions{})
 	reportUpdateEvent(recorder, required, err)
+	if apierrors.IsForbidden(err) { //TODO: we are past contentSame check, no need to check it again - content is not same at this point
+		err = fmt.Errorf("can not change existing storage class: %v Error: %v", required.Name, err)
+	}
+
 	return actual, true, err
 }
 
