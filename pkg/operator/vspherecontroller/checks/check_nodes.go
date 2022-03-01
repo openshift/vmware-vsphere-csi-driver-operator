@@ -113,7 +113,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 	nodeCheckContext, cancel := context.WithTimeout(workInfo.ctx, nodeCheckTimeout)
 	defer cancel()
 
-	vm, err := n.getVM(nodeCheckContext, checkOpts, node)
+	vm, err := getVM(nodeCheckContext, checkOpts, node)
 	if err != nil {
 		return makeDeprecatedEnvironmentError(CheckStatusVcenterAPIError, err)
 	}
@@ -169,6 +169,7 @@ func (n *NodeChecker) Check(ctx context.Context, checkOpts CheckArgs) []ClusterC
 
 	// Map of host names and their ESXI versions
 	n.hostESXIVersions = map[string]bool{}
+	n.results = []ClusterCheckResult{}
 	workDone := false
 	n.createPool(workerCount)
 
@@ -220,10 +221,7 @@ func (n *NodeChecker) getHost(ctx context.Context, checkOpts CheckArgs, hostRef 
 	return o, nil
 }
 
-func (n *NodeChecker) getVM(
-	ctx context.Context,
-	checkOpts CheckArgs,
-	node *v1.Node) (*mo.VirtualMachine, error) {
+func getVM(ctx context.Context, checkOpts CheckArgs, node *v1.Node) (*mo.VirtualMachine, error) {
 	vmClient := checkOpts.vmConnection.Client.Client
 	vmConfig := checkOpts.vmConnection.Config
 
