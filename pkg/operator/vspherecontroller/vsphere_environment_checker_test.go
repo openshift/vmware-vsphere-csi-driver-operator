@@ -2,6 +2,7 @@ package vspherecontroller
 
 import (
 	"context"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"testing"
 	"time"
 
@@ -18,16 +19,16 @@ func TestEnvironmentCheck(t *testing.T) {
 		result                 checks.CheckStatusType
 		initialObjects         []runtime.Object
 		configObjects          runtime.Object
-		clusterCSIDriverObject *fakeDriverInstance
+		clusterCSIDriverObject *testlib.FakeDriverInstance
 		expectedBackOffSteps   int
 		expectedNextCheck      time.Time
 		runCount               int
 	}{
 		{
 			name:                   "when tests are ran successfully, delay should be set to maximum delay",
-			initialObjects:         []runtime.Object{getConfigMap(), getSecret()},
-			configObjects:          runtime.Object(getInfraObject()),
-			clusterCSIDriverObject: makeFakeDriverInstance(),
+			initialObjects:         []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			configObjects:          runtime.Object(testlib.GetInfraObject()),
+			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
 			vcenterVersion:         "7.0.2",
 			result:                 checks.CheckStatusPass,
 			checksRan:              true,
@@ -38,9 +39,9 @@ func TestEnvironmentCheck(t *testing.T) {
 		},
 		{
 			name:                   "when tests fail, delay should backoff exponentially",
-			initialObjects:         []runtime.Object{getConfigMap(), getSecret()},
-			configObjects:          runtime.Object(getInfraObject()),
-			clusterCSIDriverObject: makeFakeDriverInstance(),
+			initialObjects:         []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			configObjects:          runtime.Object(testlib.GetInfraObject()),
+			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
 			vcenterVersion:         "6.5.0",
 			result:                 checks.CheckStatusDeprecatedVCenter,
 			checksRan:              true,
@@ -53,15 +54,15 @@ func TestEnvironmentCheck(t *testing.T) {
 	for i := range tests {
 		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
-			commonApiClient := newFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
+			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
-			go startFakeInformer(commonApiClient, stopCh)
-			if err := addInitialObjects(test.initialObjects, commonApiClient); err != nil {
+			go testlib.StartFakeInformer(commonApiClient, stopCh)
+			if err := testlib.AddInitialObjects(test.initialObjects, commonApiClient); err != nil {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
-			waitForSync(commonApiClient, stopCh)
+			testlib.WaitForSync(commonApiClient, stopCh)
 
 			checker := newVSphereEnvironmentChecker()
 			conn, cleanUpFunc, connError := setupSimulator(defaultModel)
@@ -85,7 +86,7 @@ func TestEnvironmentCheck(t *testing.T) {
 			nodeLister := commonApiClient.NodeInformer.Lister()
 
 			checkerApiClient := &checks.KubeAPIInterfaceImpl{
-				Infrastructure:  getInfraObject(),
+				Infrastructure:  testlib.GetInfraObject(),
 				CSINodeLister:   csiNodeLister,
 				CSIDriverLister: csiDriverLister,
 				NodeLister:      nodeLister,
