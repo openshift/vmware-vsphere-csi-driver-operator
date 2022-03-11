@@ -3,6 +3,7 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"strings"
 
 	operatorapi "github.com/openshift/api/operator/v1"
@@ -51,7 +52,13 @@ func NewStorageClassController(
 }
 
 func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+
 	checkResultFunc := func() (checks.ClusterCheckResult, checks.ClusterCheckStatus) {
+		scName := c.getStorageClassManifestName()
+		if c.scAlreadyExists(ctx, scName) {
+			return checks.MakeClusterCheckResultPass(), checks.ClusterCheckAllGood
+		}
+
 		policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps)
 		if syncResult.CheckError != nil {
 			klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
@@ -134,4 +141,16 @@ func (c *StorageClassController) syncStorageClass(ctx context.Context, policyNam
 	sc := resourceread.ReadStorageClassV1OrDie([]byte(scString))
 	_, _, err := resourceapply.ApplyStorageClass(ctx, c.kubeClient.StorageV1(), c.recorder, sc)
 	return err
+}
+
+func (c *StorageClassController) getStorageClassManifestName() string {
+	sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
+	return sc.Name
+}
+
+func (c *StorageClassController) scAlreadyExists(ctx context.Context, scName string) bool {
+	if _, err := c.kubeClient.StorageV1().StorageClasses().Get(ctx, scName, metav1.GetOptions{}); err != nil {
+		return false
+	}
+	return true
 }
