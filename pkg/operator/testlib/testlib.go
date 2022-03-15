@@ -1,6 +1,7 @@
 package testlib
 
 import (
+	"embed"
 	"fmt"
 	ocpv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
@@ -17,6 +18,9 @@ import (
 	fakecore "k8s.io/client-go/kubernetes/fake"
 )
 
+//go:embed *.yaml
+var f embed.FS
+
 const (
 	cloudConfigNamespace = "openshift-config"
 	infraGlobalName      = "cluster"
@@ -29,6 +33,11 @@ type FakeDriverInstance struct {
 	metav1.ObjectMeta
 	Spec   opv1.OperatorSpec
 	Status opv1.OperatorStatus
+}
+
+// ReadFile reads and returns the content of the named file.
+func ReadFile(name string) ([]byte, error) {
+	return f.ReadFile(name)
 }
 
 func WaitForSync(clients *utils.APIClient, stopCh <-chan struct{}) {

@@ -3,6 +3,7 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	v1 "github.com/openshift/api/config/v1"
 	"strings"
 
 	operatorapi "github.com/openshift/api/operator/v1"
@@ -24,12 +25,13 @@ const (
 )
 
 type StorageClassController struct {
-	name            string
-	targetNamespace string
-	manifest        []byte
-	kubeClient      kubernetes.Interface
-	operatorClient  v1helpers.OperatorClient
-	recorder        events.Recorder
+	name                 string
+	targetNamespace      string
+	manifest             []byte
+	kubeClient           kubernetes.Interface
+	operatorClient       v1helpers.OperatorClient
+	recorder             events.Recorder
+	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 }
 
 func NewStorageClassController(
@@ -41,13 +43,15 @@ func NewStorageClassController(
 	recorder events.Recorder,
 ) *StorageClassController {
 	c := &StorageClassController{
-		name:            name,
-		targetNamespace: targetNamespace,
-		manifest:        manifest,
-		kubeClient:      kubeClient,
-		operatorClient:  operatorClient,
-		recorder:        recorder,
+		name:                 name,
+		targetNamespace:      targetNamespace,
+		manifest:             manifest,
+		kubeClient:           kubeClient,
+		operatorClient:       operatorClient,
+		recorder:             recorder,
+		makeStoragePolicyAPI: newStoragePolicyAPI,
 	}
+
 	return c
 }
 
@@ -75,7 +79,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) (string, checks.ClusterCheckResult) {
 	infra := apiDeps.GetInfrastructure()
 
-	apiClient := newStoragePolicyAPI(ctx, connection, infra)
+	apiClient := c.makeStoragePolicyAPI(ctx, connection, infra)
 
 	// we expect all API calls to finish within apiTimeout or else operator might be stuck
 	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
