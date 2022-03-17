@@ -277,8 +277,10 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
 		return updateError, true
+	default:
+		utils.InstallErrorMetric.Reset()
+		return nil, false
 	}
-	return nil, false
 }
 
 func (c *VSphereController) runConditionalController(ctx context.Context) {
