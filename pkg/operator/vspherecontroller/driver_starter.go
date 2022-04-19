@@ -37,6 +37,7 @@ func (c *VSphereController) createCSIDriver() {
 			"controller_pdb.yaml",
 			"node_sa.yaml",
 			"csidriver.yaml",
+			"volumesnapshotclass.yaml",
 			"service.yaml",
 			"ca_configmap.yaml",
 			"rbac/csi_driver_controller_role.yaml",

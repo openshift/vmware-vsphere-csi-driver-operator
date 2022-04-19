@@ -241,6 +241,48 @@ spec:
           volumeMounts:
           - mountPath: /etc/tls/private
             name: metrics-serving-cert
+        # external-snapshotter container
+        - name: csi-snapshotter
+          image: ${SNAPSHOTTER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=$(ADDRESS)
+            - --metrics-address=localhost:8205
+            - --leader-election
+            - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
+            - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
+            - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
+            - --v=${LOG_LEVEL}
+          env:
+          - name: ADDRESS
+            value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+          - mountPath: /var/lib/csi/sockets/pluginproxy/
+            name: socket-dir
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: snapshotter-kube-rbac-proxy
+          args:
+          - --secure-listen-address=0.0.0.0:9205
+          - --upstream=http://127.0.0.1:8205/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9205
+            name: snapshotter-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
         - name: csi-liveness-probe
           image: ${LIVENESS_PROBE_IMAGE}
           imagePullPolicy: IfNotPresent
