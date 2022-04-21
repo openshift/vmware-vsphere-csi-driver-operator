@@ -9,6 +9,10 @@ metadata:
   namespace: openshift-cluster-csi-drivers
 spec:
   ports:
+  - name: driver-m
+    port: 442
+    protocol: TCP
+    targetPort: driver-m
   - name: provisioner-m
     port: 443
     protocol: TCP
@@ -21,6 +25,10 @@ spec:
     port: 445
     protocol: TCP
     targetPort: resizer-m
+  - name: syncer-m
+    port: 446
+    protocol: TCP
+    targetPort: syncer-m
   selector:
     app: vmware-vsphere-csi-driver-controller
   sessionAffinity: None
