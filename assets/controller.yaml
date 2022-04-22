@@ -91,6 +91,26 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+        - name: driver-kube-rbac-proxy
+          args:
+          - --secure-listen-address=0.0.0.0:9201
+          - --upstream=http://127.0.0.1:2112/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9201
+            name: driver-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
         - name: csi-provisioner
           image: ${PROVISIONER_IMAGE}
           imagePullPolicy: IfNotPresent
@@ -269,6 +289,26 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+        - name: syncer-kube-rbac-proxy
+          args:
+          - --secure-listen-address=0.0.0.0:9205
+          - --upstream=http://127.0.0.1:2113/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9205
+            name: syncer-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
       volumes:
         - name: socket-dir
           emptyDir: {}

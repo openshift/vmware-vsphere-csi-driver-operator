@@ -8,6 +8,14 @@ spec:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
     interval: 30s
     path: /metrics
+    port: driver-m
+    scheme: https
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: vmware-vsphere-csi-driver-controller-metrics.openshift-cluster-csi-drivers.svc
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    interval: 30s
+    path: /metrics
     port: provisioner-m
     scheme: https
     tlsConfig:
@@ -25,6 +33,14 @@ spec:
     interval: 30s
     path: /metrics
     port: resizer-m
+    scheme: https
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: vmware-vsphere-csi-driver-controller-metrics.openshift-cluster-csi-drivers.svc
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    interval: 30s
+    path: /metrics
+    port: syncer-m
     scheme: https
     tlsConfig:
       caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
