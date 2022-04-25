@@ -265,7 +265,7 @@ spec:
               cpu: 10m
         - name: snapshotter-kube-rbac-proxy
           args:
-          - --secure-listen-address=0.0.0.0:9205
+          - --secure-listen-address=0.0.0.0:9206
           - --upstream=http://127.0.0.1:8205/
           - --tls-cert-file=/etc/tls/private/tls.crt
           - --tls-private-key-file=/etc/tls/private/tls.key
@@ -273,7 +273,7 @@ spec:
           image: ${KUBE_RBAC_PROXY_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
-          - containerPort: 9205
+          - containerPort: 9206
             name: snapshotter-m
             protocol: TCP
           resources:

@@ -29,6 +29,10 @@ spec:
     port: 446
     protocol: TCP
     targetPort: syncer-m
+  - name: snapshotter-m
+    port: 447
+    protocol: TCP
+    targetPort: snapshotter-m
   selector:
     app: vmware-vsphere-csi-driver-controller
   sessionAffinity: None
