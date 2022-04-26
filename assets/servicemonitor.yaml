@@ -45,6 +45,14 @@ spec:
     tlsConfig:
       caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
       serverName: vmware-vsphere-csi-driver-controller-metrics.openshift-cluster-csi-drivers.svc
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    interval: 30s
+    path: /metrics
+    port: snapshotter-m
+    scheme: https
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: vmware-vsphere-csi-driver-controller-metrics.openshift-cluster-csi-drivers.svc
   jobLabel: component
   selector:
     matchLabels:

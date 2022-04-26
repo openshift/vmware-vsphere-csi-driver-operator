@@ -37,6 +37,7 @@ func (c *VSphereController) createCSIDriver() {
 			"controller_pdb.yaml",
 			"node_sa.yaml",
 			"csidriver.yaml",
+			"volumesnapshotclass.yaml",
 			"service.yaml",
 			"ca_configmap.yaml",
 			"rbac/csi_driver_controller_role.yaml",
@@ -58,6 +59,8 @@ func (c *VSphereController) createCSIDriver() {
 			"rbac/kube_rbac_proxy_binding.yaml",
 			"rbac/prometheus_role.yaml",
 			"rbac/prometheus_rolebinding.yaml",
+			"rbac/snapshotter_role.yaml",
+			"rbac/snapshotter_binding.yaml",
 			// Static assets used by the webhook
 			"webhook/config.yaml",
 			"webhook/sa.yaml",
