@@ -53,6 +53,7 @@ const (
 	ClusterComputeResourceType = "ClusterComputeResource"
 	HostSystemType             = "HostSystem"
 	NameProperty               = "name"
+	MinvCenterVersion          = "7.0.2"
 )
 
 // Test Constants

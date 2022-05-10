@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/vmware/govmomi/find"
@@ -198,4 +199,85 @@ func VerifyVolumePathsForVMDevices(vmDevices object.VirtualDeviceList, volPaths 
 		}
 	}
 
+}
+
+// isvCenterDeprecated takes vCenter version and vCenter API version as input and return true if vCenter is deprecated
+func isvCenterDeprecated(vCenterVersion string, vCenterAPIVersion string) (bool, error) {
+	var vcversion, vcapiversion, minvcversion vcVersion
+	var err error
+	err = vcversion.parse(vCenterVersion)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse vCenter version: %s. err: %+v", vCenterVersion, err)
+	}
+	err = vcapiversion.parse(vCenterAPIVersion)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse vCenter API version: %s. err: %+v", vCenterAPIVersion, err)
+	}
+	err = minvcversion.parse(MinvCenterVersion)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse minimum vCenter version: %s. err: %+v", MinvCenterVersion, err)
+	}
+	if vcversion.isLessThan(minvcversion) && vcapiversion.isLessThan(minvcversion) {
+		return true, nil
+	}
+	return false, nil
+}
+
+// vcVersion represents a VC version
+type vcVersion struct {
+	Major    int64
+	Minor    int64
+	Revision int64
+	Build    int64
+}
+
+// parse helps parse version string to VCVersion
+// returns error when parse fail
+func (v *vcVersion) parse(version string) error {
+	for index, value := range strings.Split(version, ".") {
+		var err error
+		if index == 0 {
+			v.Major, err = strconv.ParseInt(value, 10, 64)
+		} else if index == 1 {
+			v.Minor, err = strconv.ParseInt(value, 10, 64)
+		} else if index == 2 {
+			v.Revision, err = strconv.ParseInt(value, 10, 64)
+		} else if index == 3 {
+			v.Build, err = strconv.ParseInt(value, 10, 64)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to parse version: %q, err: %v", version, err)
+		}
+	}
+	return nil
+}
+
+// isLessThan compares VCVersion v to o and returns
+// true if v is less than o
+func (v *vcVersion) isLessThan(o vcVersion) bool {
+	if v.Major != o.Major {
+		if v.Major > o.Major {
+			return false
+		}
+		return true
+	}
+	if v.Minor != o.Minor {
+		if v.Minor > o.Minor {
+			return false
+		}
+		return true
+	}
+	if v.Revision != o.Revision {
+		if v.Revision > o.Revision {
+			return false
+		}
+		return true
+	}
+	if v.Build != o.Build {
+		if v.Build > o.Build {
+			return false
+		}
+		return true
+	}
+	return false
 }
