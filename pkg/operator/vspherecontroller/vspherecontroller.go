@@ -219,7 +219,6 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	}
 
 	delay, result, checkRan := c.runClusterCheck(ctx, infra)
-
 	// if checks did not run
 	if !checkRan {
 		return nil
@@ -339,10 +338,10 @@ func (c *VSphereController) loginToVCenter(ctx context.Context, infra *ocpv1.Inf
 	err := c.vSphereConnection.Connect(ctx)
 	if err != nil {
 		result := checks.ClusterCheckResult{
-			CheckError:   err,
-			BlockUpgrade: true,
-			CheckStatus:  checks.CheckStatusVSphereConnectionFailed,
-			Reason:       fmt.Sprintf("Failed to connect to vSphere: %v", err),
+			CheckError:  err,
+			Action:      checks.CheckActionBlockUpgrade,
+			CheckStatus: checks.CheckStatusVSphereConnectionFailed,
+			Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
 		}
 		return result
 	}

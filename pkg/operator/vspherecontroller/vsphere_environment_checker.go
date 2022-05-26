@@ -67,33 +67,28 @@ func (v *vSphereEnvironmentCheckerComposite) Check(
 		allChecks = append(allChecks, result...)
 	}
 
-	var blockUpgradeResult checks.ClusterCheckResult
-	var degradeClusterResult checks.ClusterCheckResult
+	overallResult := checks.ClusterCheckResult{
+		Action: checks.CheckActionPass,
+	}
 
 	// following checks can either block cluster upgrades or degrade the cluster
 	// the severity of degradation is higher than blocking upgrades
 	for i := range allChecks {
 		result := allChecks[i]
-		if result.ClusterDegrade {
-			klog.Error("degrading cluster: %s", result.Reason)
-			degradeClusterResult = result
-		}
-		if result.BlockUpgrade {
-			klog.Errorf("marking cluster as un-upgradeable: %s", result.Reason)
-			blockUpgradeResult = result
+		if result.Action >= overallResult.Action {
+			overallResult = result
 		}
 	}
 
-	if degradeClusterResult.ClusterDegrade {
+	if overallResult.Action > checks.CheckActionPass {
+		// Everything else than pass needs a quicker re-check
+		klog.Warningf("Overall check result: %s: %s", checks.ActionToString(overallResult.Action), overallResult.Reason)
 		v.nextCheck = v.lastCheck.Add(nextErrorDelay)
-		return nextErrorDelay, degradeClusterResult, true
+		return nextErrorDelay, overallResult, true
 	}
 
-	if blockUpgradeResult.BlockUpgrade {
-		v.nextCheck = v.lastCheck.Add(nextErrorDelay)
-		return nextErrorDelay, blockUpgradeResult, true
-	}
-
+	// Slow re-check when everything looks OK
+	klog.V(2).Infof("Overall check result: %s: %s", checks.ActionToString(overallResult.Action), overallResult.Reason)
 	v.backoff = defaultBackoff
 	v.nextCheck = v.lastCheck.Add(defaultBackoff.Cap)
 	return defaultBackoff.Cap, checks.MakeClusterCheckResultPass(), true

@@ -370,10 +370,10 @@ func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection boo
 		if failConnection {
 			err := fmt.Errorf("connection to vcenter failed")
 			result := checks.ClusterCheckResult{
-				CheckError:   err,
-				BlockUpgrade: true,
-				CheckStatus:  checks.CheckStatusVSphereConnectionFailed,
-				Reason:       fmt.Sprintf("Failed to connect to vSphere: %v", err),
+				CheckError:  err,
+				Action:      checks.CheckActionBlockUpgrade,
+				CheckStatus: checks.CheckStatusVSphereConnectionFailed,
+				Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
 			}
 			return nil, result, false
 		} else {
