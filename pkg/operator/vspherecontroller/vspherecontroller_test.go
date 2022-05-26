@@ -158,7 +158,7 @@ func TestSync(t *testing.T) {
 				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionFalse,
+					Status: opv1.ConditionTrue,
 				},
 			},
 			operandStarted: false,
@@ -177,7 +177,7 @@ func TestSync(t *testing.T) {
 				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionFalse,
+					Status: opv1.ConditionTrue,
 				},
 			},
 			operandStarted: false,
