@@ -2,6 +2,7 @@ package checks
 
 import (
 	"fmt"
+
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/klog/v2"
@@ -30,11 +31,32 @@ const (
 	ClusterCheckDegrade             ClusterCheckStatus = "degraded"
 )
 
+type CheckAction int
+
+// Ordered by severity, Pass must be 0 (for struct initialization).
+const (
+	CheckActionPass = iota
+	CheckActionBlockUpgrade
+	CheckActionDegrade
+)
+
+func ActionToString(a CheckAction) string {
+	switch a {
+	case CheckActionPass:
+		return "Pass"
+	case CheckActionBlockUpgrade:
+		return "BlockUpgrade"
+	case CheckActionDegrade:
+		return "Degrade"
+	default:
+		return "Unknown"
+	}
+}
+
 type ClusterCheckResult struct {
-	CheckError     error
-	CheckStatus    CheckStatusType
-	BlockUpgrade   bool
-	ClusterDegrade bool
+	CheckError  error
+	CheckStatus CheckStatusType
+	Action      CheckAction
 	// if we are blocking cluster upgrades or degrading the cluster
 	// this message contains information about why we are degrading the cluster
 	// or blocking upgrades.
@@ -43,61 +65,58 @@ type ClusterCheckResult struct {
 
 func MakeClusterCheckResultPass() ClusterCheckResult {
 	return ClusterCheckResult{
-		CheckError:   nil,
-		CheckStatus:  CheckStatusPass,
-		BlockUpgrade: false,
+		CheckError:  nil,
+		CheckStatus: CheckStatusPass,
+		Action:      CheckActionPass,
 	}
 }
 
 func makeFoundExistingDriverResult(reason error) ClusterCheckResult {
 	checkResult := ClusterCheckResult{
-		CheckStatus:  CheckStatusExistingDriverFound,
-		CheckError:   reason,
-		BlockUpgrade: true,
-		Reason:       reason.Error(),
+		CheckStatus: CheckStatusExistingDriverFound,
+		CheckError:  reason,
+		Action:      CheckActionBlockUpgrade,
+		Reason:      reason.Error(),
 	}
 	return checkResult
 }
 
 func makeDeprecatedEnvironmentError(statusType CheckStatusType, reason error) ClusterCheckResult {
 	checkResult := ClusterCheckResult{
-		CheckStatus:    statusType,
-		CheckError:     reason,
-		BlockUpgrade:   true,
-		ClusterDegrade: false,
-		Reason:         reason.Error(),
+		CheckStatus: statusType,
+		CheckError:  reason,
+		Action:      CheckActionBlockUpgrade,
+		Reason:      reason.Error(),
 	}
 	return checkResult
 }
 
 func MakeGenericVCenterAPIError(reason error) ClusterCheckResult {
 	return ClusterCheckResult{
-		CheckStatus:    CheckStatusVcenterAPIError,
-		CheckError:     reason,
-		BlockUpgrade:   true,
-		ClusterDegrade: false,
-		Reason:         reason.Error(),
+		CheckStatus: CheckStatusVcenterAPIError,
+		CheckError:  reason,
+		Action:      CheckActionBlockUpgrade,
+		Reason:      reason.Error(),
 	}
 }
 
 func MakeClusterDegradedError(checkStatus CheckStatusType, reason error) ClusterCheckResult {
 	return ClusterCheckResult{
-		CheckStatus:    checkStatus,
-		CheckError:     reason,
-		BlockUpgrade:   false,
-		ClusterDegrade: true,
-		Reason:         reason.Error(),
+		CheckStatus: checkStatus,
+		CheckError:  reason,
+		Action:      CheckActionDegrade,
+		Reason:      reason.Error(),
 	}
 }
 
 func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterface) (ClusterCheckStatus, ClusterCheckResult) {
-	if result.ClusterDegrade {
+	switch result.Action {
+	case CheckActionDegrade:
 		return ClusterCheckDegrade, result
-	}
 
-	// a failed check that previously only blocked upgrades can degrade the cluster, if we previously successfully installed
-	// OCP version of CSIDriver
-	if result.BlockUpgrade {
+	case CheckActionBlockUpgrade:
+		// a failed check that previously only blocked upgrades can degrade the cluster, if we previously successfully installed
+		// OCP version of CSIDriver
 		driverFound := false
 		csiDriver, err := apiDependencies.GetCSIDriver(utils.VSphereDriverName)
 		if err != nil {
@@ -124,6 +143,8 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 		}
 
 		return ClusterCheckBlockUpgrade, result
+
+	default:
+		return ClusterCheckAllGood, result
 	}
-	return ClusterCheckAllGood, result
 }

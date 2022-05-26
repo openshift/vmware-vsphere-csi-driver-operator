@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"fmt"
+
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -16,10 +17,10 @@ func (c *CheckExistingDriver) Check(ctx context.Context, checkOpts CheckArgs) []
 			return c.checkForCSINode(ctx, checkOpts)
 		}
 		checkResult := ClusterCheckResult{
-			CheckStatus:    CheckStatusOpenshiftAPIError,
-			CheckError:     err,
-			ClusterDegrade: true,
-			Reason:         fmt.Sprintf("failed to check for existing csiDriver of type %s: %v", utils.VSphereDriverName, err),
+			CheckStatus: CheckStatusOpenshiftAPIError,
+			CheckError:  err,
+			Action:      CheckActionDegrade,
+			Reason:      fmt.Sprintf("failed to check for existing csiDriver of type %s: %v", utils.VSphereDriverName, err),
 		}
 		return []ClusterCheckResult{checkResult}
 	}
@@ -35,10 +36,10 @@ func (c *CheckExistingDriver) checkForCSINode(ctx context.Context, checkOpts Che
 	csiNodeObjects, err := checkOpts.apiClient.ListCSINodes()
 	if err != nil {
 		checkResult := ClusterCheckResult{
-			CheckStatus:    CheckStatusOpenshiftAPIError,
-			CheckError:     err,
-			ClusterDegrade: true,
-			Reason:         fmt.Sprintf("failed to list csi node objects for driver %s: %v", utils.VSphereDriverName, err),
+			CheckStatus: CheckStatusOpenshiftAPIError,
+			CheckError:  err,
+			Action:      CheckActionDegrade,
+			Reason:      fmt.Sprintf("failed to list csi node objects for driver %s: %v", utils.VSphereDriverName, err),
 		}
 		return []ClusterCheckResult{checkResult}
 	}
