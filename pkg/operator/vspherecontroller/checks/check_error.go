@@ -26,6 +26,7 @@ type ClusterCheckStatus string
 
 const (
 	ClusterCheckAllGood             ClusterCheckStatus = "pass"
+	ClusterCheckBlockDriverInstall  ClusterCheckStatus = "installation_blocked"
 	ClusterCheckBlockUpgrade        ClusterCheckStatus = "upgrades_blocked"
 	ClusterCheckUpgradeStateUnknown ClusterCheckStatus = "upgrades_unknown"
 	ClusterCheckDegrade             ClusterCheckStatus = "degraded"
@@ -36,6 +37,7 @@ type CheckAction int
 // Ordered by severity, Pass must be 0 (for struct initialization).
 const (
 	CheckActionPass = iota
+	CheckActionBlockDriverInstall
 	CheckActionBlockUpgrade
 	CheckActionDegrade
 )
@@ -44,6 +46,8 @@ func ActionToString(a CheckAction) string {
 	switch a {
 	case CheckActionPass:
 		return "Pass"
+	case CheckActionBlockDriverInstall:
+		return "BlockInstall"
 	case CheckActionBlockUpgrade:
 		return "BlockUpgrade"
 	case CheckActionDegrade:
@@ -75,7 +79,7 @@ func makeFoundExistingDriverResult(reason error) ClusterCheckResult {
 	checkResult := ClusterCheckResult{
 		CheckStatus: CheckStatusExistingDriverFound,
 		CheckError:  reason,
-		Action:      CheckActionBlockUpgrade,
+		Action:      CheckActionBlockDriverInstall,
 		Reason:      reason.Error(),
 	}
 	return checkResult
@@ -143,6 +147,9 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 		}
 
 		return ClusterCheckBlockUpgrade, result
+
+	case CheckActionBlockDriverInstall:
+		return ClusterCheckBlockDriverInstall, result
 
 	default:
 		return ClusterCheckAllGood, result

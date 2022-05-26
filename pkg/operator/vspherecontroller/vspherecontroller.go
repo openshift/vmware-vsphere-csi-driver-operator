@@ -290,6 +290,13 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
 		return updateError, true
+	case checks.ClusterCheckBlockDriverInstall:
+		clusterCondition = "install_blocked"
+		installErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
+		// Set Upgradeable: true with an extra message
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionTrue)
+		return updateError, true
+
 	}
 	return nil, false
 }
@@ -415,14 +422,15 @@ func (c *VSphereController) updateConditions(
 		blockUpgradeMessage = fmt.Sprintf("Marking cluster upgrade status unknown because %s", lastCheckResult.Reason)
 		allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionUnknown)
 	default:
-		conditionChanged = false
-		blockUpgradeMessage = ""
+		blockUpgradeMessage = lastCheckResult.Reason
+		allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionTrue)
 	}
 
 	if len(blockUpgradeMessage) > 0 {
 		klog.Warningf(blockUpgradeMessage)
 	}
-	if conditionChanged {
+
+	if conditionChanged && upgradeStatus != operatorapi.ConditionTrue {
 		c.eventRecorder.Warningf(string(lastCheckResult.CheckStatus), blockUpgradeMessage)
 	}
 
