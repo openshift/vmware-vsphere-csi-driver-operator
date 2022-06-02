@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/vmware/govmomi/simulator/esx"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -36,8 +37,8 @@ type ClusterComputeResource struct {
 	ruleKey int32
 }
 
-func (c *ClusterComputeResource) RenameTask(req *types.Rename_Task) soap.HasFault {
-	return RenameTask(c, req)
+func (c *ClusterComputeResource) RenameTask(ctx *Context, req *types.Rename_Task) soap.HasFault {
+	return RenameTask(ctx, c, req)
 }
 
 type addHost struct {
@@ -53,24 +54,33 @@ func (add *addHost) Run(task *Task) (types.AnyType, types.BaseMethodFault) {
 		return nil, &types.NoHost{}
 	}
 
-	host := NewHostSystem(esx.HostSystem)
+	cr := add.ClusterComputeResource
+	template := esx.HostSystem
+
+	if h := task.ctx.Map.FindByName(spec.UserName, cr.Host); h != nil {
+		// "clone" an existing host from the inventory
+		template = h.(*HostSystem).HostSystem
+		template.Vm = nil
+	} else {
+		template.Network = cr.Network[:1] // VM Network
+	}
+
+	host := NewHostSystem(template)
 	host.configure(spec, add.req.AsConnected)
 
-	cr := add.ClusterComputeResource
-	Map.PutEntity(cr, Map.NewEntity(host))
+	task.ctx.Map.PutEntity(cr, task.ctx.Map.NewEntity(host))
 	host.Summary.Host = &host.Self
 
 	cr.Host = append(cr.Host, host.Reference())
 	addComputeResource(cr.Summary.GetComputeResourceSummary(), host)
-	host.Network = cr.Network[:1] // VM Network
 
 	return host.Reference(), nil
 }
 
-func (c *ClusterComputeResource) AddHostTask(add *types.AddHost_Task) soap.HasFault {
+func (c *ClusterComputeResource) AddHostTask(ctx *Context, add *types.AddHost_Task) soap.HasFault {
 	return &methods.AddHost_TaskBody{
 		Res: &types.AddHost_TaskResponse{
-			Returnval: NewTask(&addHost{c, add}).Run(),
+			Returnval: NewTask(&addHost{c, add}).Run(ctx),
 		},
 	}
 }
@@ -263,7 +273,53 @@ func (c *ClusterComputeResource) updateOverridesDRS(cfg *types.ClusterConfigInfo
 	return nil
 }
 
-func (c *ClusterComputeResource) ReconfigureComputeResourceTask(req *types.ReconfigureComputeResource_Task) soap.HasFault {
+func (c *ClusterComputeResource) updateOverridesVmOrchestration(cfg *types.ClusterConfigInfoEx, cspec *types.ClusterConfigSpecEx) types.BaseMethodFault {
+	for _, spec := range cspec.VmOrchestrationSpec {
+		var i int
+		var key types.ManagedObjectReference
+		exists := false
+
+		if spec.Operation == types.ArrayUpdateOperationRemove {
+			key = spec.RemoveKey.(types.ManagedObjectReference)
+		} else {
+			key = spec.Info.Vm
+		}
+
+		for i = range cfg.VmOrchestration {
+			if cfg.VmOrchestration[i].Vm == key {
+				exists = true
+				break
+			}
+		}
+
+		switch spec.Operation {
+		case types.ArrayUpdateOperationAdd:
+			if exists {
+				return new(types.InvalidArgument)
+			}
+			cfg.VmOrchestration = append(cfg.VmOrchestration, *spec.Info)
+		case types.ArrayUpdateOperationEdit:
+			if !exists {
+				return new(types.InvalidArgument)
+			}
+			if spec.Info.VmReadiness.ReadyCondition != "" {
+				cfg.VmOrchestration[i].VmReadiness.ReadyCondition = spec.Info.VmReadiness.ReadyCondition
+			}
+			if spec.Info.VmReadiness.PostReadyDelay != 0 {
+				cfg.VmOrchestration[i].VmReadiness.PostReadyDelay = spec.Info.VmReadiness.PostReadyDelay
+			}
+		case types.ArrayUpdateOperationRemove:
+			if !exists {
+				return new(types.InvalidArgument)
+			}
+			cfg.VmOrchestration = append(cfg.VmOrchestration[:i], cfg.VmOrchestration[i+1:]...)
+		}
+	}
+
+	return nil
+}
+
+func (c *ClusterComputeResource) ReconfigureComputeResourceTask(ctx *Context, req *types.ReconfigureComputeResource_Task) soap.HasFault {
 	task := CreateTask(c, "reconfigureCluster", func(*Task) (types.AnyType, types.BaseMethodFault) {
 		spec, ok := req.Spec.(*types.ClusterConfigSpecEx)
 		if !ok {
@@ -275,6 +331,7 @@ func (c *ClusterComputeResource) ReconfigureComputeResourceTask(req *types.Recon
 			c.updateGroups,
 			c.updateOverridesDAS,
 			c.updateOverridesDRS,
+			c.updateOverridesVmOrchestration,
 		}
 
 		for _, update := range updates {
@@ -288,7 +345,7 @@ func (c *ClusterComputeResource) ReconfigureComputeResourceTask(req *types.Recon
 
 	return &methods.ReconfigureComputeResource_TaskBody{
 		Res: &types.ReconfigureComputeResource_TaskResponse{
-			Returnval: task.Run(),
+			Returnval: task.Run(ctx),
 		},
 	}
 }
@@ -350,7 +407,7 @@ func (c *ClusterComputeResource) PlaceVm(ctx *Context, req *types.PlaceVm) soap.
 }
 
 func CreateClusterComputeResource(ctx *Context, f *Folder, name string, spec types.ClusterConfigSpecEx) (*ClusterComputeResource, types.BaseMethodFault) {
-	if e := Map.FindByName(name, f.ChildEntity); e != nil {
+	if e := ctx.Map.FindByName(name, f.ChildEntity); e != nil {
 		return nil, &types.DuplicateName{
 			Name:   e.Entity().Name,
 			Object: e.Reference(),
@@ -360,7 +417,7 @@ func CreateClusterComputeResource(ctx *Context, f *Folder, name string, spec typ
 	cluster := &ClusterComputeResource{}
 	cluster.EnvironmentBrowser = newEnvironmentBrowser()
 	cluster.Name = name
-	cluster.Network = Map.getEntityDatacenter(f).defaultNetwork()
+	cluster.Network = ctx.Map.getEntityDatacenter(f).defaultNetwork()
 	cluster.Summary = &types.ClusterComputeResourceSummary{
 		UsageSummary: new(types.ClusterUsageSummary),
 	}
@@ -372,7 +429,7 @@ func CreateClusterComputeResource(ctx *Context, f *Folder, name string, spec typ
 	config.DrsConfig.Enabled = types.NewBool(true)
 
 	pool := NewResourcePool()
-	Map.PutEntity(cluster, Map.NewEntity(pool))
+	ctx.Map.PutEntity(cluster, ctx.Map.NewEntity(pool))
 	cluster.ResourcePool = &pool.Self
 
 	folderPutChild(ctx, &f.Folder, cluster)
