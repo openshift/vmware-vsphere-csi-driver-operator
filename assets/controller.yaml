@@ -68,6 +68,8 @@ spec:
               value: 3m
             - name: X_CSI_SPEC_DISABLE_LEN_CHECK
               value: "true"
+            - name: MAX_VOLUMES_PER_NODE
+              value: "59"
           ports:
             - name: healthz
               # Due to hostNetwork, this port is open on a node!
