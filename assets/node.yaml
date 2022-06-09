@@ -55,6 +55,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: MAX_VOLUMES_PER_NODE
+              value: "59"
           volumeMounts:
             - name: kubelet-dir
               mountPath: /var/lib/kubelet
