@@ -8,6 +8,10 @@ spec:
   selector:
     matchLabels:
       app: vmware-vsphere-csi-driver-webhook
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   template:
     metadata:
       labels:

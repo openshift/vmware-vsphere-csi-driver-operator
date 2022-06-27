@@ -1,6 +1,8 @@
 package vspherecontroller
 
 import (
+	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/csi/csidrivercontrollerservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 )
@@ -17,9 +19,11 @@ func (c *VSphereController) createWebHookController() {
 		c.operatorClient,
 		c.apiClients.KubeClient,
 		c.apiClients.KubeInformers.InformersFor(defaultNamespace).Apps().V1().Deployments(),
-		nil, // optionalInformers
+		[]factory.Informer{c.apiClients.ConfigInformers.Config().V1().Infrastructures().Informer()},
 		nil, // optionalManifestHooks
 		WithSyncerImageHook("vsphere-webhook"),
+		csidrivercontrollerservicecontroller.WithControlPlaneTopologyHook(c.apiClients.ConfigInformers),
+		csidrivercontrollerservicecontroller.WithReplicasHook(c.apiClients.KubeInformers.InformersFor("").Core().V1().Nodes().Lister()),
 	)
 	c.controllers = append(c.controllers, conditionalController{
 		name:       webhookController.Name(),
