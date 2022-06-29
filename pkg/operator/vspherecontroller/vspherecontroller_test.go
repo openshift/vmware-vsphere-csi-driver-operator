@@ -231,6 +231,25 @@ func TestSync(t *testing.T) {
 			// The metrics is not reset when no checks actually run.
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
 		},
+		{
+			name:                         "when vcenter version is 7.0.1 and csi driver exists, mark upgradeable: false",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.1", // Minimum for upgrade is 7.0.2
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted: true,
+		},
 	}
 
 	for i := range tests {
