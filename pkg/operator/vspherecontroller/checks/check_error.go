@@ -38,7 +38,8 @@ type CheckAction int
 const (
 	CheckActionPass = iota
 	CheckActionBlockDriverInstall
-	CheckActionBlockUpgrade
+	CheckActionBlockUpgrade          // Only block upgrade
+	CheckActionBlockUpgradeOrDegrade // Degrade if the driver is installed, block upgrade otherwise
 	CheckActionDegrade
 )
 
@@ -50,6 +51,8 @@ func ActionToString(a CheckAction) string {
 		return "BlockInstall"
 	case CheckActionBlockUpgrade:
 		return "BlockUpgrade"
+	case CheckActionBlockUpgradeOrDegrade:
+		return "BlockUpgradeOrDegrade"
 	case CheckActionDegrade:
 		return "Degrade"
 	default:
@@ -89,7 +92,7 @@ func makeDeprecatedEnvironmentError(statusType CheckStatusType, reason error) Cl
 	checkResult := ClusterCheckResult{
 		CheckStatus: statusType,
 		CheckError:  reason,
-		Action:      CheckActionBlockUpgrade,
+		Action:      CheckActionBlockUpgradeOrDegrade,
 		Reason:      reason.Error(),
 	}
 	return checkResult
@@ -99,7 +102,7 @@ func MakeGenericVCenterAPIError(reason error) ClusterCheckResult {
 	return ClusterCheckResult{
 		CheckStatus: CheckStatusVcenterAPIError,
 		CheckError:  reason,
-		Action:      CheckActionBlockUpgrade,
+		Action:      CheckActionBlockUpgradeOrDegrade,
 		Reason:      reason.Error(),
 	}
 }
@@ -113,12 +116,21 @@ func MakeClusterDegradedError(checkStatus CheckStatusType, reason error) Cluster
 	}
 }
 
+func MakeClusterUnupgradeableError(checkStatus CheckStatusType, reason error) ClusterCheckResult {
+	return ClusterCheckResult{
+		CheckStatus: checkStatus,
+		CheckError:  reason,
+		Action:      CheckActionBlockUpgrade,
+		Reason:      reason.Error(),
+	}
+}
+
 func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterface) (ClusterCheckStatus, ClusterCheckResult) {
 	switch result.Action {
 	case CheckActionDegrade:
 		return ClusterCheckDegrade, result
 
-	case CheckActionBlockUpgrade:
+	case CheckActionBlockUpgradeOrDegrade:
 		// a failed check that previously only blocked upgrades can degrade the cluster, if we previously successfully installed
 		// OCP version of CSIDriver
 		driverFound := false
@@ -146,6 +158,9 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 			return ClusterCheckUpgradeStateUnknown, result
 		}
 
+		return ClusterCheckBlockUpgrade, result
+
+	case CheckActionBlockUpgrade:
 		return ClusterCheckBlockUpgrade, result
 
 	case CheckActionBlockDriverInstall:

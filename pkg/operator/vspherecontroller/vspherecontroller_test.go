@@ -358,7 +358,7 @@ func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection boo
 			err := fmt.Errorf("connection to vcenter failed")
 			result := checks.ClusterCheckResult{
 				CheckError:  err,
-				Action:      checks.CheckActionBlockUpgrade,
+				Action:      checks.CheckActionBlockUpgradeOrDegrade,
 				CheckStatus: checks.CheckStatusVSphereConnectionFailed,
 				Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
 			}
@@ -370,7 +370,6 @@ func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection boo
 			return conn, checks.MakeClusterCheckResultPass(), false
 		}
 	}
-
 }
 
 func TestAddUpgradeableBlockCondition(t *testing.T) {
