@@ -82,7 +82,7 @@ func makeFoundExistingDriverResult(reason error) ClusterCheckResult {
 	checkResult := ClusterCheckResult{
 		CheckStatus: CheckStatusExistingDriverFound,
 		CheckError:  reason,
-		Action:      CheckActionBlockDriverInstall,
+		Action:      CheckActionBlockUpgrade,
 		Reason:      reason.Error(),
 	}
 	return checkResult

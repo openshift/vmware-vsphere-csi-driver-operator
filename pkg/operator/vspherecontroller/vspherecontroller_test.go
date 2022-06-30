@@ -171,10 +171,10 @@ func TestSync(t *testing.T) {
 				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionTrue,
+					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
 			operandStarted:  false,
 		},
 		{
@@ -191,10 +191,10 @@ func TestSync(t *testing.T) {
 				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionTrue,
+					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
 			operandStarted:  false,
 		},
 		{
