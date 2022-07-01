@@ -68,6 +68,7 @@ func (c *VSphereController) createCSIDriver() {
 			"webhook/configuration.yaml",
 			"webhook/rbac/role.yaml",
 			"webhook/rbac/rolebinding.yaml",
+			"webhook/pdb.yaml",
 		},
 	).WithCSIConfigObserverController(
 		"VMwareVSphereDriverCSIConfigObserverController",
