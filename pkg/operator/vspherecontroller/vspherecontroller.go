@@ -216,6 +216,9 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		return nil
 	}
 
+	// All checks succeeded, reset any error metrics
+	utils.InstallErrorMetric.Reset()
+
 	// sync storage class
 	if c.storageClassController != nil {
 		storageClassAPIDeps := c.getCheckAPIDependency(infra)
@@ -282,11 +285,8 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 		// Set Upgradeable: true with an extra message
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionTrue)
 		return updateError, true
-
-	default:
-		utils.InstallErrorMetric.Reset()
-		return nil, false
 	}
+	return nil, false
 }
 
 func (c *VSphereController) runConditionalController(ctx context.Context) {

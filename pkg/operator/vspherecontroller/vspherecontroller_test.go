@@ -3,6 +3,7 @@ package vspherecontroller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/component-base/metrics/testutil"
 )
 
 const (
@@ -54,15 +56,24 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 }
 
 func TestSync(t *testing.T) {
+	metricsHeader := `
+        # HELP vsphere_csi_driver_error [ALPHA] vSphere driver installation error
+        # TYPE vsphere_csi_driver_error gauge
+        `
+
 	tests := []struct {
 		name                         string
 		clusterCSIDriverObject       *testlib.FakeDriverInstance
 		initialObjects               []runtime.Object
+		initialErrorMetricValue      float64
+		initialErrorMetricLabels     map[string]string
+		skipCheck                    bool
 		configObjects                runtime.Object
 		vcenterVersion               string
 		startingNodeHardwareVersions []string
 		finalNodeHardwareVersions    []string
 		expectedConditions           []opv1.OperatorCondition
+		expectedMetrics              string
 		expectError                  error
 		failVCenterConnection        bool
 		operandStarted               bool
@@ -104,7 +115,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionUnknown,
 				},
 			},
-			operandStarted: false,
+			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_unknown",failure_reason="vsphere_connection_failed"} 1`,
+			operandStarted:  false,
 		},
 		{
 			name:                         "when we can't connect to vcenter but CSI driver was installed previously, degrade cluster",
@@ -133,7 +145,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			operandStarted: false,
+			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="check_deprecated_vcenter"} 1`,
+			operandStarted:  false,
 		},
 		{
 			name:                         "when vcenter version is older but csi driver exists, degrade cluster",
@@ -161,7 +174,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: false,
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+			operandStarted:  false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI node object exists",
@@ -180,7 +194,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: false,
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+			operandStarted:  false,
 		},
 		{
 			name:                         "when node hw-version was old first and got upgraded",
@@ -202,11 +217,32 @@ func TestSync(t *testing.T) {
 			},
 			operandStarted: true,
 		},
+		{
+			name:                         "sync before the next recheck interval",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			skipCheck:                    true,
+			initialErrorMetricValue:      1,
+			initialErrorMetricLabels:     map[string]string{"condition": "install_blocked", "failure_reason": "existing_driver_found"},
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.2",
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			operandStarted:               false,
+			// The metrics is not reset when no checks actually run.
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+		},
 	}
 
 	for i := range tests {
 		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
+			// These tests can't run in parallel!
+			utils.InstallErrorMetric.Reset()
+
+			if test.initialErrorMetricLabels != nil {
+				utils.InstallErrorMetric.With(test.initialErrorMetricLabels).Set(test.initialErrorMetricValue)
+			}
+
 			nodes := defaultNodes()
 			for _, node := range nodes {
 				test.initialObjects = append(test.initialObjects, runtime.Object(node))
@@ -249,6 +285,10 @@ func TestSync(t *testing.T) {
 				t.Fatalf("Failed to customize host: %s", err)
 			}
 
+			if test.skipCheck {
+				ctrl.vSphereChecker = newSkippingChecker()
+			}
+
 			err = ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
 			if test.expectError == nil && err != nil {
 				t.Fatalf("Unexpected error that could degrade cluster: %+v", err)
@@ -279,6 +319,12 @@ func TestSync(t *testing.T) {
 
 			if test.operandStarted != ctrl.operandControllerStarted {
 				t.Fatalf("expected operandStarted to be %v, got %v", test.operandStarted, ctrl.operandControllerStarted)
+			}
+
+			if test.expectedMetrics != "" {
+				if err := testutil.CollectAndCompare(utils.InstallErrorMetric, strings.NewReader(metricsHeader+test.expectedMetrics+"\n"), utils.InstallErrorMetric.Name); err != nil {
+					t.Errorf("wrong metrics: %s", err)
+				}
 			}
 		})
 	}
@@ -418,4 +464,15 @@ func TestAddUpgradeableBlockCondition(t *testing.T) {
 		})
 
 	}
+}
+
+// This dummy vSphereEnvironmentCheckInterface implementation never runs any platform checks.
+type skippingChecker struct{}
+
+func (*skippingChecker) Check(ctx context.Context, connection checks.CheckArgs) (time.Duration, checks.ClusterCheckResult, bool) {
+	return 0, checks.ClusterCheckResult{}, false
+}
+
+func newSkippingChecker() *skippingChecker {
+	return &skippingChecker{}
 }
