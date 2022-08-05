@@ -186,8 +186,8 @@ func WithSyncerImageHook(containerName string) deploymentcontroller.DeploymentHo
 	}
 }
 
-// WithLogLevelDeploymentHook sets the X_CSI_DEBUG environment variable to a positive
-// value when CR.LogLevel is Debug or higher.
+// WithLogLevelDeploymentHook sets the X_CSI_DEBUG and LOGGER_LEVEL environment variables
+// when CR.LogLevel is Debug or higher.
 func WithLogLevelDeploymentHook() deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
 		deployment.Spec.Template.Spec.Containers = maybeAppendDebug(deployment.Spec.Template.Spec.Containers, opSpec)
@@ -195,8 +195,8 @@ func WithLogLevelDeploymentHook() deploymentcontroller.DeploymentHookFunc {
 	}
 }
 
-// WithLogLevelDaemonSetHook sets the X_CSI_DEBUG environment variable to a positive
-// value when CR.LogLevel is Debug or higher.
+// WithLogLevelDaemonSetHook sets the X_CSI_DEBUG and LOGGER_LEVEL environment variables
+// when CR.LogLevel is Debug or higher.
 func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
 		ds.Spec.Template.Spec.Containers = maybeAppendDebug(ds.Spec.Template.Spec.Containers, opSpec)
@@ -205,7 +205,7 @@ func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFun
 }
 
 // maybeAppendDebug works like the append() builtin; it returns a new slice of containers
-// with the debug env var properly set (or not).
+// with the logging env vars properly set (or not).
 func maybeAppendDebug(containers []v1.Container, opSpec *operatorapi.OperatorSpec) []v1.Container {
 	// Don't set the debug option when the current level is lower than debug
 	if loglevel.LogLevelToVerbosity(opSpec.LogLevel) < loglevel.LogLevelToVerbosity(operatorapi.Debug) {
@@ -218,6 +218,10 @@ func maybeAppendDebug(containers []v1.Container, opSpec *operatorapi.OperatorSpe
 		containers[i].Env = append(
 			containers[i].Env,
 			v1.EnvVar{Name: "X_CSI_DEBUG", Value: "true"},
+		)
+		containers[i].Env = append(
+			containers[i].Env,
+			v1.EnvVar{Name: "LOGGER_LEVEL", Value: "DEVELOPMENT"},
 		)
 	}
 	return containers

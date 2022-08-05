@@ -54,8 +54,6 @@ spec:
               value: "controller"
             - name: VSPHERE_CSI_CONFIG
               value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
-            - name: LOGGER_LEVEL
-              value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
             - name: INCLUSTER_CLIENT_QPS
               value: "100"
             - name: INCLUSTER_CLIENT_BURST
@@ -315,8 +313,6 @@ spec:
               value: "30"
             - name: VSPHERE_CSI_CONFIG
               value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
-            - name: LOGGER_LEVEL
-              value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
             - name: INCLUSTER_CLIENT_QPS
               value: "100"
             - name: INCLUSTER_CLIENT_BURST

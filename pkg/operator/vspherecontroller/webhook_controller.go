@@ -24,6 +24,7 @@ func (c *VSphereController) createWebHookController() {
 		WithSyncerImageHook("vsphere-webhook"),
 		csidrivercontrollerservicecontroller.WithControlPlaneTopologyHook(c.apiClients.ConfigInformers),
 		csidrivercontrollerservicecontroller.WithReplicasHook(c.apiClients.KubeInformers.InformersFor("").Core().V1().Nodes().Lister()),
+		WithLogLevelDeploymentHook(),
 	)
 	c.controllers = append(c.controllers, conditionalController{
 		name:       webhookController.Name(),

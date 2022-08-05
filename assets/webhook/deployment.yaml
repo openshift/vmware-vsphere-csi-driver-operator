@@ -47,8 +47,6 @@ spec:
           env:
             - name: WEBHOOK_CONFIG_PATH
               value: "/etc/webhook/config/webhook.conf"
-            - name: LOGGER_LEVEL
-              value: "PRODUCTION" # Options: DEVELOPMENT, PRODUCTION
             - name: CSI_NAMESPACE
               valueFrom:
                 fieldRef:
