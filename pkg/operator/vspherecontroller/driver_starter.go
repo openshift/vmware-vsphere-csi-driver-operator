@@ -16,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	corev1informers "k8s.io/client-go/informers/core/v1"
+	"k8s.io/klog/v2"
 )
 
 func (c *VSphereController) createCSIDriver() {
@@ -145,6 +146,11 @@ func WithVSphereCredentials(
 		// }
 		// So we need to figure those keys out
 		var usernameKey, passwordKey string
+
+		if len(secret.Data) > 2 {
+			klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
+		}
+
 		for k := range secret.Data {
 			if strings.HasSuffix(k, ".username") {
 				usernameKey = k
