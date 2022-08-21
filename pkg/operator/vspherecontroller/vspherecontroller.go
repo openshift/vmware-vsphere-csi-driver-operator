@@ -207,17 +207,6 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		return nil
 	}
 
-	// sync storage class
-	if c.storageClassController != nil {
-		storageClassAPIDeps := c.getCheckAPIDependency(infra)
-		err = c.storageClassController.Sync(ctx, c.vSphereConnection, storageClassAPIDeps)
-		// storageclass sync will only return error if somehow updating conditions fails, in which case
-		// we can return error here and degrade the cluster
-		if err != nil {
-			return err
-		}
-	}
-
 	delay, result, checkRan := c.runClusterCheck(ctx, infra)
 	// if checks did not run
 	if !checkRan {
@@ -239,6 +228,17 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	// if checks failed, we should exit potentially without starting CSI driver
 	if degradedOrBlockedFromUpgrades {
 		return nil
+	}
+
+	// sync storage class
+	if c.storageClassController != nil {
+		storageClassAPIDeps := c.getCheckAPIDependency(infra)
+		err = c.storageClassController.Sync(ctx, c.vSphereConnection, storageClassAPIDeps)
+		// storageclass sync will only return error if somehow updating conditions fails, in which case
+		// we can return error here and degrade the cluster
+		if err != nil {
+			return err
+		}
 	}
 
 	// if operand was not started previously and block upgrade is false and clusterdegrade is also false
