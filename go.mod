@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
+	github.com/openshift/api v0.0.0-20220823132416-944d64f14f39
 	github.com/openshift/build-machinery-go v0.0.0-20220429084610-baff9f8d23b3
 	github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
 	github.com/openshift/library-go v0.0.0-20220525173854-9b950a41acdc
@@ -108,10 +108,12 @@ require (
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.30 // indirect
 	sigs.k8s.io/json v0.0.0-20211208200746-9f7c6b3444d2 // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.4 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
 replace github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible
 
 replace github.com/openshift/api => github.com/gnufied/api v0.0.0-20220829190235-c275e8f5194e
+
+replace github.com/openshift/client-go => github.com/gnufied/client-go v0.0.0-20220829223523-1b94f06d8fcf
