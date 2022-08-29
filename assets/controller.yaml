@@ -117,7 +117,7 @@ spec:
           args:
             - --csi-address=$(ADDRESS)
             - --default-fstype=ext4
-            # - --feature-gates=Topology=true
+            - --feature-gates=Topology=true
             # - --extra-create-metadata=true
             - --v=${LOG_LEVEL}
             - --leader-election
@@ -125,8 +125,7 @@ spec:
             - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
             - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
             - --http-endpoint=localhost:8202
-            # needed only for topology aware setup
-            # - "--strict-topology"
+            - "--strict-topology"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
