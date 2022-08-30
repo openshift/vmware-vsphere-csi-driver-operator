@@ -12,6 +12,7 @@ require (
 	github.com/spf13/cobra v1.4.0
 	github.com/vmware/govmomi v0.28.0
 	gopkg.in/gcfg.v1 v1.2.3
+	gopkg.in/ini.v1 v1.51.0
 	k8s.io/api v0.24.0
 	k8s.io/apimachinery v0.24.0
 	k8s.io/client-go v0.24.0

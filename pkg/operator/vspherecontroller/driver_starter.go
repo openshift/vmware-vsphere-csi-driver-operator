@@ -54,7 +54,6 @@ func (c *VSphereController) createCSIDriver() {
 			"rbac/prometheus_rolebinding.yaml",
 			"rbac/snapshotter_role.yaml",
 			"rbac/snapshotter_binding.yaml",
-			"vsphere_features_config.yaml",
 			"controller_sa.yaml",
 			"controller_pdb.yaml",
 			"node_sa.yaml",
@@ -89,6 +88,7 @@ func (c *VSphereController) createCSIDriver() {
 		WithVSphereCredentials(defaultNamespace, secretName, c.apiClients.SecretInformer),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
+		c.topologyHook,
 		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithCABundleDeploymentHook(
 			defaultNamespace,
@@ -125,6 +125,33 @@ func (c *VSphereController) createCSIDriver() {
 		name:       driverOperandName,
 		controller: csiControllerSet,
 	})
+}
+
+func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
+	clusterCSIDriver, err := c.apiClients.ClusterCSIDriverInformer.Lister().Get(driverName)
+	if err != nil {
+		return err
+	}
+	vsphereConfig := clusterCSIDriver.Spec.DriverConfig
+	if vsphereConfig == nil {
+		return nil
+	}
+
+	if vsphereConfig.VSphere != nil {
+		topologyCategories := vsphereConfig.VSphere.TopologyCategories
+		if len(topologyCategories) > 0 {
+			containers := deployment.Spec.Template.Spec.Containers
+			for i := range containers {
+				if containers[i].Name != "csi-provisioner" {
+					continue
+				}
+
+				containers[i].Args = append(containers[i].Args, "--feature-gates=Topology=true", "--strict-topology")
+			}
+			deployment.Spec.Template.Spec.Containers = containers
+		}
+	}
+	return nil
 }
 
 func WithVSphereCredentials(

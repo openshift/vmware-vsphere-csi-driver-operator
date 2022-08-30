@@ -4,9 +4,7 @@ metadata:
   namespace: openshift-cluster-csi-drivers
   name: vsphere-csi-config
 data:
-  cloud.conf: |
-    [Global]
-    cluster-id = "${CLUSTER_ID}"
-    [VirtualCenter "${VCENTER}"]
-    insecure-flag = "true"
-    datacenters = "${DATACENTERS}"
+  cloud.conf: ""
+
+    
+    
