@@ -3,6 +3,7 @@ package utils
 import (
 	cfgclientset "github.com/openshift/client-go/config/clientset/versioned"
 	cfginformers "github.com/openshift/client-go/config/informers/externalversions"
+	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"k8s.io/client-go/dynamic"
@@ -30,6 +31,7 @@ type APIClient struct {
 	ConfigInformers cfginformers.SharedInformerFactory
 
 	// a more specific version of Openshift operator informers.
+	OCPOperatorInformers     operatorinformers.SharedInformerFactory
 	ClusterCSIDriverInformer clustercsidriverinformer.ClusterCSIDriverInformer
 
 	// Dynamic client for OLM and old CSI operator APIs

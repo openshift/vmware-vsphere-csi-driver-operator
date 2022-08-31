@@ -3,8 +3,11 @@ package targetconfigcontroller
 import (
 	"context"
 	"fmt"
+	ocpconfigv1 "github.com/openshift/api/config/v1"
 	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	corev1 "k8s.io/api/core/v1"
 	"strings"
 	"time"
 
@@ -29,7 +32,6 @@ import (
 const (
 	infraGlobalName      = "cluster"
 	cloudConfigNamespace = "openshift-config"
-	driverName           = "csi.vsphere.vmware.com"
 )
 
 type TargetConfigController struct {
@@ -104,7 +106,7 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		return err
 	}
 
-	clusterCSIDriver, err := c.clusterCSIDriverLister.Get(driverName)
+	clusterCSIDriver, err := c.clusterCSIDriverLister.Get(utils.VSphereDriverName)
 	if err != nil {
 		return err
 	}
@@ -130,31 +132,7 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		return err
 	}
 
-	csiConfigString := string(c.csiConfigManifest)
-
-	for pattern, value := range map[string]string{
-		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
-		"${VCENTER}":     cfg.Workspace.VCenterIP,
-		"${DATACENTERS}": cfg.Workspace.Datacenter, // TODO: datacenters?
-	} {
-		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
-	}
-	csiConfig, err := iniv1.Load(csiConfigString)
-	driverConfig := clusterCSIDriver.Spec.DriverConfig
-	if driverConfig != nil {
-		vsphereConfig := driverConfig.VSphere
-		if vsphereConfig != nil && len(vsphereConfig.TopologyCategories) > 0 {
-			topologyCategoryString := strings.Join(vsphereConfig.TopologyCategories, ",")
-			csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
-		}
-	}
-
-	// lets dump the ini file to a string
-	var finalConfigString strings.Builder
-	csiConfig.WriteTo(&finalConfigString)
-
-	requiredCM := resourceread.ReadConfigMapV1OrDie(c.manifest)
-	requiredCM.Data["cloud.conf"] = finalConfigString.String()
+	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver)
 
 	// TODO: check if configMap has been deployed and set appropriate conditions
 	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
@@ -179,4 +157,39 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		v1helpers.UpdateConditionFn(progressingCondition),
 	)
 	return err
+}
+
+func (c TargetConfigController) applyClusterCSIDriverChange(
+	infra *ocpconfigv1.Infrastructure, sourceCFG vsphere.VSphereConfig, clusterCSIDriver *opv1.ClusterCSIDriver) (*corev1.ConfigMap, error) {
+	csiConfigString := string(c.csiConfigManifest)
+
+	for pattern, value := range map[string]string{
+		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
+		"${VCENTER}":     sourceCFG.Workspace.VCenterIP,
+		"${DATACENTERS}": sourceCFG.Workspace.Datacenter, // TODO: datacenters?
+	} {
+		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
+	}
+
+	csiConfig, err := iniv1.Load([]byte(csiConfigString))
+	if err != nil {
+		return nil, fmt.Errorf("error loading ini file: %v", err)
+	}
+
+	driverConfig := clusterCSIDriver.Spec.DriverConfig
+	if driverConfig != nil {
+		vsphereConfig := driverConfig.VSphere
+		if vsphereConfig != nil && len(vsphereConfig.TopologyCategories) > 0 {
+			topologyCategoryString := strings.Join(vsphereConfig.TopologyCategories, ",")
+			csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
+		}
+	}
+
+	// lets dump the ini file to a string
+	var finalConfigString strings.Builder
+	csiConfig.WriteTo(&finalConfigString)
+
+	requiredCM := resourceread.ReadConfigMapV1OrDie(c.manifest)
+	requiredCM.Data["cloud.conf"] = finalConfigString.String()
+	return requiredCM, nil
 }

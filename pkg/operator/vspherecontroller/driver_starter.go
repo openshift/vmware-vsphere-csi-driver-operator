@@ -1,7 +1,9 @@
 package vspherecontroller
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
 	"os"
 	"strings"
 
@@ -115,6 +117,7 @@ func (c *VSphereController) createCSIDriver() {
 			trustedCAConfigMap,
 			c.apiClients.ConfigMapInformer,
 		),
+		WithConfigMapDaemonSetAnnotationHook("vsphere-csi-config", defaultNamespace, c.apiClients.ConfigMapInformer),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
@@ -235,6 +238,44 @@ func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFun
 		ds.Spec.Template.Spec.Containers = maybeAppendDebug(ds.Spec.Template.Spec.Containers, opSpec)
 		return nil
 	}
+}
+
+func WithConfigMapDaemonSetAnnotationHook(configMapName, namespace string, configMapInformer corev1informers.ConfigMapInformer) csidrivernodeservicecontroller.DaemonSetHookFunc {
+	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
+		inputHashes, err := resourcehash.MultipleObjectHashStringMapForObjectReferenceFromLister(
+			configMapInformer.Lister(),
+			nil,
+			resourcehash.NewObjectRef().ForConfigMap().InNamespace(namespace).Named(configMapName),
+		)
+		if err != nil {
+			return fmt.Errorf("invalid dependency reference: %w", err)
+		}
+
+		return addObjectHash(ds, inputHashes)
+	}
+}
+
+func addObjectHash(daemonSet *appsv1.DaemonSet, inputHashes map[string]string) error {
+	if daemonSet == nil {
+		return fmt.Errorf("invalid daemonSet: %v", daemonSet)
+	}
+	if daemonSet.Annotations == nil {
+		daemonSet.Annotations = map[string]string{}
+	}
+	if daemonSet.Spec.Template.Annotations == nil {
+		daemonSet.Spec.Template.Annotations = map[string]string{}
+	}
+	for k, v := range inputHashes {
+		annotationKey := fmt.Sprintf("operator.openshift.io/dep-%s", k)
+		if len(annotationKey) > 63 {
+			hash := sha256.Sum256([]byte(k))
+			annotationKey = fmt.Sprintf("operator.openshift.io/dep-%x", hash)
+			annotationKey = annotationKey[:63]
+		}
+		daemonSet.Annotations[annotationKey] = v
+		daemonSet.Spec.Template.Annotations[annotationKey] = v
+	}
+	return nil
 }
 
 // maybeAppendDebug works like the append() builtin; it returns a new slice of containers

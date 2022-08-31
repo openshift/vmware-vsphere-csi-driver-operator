@@ -29,7 +29,6 @@ import (
 
 const (
 	// Operand and operator run in the same namespace
-	defaultNamespace                  = "openshift-cluster-csi-drivers"
 	cloudConfigNamespace              = "openshift-config"
 	operatorName                      = "vmware-vsphere-csi-driver-operator"
 	operandName                       = "vmware-vsphere-csi-driver"
@@ -40,9 +39,9 @@ const (
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
 	// Create core clientset and informers
 	kubeClient := kubeclient.NewForConfigOrDie(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
-	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, cloudConfigNamespace, "")
-	secretInformer := kubeInformersForNamespaces.InformersFor(defaultNamespace).Core().V1().Secrets()
-	configMapInformer := kubeInformersForNamespaces.InformersFor(defaultNamespace).Core().V1().ConfigMaps()
+	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, utils.DefaultNamespace, cloudConfigNamespace, "")
+	secretInformer := kubeInformersForNamespaces.InformersFor(utils.DefaultNamespace).Core().V1().Secrets()
+	configMapInformer := kubeInformersForNamespaces.InformersFor(utils.DefaultNamespace).Core().V1().ConfigMaps()
 	nodeInformer := kubeInformersForNamespaces.InformersFor("").Core().V1().Nodes()
 
 	// Create config clientset and informer. This is used to get the cluster ID
@@ -84,7 +83,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	vSphereController := vspherecontroller.NewVSphereController(
 		"VMwareVSphereController",
-		defaultNamespace,
+		utils.DefaultNamespace,
 		commonAPIClient,
 		controllerConfig.EventRecorder)
 
@@ -104,7 +103,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	targetConfigController := targetconfigcontroller.NewTargetConfigController(
 		"VMwareVSphereDriverTargetConfigController",
-		defaultNamespace,
+		utils.DefaultNamespace,
 		cloudConfigBytes,
 		csiConfigBytes,
 		kubeClient,
@@ -122,7 +121,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	driverFeatureConfigController := NewDriverFeaturesController(
 		"VMwareVSphereDriverFeatureConfigController",
-		defaultNamespace,
+		utils.DefaultNamespace,
 		featureConfigBytes,
 		kubeClient,
 		kubeInformersForNamespaces,

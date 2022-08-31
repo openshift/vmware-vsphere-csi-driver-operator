@@ -12,17 +12,12 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
-	"k8s.io/klog/v2"
 	"strings"
 	"time"
-)
-
-const (
-	infraGlobalName = "cluster"
-	driverName      = "csi.vsphere.vmware.com"
 )
 
 type DriverFeaturesController struct {
@@ -88,14 +83,10 @@ func (d DriverFeaturesController) Sync(ctx context.Context, controllerContext fa
 		return nil
 	}
 
-	infra, err := d.infraLister.Get(infraGlobalName)
-	if err != nil {
-		return err
-	}
-	// We will need eventually infra object to use defaults
-	klog.Infof("got infra object: %s", infra.Name)
+	// We will eventually need infra object to get the cluster defaults
+	// TODO: Read the defaults from infra object.
 
-	clusterCSIDriver, err := d.clusterCSIDriverLister.Get(driverName)
+	clusterCSIDriver, err := d.clusterCSIDriverLister.Get(utils.VSphereDriverName)
 	if err != nil {
 		return err
 	}
