@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	nodeCheckTimeout      = 5 * time.Minute
-	hardwareVersionPrefix = "vmx-"
-	minHardwareVersion    = 15
-	minHostVersion        = "6.7.3"
-	workerCount           = 10
+	nodeCheckTimeout          = 5 * time.Minute
+	hardwareVersionPrefix     = "vmx-"
+	minHardwareVersion        = 15
+	minRequiredHostVersion    = "6.7.3"
+	minUpgradeableHostVersion = "7.0.2"
+	workerCount               = 10
 )
 
 var (
@@ -149,14 +150,24 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 		return makeDeprecatedEnvironmentError(CheckStatusVcenterAPIError, err)
 	}
 	hostAPIVersion := hostSystem.Config.Product.ApiVersion
-	hasMinimum, err := isMinimumVersion(minHostVersion, hostAPIVersion)
+	hasRequiredMinimum, err := isMinimumVersion(minRequiredHostVersion, hostAPIVersion)
 	if err != nil {
 		klog.Errorf("error parsing host version for node %s and host %s: %v", node.Name, hostName, err)
 	}
-	if !hasMinimum {
-		reason := fmt.Errorf("host %s is on ESXI version %s, which is below minimum required version %s", hostName, hostAPIVersion, minHostVersion)
+	if !hasRequiredMinimum {
+		reason := fmt.Errorf("host %s is on ESXI version %s, which is below minimum required version %s", hostName, hostAPIVersion, minRequiredHostVersion)
 		return makeDeprecatedEnvironmentError(CheckStatusDeprecatedESXIVersion, reason)
 	}
+
+	hasUpgradeableMinimum, err := isMinimumVersion(minUpgradeableHostVersion, hostAPIVersion)
+	if err != nil {
+		klog.Errorf("error parsing host version for node %s and host %s: %v", node.Name, hostName, err)
+	}
+	if !hasUpgradeableMinimum {
+		reason := fmt.Errorf("host %s is on ESXI version %s, which is below minimum required version %s for cluster upgrade", hostName, hostAPIVersion, minUpgradeableHostVersion)
+		return MakeClusterUnupgradeableError(CheckStatusDeprecatedESXIVersion, reason)
+	}
+
 	return MakeClusterCheckResultPass()
 }
 

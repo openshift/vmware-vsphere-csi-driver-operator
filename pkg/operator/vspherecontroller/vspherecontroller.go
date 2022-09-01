@@ -334,7 +334,7 @@ func (c *VSphereController) loginToVCenter(ctx context.Context, infra *ocpv1.Inf
 	if err != nil {
 		result := checks.ClusterCheckResult{
 			CheckError:  err,
-			Action:      checks.CheckActionBlockUpgrade,
+			Action:      checks.CheckActionBlockUpgradeOrDegrade,
 			CheckStatus: checks.CheckStatusVSphereConnectionFailed,
 			Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
 		}

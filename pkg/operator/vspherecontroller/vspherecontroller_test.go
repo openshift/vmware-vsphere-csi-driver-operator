@@ -70,6 +70,7 @@ func TestSync(t *testing.T) {
 		skipCheck                    bool
 		configObjects                runtime.Object
 		vcenterVersion               string
+		hostVersion                  string
 		startingNodeHardwareVersions []string
 		finalNodeHardwareVersions    []string
 		expectedConditions           []opv1.OperatorCondition
@@ -82,6 +83,7 @@ func TestSync(t *testing.T) {
 			name:                         "when all configuration is right",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -101,6 +103,7 @@ func TestSync(t *testing.T) {
 			name:                         "when we can't connect to vcenter",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -122,6 +125,7 @@ func TestSync(t *testing.T) {
 			name:                         "when we can't connect to vcenter but CSI driver was installed previously, degrade cluster",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true /*withOCPAnnotation*/)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -132,6 +136,7 @@ func TestSync(t *testing.T) {
 		{
 			name:                         "when vcenter version is older, block upgrades",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -145,12 +150,33 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="check_deprecated_vcenter"} 1`,
+			operandStarted: false,
+		},
+		{
+			name:                         "when host version is older, block upgrades",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.1",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="check_deprecated_esxi_version"} 1`,
 			operandStarted:  false,
 		},
 		{
 			name:                         "when vcenter version is older but csi driver exists, degrade cluster",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -161,6 +187,7 @@ func TestSync(t *testing.T) {
 			name:                         "when all configuration is right, but an existing upstream CSI driver exists",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(false)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -171,16 +198,17 @@ func TestSync(t *testing.T) {
 				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionTrue,
+					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
 			operandStarted:  false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI node object exists",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSINode()},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -191,10 +219,10 @@ func TestSync(t *testing.T) {
 				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionTrue,
+					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
 			operandStarted:  false,
 		},
 		{
@@ -202,6 +230,7 @@ func TestSync(t *testing.T) {
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-13", "vmx-15"},
 			finalNodeHardwareVersions:    []string{"vmx-15", "vmx-15"},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
@@ -230,6 +259,46 @@ func TestSync(t *testing.T) {
 			operandStarted:               false,
 			// The metrics is not reset when no checks actually run.
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+		},
+		{
+			name:                         "when vcenter version is 7.0.1 and csi driver exists, mark upgradeable: false",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.1", // Minimum for upgrade is 7.0.2
+			hostVersion:                  "7.0.2",
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted: true,
+		},
+		{
+			name:                         "when host version is 7.0.1 and csi driver exists, mark upgradeable: false",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.1", // Minimum for upgrade is 7.0.2
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted: true,
 		},
 	}
 
@@ -279,8 +348,11 @@ func TestSync(t *testing.T) {
 				t.Fatalf("error setting hardware version for node %s", nodes[0].Name)
 			}
 
-			// Set esxi version of the only host.
-			err = customizeHostVersion(defaultHostId, "7.0.2")
+			hostVersion := test.hostVersion
+			if hostVersion == "" {
+				hostVersion = "7.0.2"
+			}
+			err = customizeHostVersion(defaultHostId, hostVersion)
 			if err != nil {
 				t.Fatalf("Failed to customize host: %s", err)
 			}
@@ -358,7 +430,7 @@ func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection boo
 			err := fmt.Errorf("connection to vcenter failed")
 			result := checks.ClusterCheckResult{
 				CheckError:  err,
-				Action:      checks.CheckActionBlockUpgrade,
+				Action:      checks.CheckActionBlockUpgradeOrDegrade,
 				CheckStatus: checks.CheckStatusVSphereConnectionFailed,
 				Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
 			}
@@ -370,7 +442,6 @@ func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection boo
 			return conn, checks.MakeClusterCheckResultPass(), false
 		}
 	}
-
 }
 
 func TestAddUpgradeableBlockCondition(t *testing.T) {
