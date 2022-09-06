@@ -34,6 +34,10 @@ const (
 	cloudConfigNamespace = "openshift-config"
 )
 
+var (
+	emptyDriverConfig = opv1.CSIDriverConfigSpec{}
+)
+
 type TargetConfigController struct {
 	name                   string
 	targetNamespace        string
@@ -177,7 +181,7 @@ func (c TargetConfigController) applyClusterCSIDriverChange(
 	}
 
 	driverConfig := clusterCSIDriver.Spec.DriverConfig
-	if driverConfig != nil {
+	if driverConfig != emptyDriverConfig {
 		vsphereConfig := driverConfig.VSphere
 		if vsphereConfig != nil && len(vsphereConfig.TopologyCategories) > 0 {
 			topologyCategoryString := strings.Join(vsphereConfig.TopologyCategories, ",")

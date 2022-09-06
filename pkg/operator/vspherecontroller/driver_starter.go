@@ -136,7 +136,8 @@ func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deplo
 		return err
 	}
 	vsphereConfig := clusterCSIDriver.Spec.DriverConfig
-	if vsphereConfig == nil {
+	emptyDriverConfig := operatorapi.CSIDriverConfigSpec{}
+	if vsphereConfig == emptyDriverConfig {
 		return nil
 	}
 

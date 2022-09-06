@@ -94,7 +94,8 @@ func (d DriverFeaturesController) Sync(ctx context.Context, controllerContext fa
 	defaultFeatureConfigMap := resourceread.ReadConfigMapV1OrDie(d.manifest)
 
 	driverConfig := clusterCSIDriver.Spec.DriverConfig
-	if driverConfig != nil {
+	emptyDriverConfig := opv1.CSIDriverConfigSpec{}
+	if driverConfig != emptyDriverConfig {
 		vsphereConfig := driverConfig.VSphere
 		if vsphereConfig != nil && len(vsphereConfig.TopologyCategories) > 0 {
 			existingData := defaultFeatureConfigMap.Data
