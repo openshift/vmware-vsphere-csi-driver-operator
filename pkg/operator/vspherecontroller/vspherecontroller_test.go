@@ -150,7 +150,7 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			operandStarted: false,
+			operandStarted: true,
 		},
 		{
 			name:                         "when host version is older, block upgrades",
@@ -171,7 +171,7 @@ func TestSync(t *testing.T) {
 				},
 			},
 			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="check_deprecated_esxi_version"} 1`,
-			operandStarted:  false,
+			operandStarted:  true,
 		},
 		{
 			name:                         "when vcenter version is older but csi driver exists, degrade cluster",
@@ -201,8 +201,9 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
-			operandStarted:  false,
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
+vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
+			operandStarted: false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI node object exists",
@@ -222,8 +223,9 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
-			operandStarted:  false,
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
+vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
+			operandStarted: false,
 		},
 		{
 			name:                         "when node hw-version was old first and got upgraded",

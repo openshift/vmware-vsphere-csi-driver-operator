@@ -25,21 +25,21 @@ const (
 type ClusterCheckStatus string
 
 const (
-	ClusterCheckAllGood             ClusterCheckStatus = "pass"
-	ClusterCheckBlockDriverInstall  ClusterCheckStatus = "installation_blocked"
-	ClusterCheckBlockUpgrade        ClusterCheckStatus = "upgrades_blocked"
-	ClusterCheckUpgradeStateUnknown ClusterCheckStatus = "upgrades_unknown"
-	ClusterCheckDegrade             ClusterCheckStatus = "degraded"
+	ClusterCheckAllGood                   ClusterCheckStatus = "pass"
+	ClusterCheckBlockUpgradeDriverInstall ClusterCheckStatus = "installation_blocked"
+	ClusterCheckBlockUpgrade              ClusterCheckStatus = "upgrades_blocked"
+	ClusterCheckUpgradeStateUnknown       ClusterCheckStatus = "upgrades_unknown"
+	ClusterCheckDegrade                   ClusterCheckStatus = "degraded"
 )
 
 type CheckAction int
 
 // Ordered by severity, Pass must be 0 (for struct initialization).
 const (
-	CheckActionPass = iota
-	CheckActionBlockDriverInstall
-	CheckActionBlockUpgrade          // Only block upgrade
-	CheckActionBlockUpgradeOrDegrade // Degrade if the driver is installed, block upgrade otherwise
+	CheckActionPass                      = iota
+	CheckActionBlockUpgrade              // Only block upgrade
+	CheckActionBlockUpgradeDriverInstall // Block voth upgrade and driver install
+	CheckActionBlockUpgradeOrDegrade     // Degrade if the driver is installed, block upgrade otherwise
 	CheckActionDegrade
 )
 
@@ -47,8 +47,8 @@ func ActionToString(a CheckAction) string {
 	switch a {
 	case CheckActionPass:
 		return "Pass"
-	case CheckActionBlockDriverInstall:
-		return "BlockInstall"
+	case CheckActionBlockUpgradeDriverInstall:
+		return "BlockUpgradeDriverInstall"
 	case CheckActionBlockUpgrade:
 		return "BlockUpgrade"
 	case CheckActionBlockUpgradeOrDegrade:
@@ -82,7 +82,7 @@ func makeFoundExistingDriverResult(reason error) ClusterCheckResult {
 	checkResult := ClusterCheckResult{
 		CheckStatus: CheckStatusExistingDriverFound,
 		CheckError:  reason,
-		Action:      CheckActionBlockUpgrade,
+		Action:      CheckActionBlockUpgradeDriverInstall,
 		Reason:      reason.Error(),
 	}
 	return checkResult
@@ -163,8 +163,8 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 	case CheckActionBlockUpgrade:
 		return ClusterCheckBlockUpgrade, result
 
-	case CheckActionBlockDriverInstall:
-		return ClusterCheckBlockDriverInstall, result
+	case CheckActionBlockUpgradeDriverInstall:
+		return ClusterCheckBlockUpgradeDriverInstall, result
 
 	default:
 		return ClusterCheckAllGood, result

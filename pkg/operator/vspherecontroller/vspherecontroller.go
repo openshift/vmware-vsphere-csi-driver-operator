@@ -185,7 +185,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 
 	// if there was an OCP error we should degrade the cluster or if we previously created CSIDriver
 	// but we can't connect to vcenter now, we should also degrade the cluster
-	err, degradedOrBlockedFromUpgrades := c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra, opStatus)
+	err, degradedOrBlockedFromUpgrades, connectionBlockUpgrade := c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra, opStatus)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		queue.Add(queueKey)
 	})
 
-	err, degradedOrBlockedFromUpgrades = c.blockUpgradeOrDegradeCluster(ctx, result, infra, opStatus)
+	err, degradedOrBlockedFromUpgrades, clusterCheckBlockUpgrade := c.blockUpgradeOrDegradeCluster(ctx, result, infra, opStatus)
 	if err != nil {
 		return err
 	}
@@ -216,8 +216,11 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		return nil
 	}
 
+	blockUpgrade := connectionBlockUpgrade || clusterCheckBlockUpgrade
 	// All checks succeeded, reset any error metrics
-	utils.InstallErrorMetric.Reset()
+	if !blockUpgrade {
+		utils.InstallErrorMetric.Reset()
+	}
 
 	// sync storage class
 	if c.storageClassController != nil {
@@ -236,7 +239,11 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		go c.runConditionalController(ctx)
 		c.operandControllerStarted = true
 	}
-	return c.updateConditions(ctx, c.name, checks.MakeClusterCheckResultPass(), opStatus, operatorapi.ConditionTrue)
+	upgradeableStatus := operatorapi.ConditionTrue
+	if blockUpgrade {
+		upgradeableStatus = operatorapi.ConditionFalse
+	}
+	return c.updateConditions(ctx, c.name, checks.MakeClusterCheckResultPass(), opStatus, upgradeableStatus)
 }
 
 func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, error) {
@@ -260,7 +267,7 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	ctx context.Context,
 	result checks.ClusterCheckResult,
 	infra *ocpv1.Infrastructure,
-	status *operatorapi.OperatorStatus) (error, bool) {
+	status *operatorapi.OperatorStatus) (err error, blockInstall, blockUpgrade bool) {
 
 	var clusterCondition string
 	clusterStatus, result := checks.CheckClusterStatus(result, c.getCheckAPIDependency(infra))
@@ -268,25 +275,27 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	case checks.ClusterCheckDegrade:
 		clusterCondition = "degraded"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		return result.CheckError, true
+		return result.CheckError, true, false
 	case checks.ClusterCheckUpgradeStateUnknown:
 		clusterCondition = "upgrade_unknown"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionUnknown)
-		return updateError, true
+		return updateError, true, false
 	case checks.ClusterCheckBlockUpgrade:
 		clusterCondition = "upgrade_blocked"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
-		return updateError, true
-	case checks.ClusterCheckBlockDriverInstall:
+		return updateError, false, true
+	case checks.ClusterCheckBlockUpgradeDriverInstall:
 		clusterCondition = "install_blocked"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
+		clusterCondition = "upgrade_blocked"
+		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		// Set Upgradeable: true with an extra message
-		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionTrue)
-		return updateError, true
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
+		return updateError, true, true
 	}
-	return nil, false
+	return nil, false, false
 }
 
 func (c *VSphereController) runConditionalController(ctx context.Context) {
