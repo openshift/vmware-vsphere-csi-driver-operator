@@ -59,28 +59,35 @@ spec:
             description: spec holds user settable values for configuration
             properties:
               driverConfig:
-                description: DriverConfig field can be used to optionally specify
-                  driver specific configuration. If this field is nil, platform chosen
-                  default configuration will be applied.
+                description: driverConfig can be used to specify platform specific
+                  driver configuration. When omitted, this means no opinion and the
+                  platform is left to choose reasonable defaults. These defaults are
+                  subject to change over time.
                 properties:
-                  driverName:
-                    description: DriverName indicates which of the driver we are installing
+                  driverType:
+                    description: "driverType indicates type of CSI driver for which
+                      the driverConfig is being applied to. \n Valid values are: \n
+                      * vsphere \n Allows configuration of vsphere CSI driver topology."
+                    enum:
+                    - vsphere
                     type: string
                   vsphere:
-                    description: VSphere field is used to configure vsphere CSI driver
-                      specific properties.
+                    description: vsphere is used to configure the vsphere CSI driver.
                     properties:
                       topologyCategories:
-                        description: TopologyCategories indicates categories with
-                          which vcenter resources as hostcluster or datacenter were
-                          tagged with. If unspecified CSI driver configuration will
-                          default to configuration specified in cluster configuration.
+                        description: topologyCategories indicates tag categories with
+                          which vcenter resources such as hostcluster or datacenter
+                          were tagged with. If unspecified CSI driver configuration
+                          will default to configuration specified in Infrastructure
+                          object. If both Infrastructure object and ClusterCSIDriver
+                          specify topology - then values in Infrastructure object
+                          will take precedence.
                         items:
                           type: string
                         type: array
                     type: object
                 required:
-                - driverName
+                - driverType
                 type: object
               logLevel:
                 default: Normal

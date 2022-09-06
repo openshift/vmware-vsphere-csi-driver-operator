@@ -530,11 +530,7 @@ func (in *ClusterCSIDriverList) DeepCopyObject() runtime.Object {
 func (in *ClusterCSIDriverSpec) DeepCopyInto(out *ClusterCSIDriverSpec) {
 	*out = *in
 	in.OperatorSpec.DeepCopyInto(&out.OperatorSpec)
-	if in.DriverConfig != nil {
-		in, out := &in.DriverConfig, &out.DriverConfig
-		*out = new(CSIDriverConfigSpec)
-		(*in).DeepCopyInto(*out)
-	}
+	in.DriverConfig.DeepCopyInto(&out.DriverConfig)
 	return
 }
 
