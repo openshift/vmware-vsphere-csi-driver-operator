@@ -115,6 +115,6 @@ require (
 
 replace github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible
 
-replace github.com/openshift/api => github.com/gnufied/api v0.0.0-20220906143615-1d1f84c81f4c
+replace github.com/openshift/api => github.com/gnufied/api v0.0.0-20220907153857-5a99faf61076
 
-replace github.com/openshift/client-go => github.com/gnufied/client-go v0.0.0-20220906150918-82df31d50d99
+replace github.com/openshift/client-go => github.com/gnufied/client-go v0.0.0-20220907155656-8783c5baaf83

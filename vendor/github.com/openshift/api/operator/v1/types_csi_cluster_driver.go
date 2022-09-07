@@ -108,6 +108,10 @@ type ClusterCSIDriverSpec struct {
 // +kubebuilder:validation:Enum=vsphere
 type CSIDriverType string
 
+const (
+	VSphereDriverType CSIDriverType = "vsphere"
+)
+
 // CSIDriverConfigSpec defines configuration spec that can be
 // used to optionally configure a specific CSI Driver.
 // +union

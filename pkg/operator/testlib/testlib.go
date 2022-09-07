@@ -3,6 +3,7 @@ package testlib
 import (
 	"embed"
 	"fmt"
+
 	ocpv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfig "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -49,7 +50,9 @@ func WaitForSync(clients *utils.APIClient, stopCh <-chan struct{}) {
 	clients.KubeInformers.InformersFor("").WaitForCacheSync(stopCh)
 	clients.KubeInformers.InformersFor(cloudConfigNamespace).WaitForCacheSync(stopCh)
 	clients.ConfigInformers.WaitForCacheSync(stopCh)
-	clients.OCPOperatorInformers.WaitForCacheSync(stopCh)
+	if clients.OCPOperatorInformers != nil {
+		clients.OCPOperatorInformers.WaitForCacheSync(stopCh)
+	}
 }
 
 func StartFakeInformer(clients *utils.APIClient, stopCh <-chan struct{}) {
@@ -60,7 +63,9 @@ func StartFakeInformer(clients *utils.APIClient, stopCh <-chan struct{}) {
 		clients.ConfigInformers,
 		clients.OCPOperatorInformers,
 	} {
-		informer.Start(stopCh)
+		if informer != nil {
+			informer.Start(stopCh)
+		}
 	}
 }
 
@@ -107,15 +112,15 @@ func GetClusterCSIDriver(hasTopology bool) *opv1.ClusterCSIDriver {
 			Name: infraGlobalName,
 		},
 		Spec: opv1.ClusterCSIDriverSpec{
-			DriverConfig: &opv1.CSIDriverConfigSpec{
-				DriverName: utils.VSphereDriverName,
+			DriverConfig: opv1.CSIDriverConfigSpec{
+				DriverType: opv1.VSphereDriverType,
 				VSphere:    &opv1.VSphereCSIDriverConfigSpec{TopologyCategories: []string{"k8s-zone", "k8s-region"}},
 			},
 		},
 		Status: opv1.ClusterCSIDriverStatus{},
 	}
 	if !hasTopology {
-		c.Spec.DriverConfig = nil
+		c.Spec.DriverConfig = opv1.CSIDriverConfigSpec{}
 	}
 	return c
 }
