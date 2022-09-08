@@ -243,7 +243,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	if blockUpgrade {
 		upgradeableStatus = operatorapi.ConditionFalse
 	}
-	return c.updateConditions(ctx, c.name, checks.MakeClusterCheckResultPass(), opStatus, upgradeableStatus)
+	return c.updateConditions(ctx, c.name, result, opStatus, upgradeableStatus)
 }
 
 func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, error) {
