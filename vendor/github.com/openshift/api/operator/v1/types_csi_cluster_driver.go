@@ -101,15 +101,15 @@ type ClusterCSIDriverSpec struct {
 	// When omitted, this means no opinion and the platform is left to choose reasonable
 	// defaults. These defaults are subject to change over time.
 	// +optional
-	DriverConfig CSIDriverConfigSpec `json:"driverConfig,omitempty"`
+	DriverConfig CSIDriverConfigSpec `json:"driverConfig"`
 }
 
 // CSIDriverType indicates type of CSI driver being configured.
-// +kubebuilder:validation:Enum=vsphere
+// +kubebuilder:validation:Enum="";vSphere
 type CSIDriverType string
 
 const (
-	VSphereDriverType CSIDriverType = "vsphere"
+	VSphereDriverType CSIDriverType = "vSphere"
 )
 
 // CSIDriverConfigSpec defines configuration spec that can be
@@ -121,9 +121,12 @@ type CSIDriverConfigSpec struct {
 	//
 	// Valid values are:
 	//
-	// * vsphere
+	// * vSphere
 	//
 	// Allows configuration of vsphere CSI driver topology.
+	//
+	// ---
+	// Consumers should treat unknown values as a NO-OP.
 	//
 	// +kubebuilder:validation:Required
 	// +unionDiscriminator
@@ -131,7 +134,7 @@ type CSIDriverConfigSpec struct {
 
 	// vsphere is used to configure the vsphere CSI driver.
 	// +optional
-	VSphere *VSphereCSIDriverConfigSpec `json:"vsphere,omitempty"`
+	VSphere *VSphereCSIDriverConfigSpec `json:"vSphere,omitempty"`
 }
 
 // VSphereCSIDriverConfigSpec defines properties that
@@ -139,10 +142,9 @@ type CSIDriverConfigSpec struct {
 type VSphereCSIDriverConfigSpec struct {
 	// topologyCategories indicates tag categories with which
 	// vcenter resources such as hostcluster or datacenter were tagged with.
-	// If unspecified CSI driver configuration will default to configuration
-	// specified in Infrastructure object. If both Infrastructure object and
-	// ClusterCSIDriver specify topology - then values in Infrastructure object
-	// will take precedence.
+	// If cluster Infrastructure object has a topology, values specified in
+	// Infrastructure object will be used and modifications to topologyCategories
+	// will be rejected.
 	// +optional
 	TopologyCategories []string `json:"topologyCategories,omitempty"`
 }

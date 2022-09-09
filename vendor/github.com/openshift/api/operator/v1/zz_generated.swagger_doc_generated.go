@@ -327,8 +327,8 @@ func (StatuspageProvider) SwaggerDoc() map[string]string {
 
 var map_CSIDriverConfigSpec = map[string]string{
 	"":           "CSIDriverConfigSpec defines configuration spec that can be used to optionally configure a specific CSI Driver.",
-	"driverType": "driverType indicates type of CSI driver for which the driverConfig is being applied to.\n\nValid values are:\n\n* vsphere\n\nAllows configuration of vsphere CSI driver topology.",
-	"vsphere":    "vsphere is used to configure the vsphere CSI driver.",
+	"driverType": "driverType indicates type of CSI driver for which the driverConfig is being applied to.\n\nValid values are:\n\n* vSphere\n\nAllows configuration of vsphere CSI driver topology.",
+	"vSphere":    "vsphere is used to configure the vsphere CSI driver.",
 }
 
 func (CSIDriverConfigSpec) SwaggerDoc() map[string]string {
@@ -373,7 +373,7 @@ func (ClusterCSIDriverStatus) SwaggerDoc() map[string]string {
 
 var map_VSphereCSIDriverConfigSpec = map[string]string{
 	"":                   "VSphereCSIDriverConfigSpec defines properties that can be configured for vsphere CSI driver.",
-	"topologyCategories": "topologyCategories indicates tag categories with which vcenter resources such as hostcluster or datacenter were tagged with. If unspecified CSI driver configuration will default to configuration specified in Infrastructure object. If both Infrastructure object and ClusterCSIDriver specify topology - then values in Infrastructure object will take precedence.",
+	"topologyCategories": "topologyCategories indicates tag categories with which vcenter resources such as hostcluster or datacenter were tagged with. If cluster Infrastructure object has a topology, values specified in Infrastructure object will be used and modifications to topologyCategories will be rejected.",
 }
 
 func (VSphereCSIDriverConfigSpec) SwaggerDoc() map[string]string {
