@@ -193,6 +193,17 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		return nil
 	}
 
+	// if we created storageclass before then we should keep resyncing the storageclass in case it gets deleted.
+	if c.storageClassController != nil && c.storageClassController.StorageClassCreated {
+		storageClassAPIDeps := c.getCheckAPIDependency(infra)
+		err = c.storageClassController.Sync(ctx, c.vSphereConnection, storageClassAPIDeps)
+		// storageclass sync will only return error if somehow updating conditions fails, in which case
+		// we can return error here and degrade the cluster
+		if err != nil {
+			return err
+		}
+	}
+
 	delay, result, checkRan := c.runClusterCheck(ctx, infra)
 	// if checks did not run
 	if !checkRan {
