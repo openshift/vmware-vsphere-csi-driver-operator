@@ -3,8 +3,9 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
-	v1 "github.com/openshift/api/config/v1"
 	"strings"
+
+	v1 "github.com/openshift/api/config/v1"
 
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
@@ -31,6 +32,7 @@ type StorageClassController struct {
 	kubeClient           kubernetes.Interface
 	operatorClient       v1helpers.OperatorClient
 	recorder             events.Recorder
+	StorageClassCreated  bool
 	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 }
 
@@ -70,8 +72,10 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 			klog.Errorf("error syncing storage class: %v", err)
 			return checks.MakeClusterDegradedError(checks.CheckStatusOpenshiftAPIError, err), checks.ClusterCheckDegrade
 		}
+		c.StorageClassCreated = true
 		return checks.MakeClusterCheckResultPass(), checks.ClusterCheckAllGood
 	}
+
 	checkResult, overallClusterStatus := checkResultFunc()
 	return c.updateConditions(ctx, checkResult, overallClusterStatus)
 }
