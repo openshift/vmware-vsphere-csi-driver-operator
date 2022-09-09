@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"os"
 	"strings"
 
@@ -135,25 +136,17 @@ func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deplo
 	if err != nil {
 		return err
 	}
-	vsphereConfig := clusterCSIDriver.Spec.DriverConfig
-	emptyDriverConfig := operatorapi.CSIDriverConfigSpec{}
-	if vsphereConfig == emptyDriverConfig {
-		return nil
-	}
-
-	if vsphereConfig.VSphere != nil {
-		topologyCategories := vsphereConfig.VSphere.TopologyCategories
-		if len(topologyCategories) > 0 {
-			containers := deployment.Spec.Template.Spec.Containers
-			for i := range containers {
-				if containers[i].Name != "csi-provisioner" {
-					continue
-				}
-
-				containers[i].Args = append(containers[i].Args, "--feature-gates=Topology=true", "--strict-topology")
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
+	if len(topologyCategories) > 0 {
+		containers := deployment.Spec.Template.Spec.Containers
+		for i := range containers {
+			if containers[i].Name != "csi-provisioner" {
+				continue
 			}
-			deployment.Spec.Template.Spec.Containers = containers
+
+			containers[i].Args = append(containers[i].Args, "--feature-gates=Topology=true", "--strict-topology")
 		}
+		deployment.Spec.Template.Spec.Containers = containers
 	}
 	return nil
 }

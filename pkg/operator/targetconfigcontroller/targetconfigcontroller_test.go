@@ -27,7 +27,7 @@ func TestApplyClusterCSIDriverChange(t *testing.T) {
 			name:             "when driver does have topology enabled",
 			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
 			operatorObj:      testlib.MakeFakeDriverInstance(),
-			expectedTopology: "k8s-zone,k8s-region",
+			expectedTopology: "k8s-region,k8s-zone",
 		},
 	}
 
@@ -92,7 +92,7 @@ func TestApplyClusterCSIDriverChange(t *testing.T) {
 			}
 			if tc.expectedTopology != "" {
 				if labelSection == nil || labelSection.String() != tc.expectedTopology {
-					t.Fatalf("unexpected topology found %v", labelSection)
+					t.Fatalf("expected topology %v, unexpected topology found %v", tc.expectedTopology, labelSection)
 				}
 			}
 

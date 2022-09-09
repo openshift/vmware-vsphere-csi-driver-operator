@@ -34,10 +34,6 @@ const (
 	cloudConfigNamespace = "openshift-config"
 )
 
-var (
-	emptyDriverConfig = opv1.CSIDriverConfigSpec{}
-)
-
 type TargetConfigController struct {
 	name                   string
 	targetNamespace        string
@@ -180,13 +176,10 @@ func (c TargetConfigController) applyClusterCSIDriverChange(
 		return nil, fmt.Errorf("error loading ini file: %v", err)
 	}
 
-	driverConfig := clusterCSIDriver.Spec.DriverConfig
-	if driverConfig != emptyDriverConfig {
-		vsphereConfig := driverConfig.VSphere
-		if vsphereConfig != nil && len(vsphereConfig.TopologyCategories) > 0 {
-			topologyCategoryString := strings.Join(vsphereConfig.TopologyCategories, ",")
-			csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
-		}
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
+	if len(topologyCategories) > 0 {
+		topologyCategoryString := strings.Join(topologyCategories, ",")
+		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
 	}
 
 	// lets dump the ini file to a string
