@@ -25,6 +25,10 @@ const (
 	SummaryProperty       = "summary"
 )
 
+type StorageClassSyncInterface interface {
+	Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+}
+
 type StorageClassController struct {
 	name                 string
 	targetNamespace      string
@@ -32,7 +36,6 @@ type StorageClassController struct {
 	kubeClient           kubernetes.Interface
 	operatorClient       v1helpers.OperatorClient
 	recorder             events.Recorder
-	StorageClassCreated  bool
 	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 }
 
@@ -43,7 +46,7 @@ func NewStorageClassController(
 	kubeClient kubernetes.Interface,
 	operatorClient v1helpers.OperatorClient,
 	recorder events.Recorder,
-) *StorageClassController {
+) StorageClassSyncInterface {
 	c := &StorageClassController{
 		name:                 name,
 		targetNamespace:      targetNamespace,
@@ -72,7 +75,6 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 			klog.Errorf("error syncing storage class: %v", err)
 			return checks.MakeClusterDegradedError(checks.CheckStatusOpenshiftAPIError, err), checks.ClusterCheckDegrade
 		}
-		c.StorageClassCreated = true
 		return checks.MakeClusterCheckResultPass(), checks.ClusterCheckAllGood
 	}
 
