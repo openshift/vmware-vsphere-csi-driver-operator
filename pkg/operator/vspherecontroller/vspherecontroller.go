@@ -47,7 +47,7 @@ type VSphereController struct {
 	csiNodeLister            storagelister.CSINodeLister
 	apiClients               utils.APIClient
 	controllers              []conditionalController
-	storageClassController   *storageclasscontroller.StorageClassController
+	storageClassController   storageclasscontroller.StorageClassSyncInterface
 	operandControllerStarted bool
 	vSphereConnection        *vclib.VSphereConnection
 	vSphereChecker           vSphereEnvironmentCheckInterface
@@ -183,20 +183,41 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		}
 	}()
 
-	// if there was an OCP error we should degrade the cluster or if we previously created CSIDriver
-	// but we can't connect to vcenter now, we should also degrade the cluster
-	err, degradedOrBlockedFromUpgrades, connectionBlockUpgrade := c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra, opStatus)
+	blockCSIDriverInstall, err := c.installCSIDriver(ctx, syncContext, infra, connectionResult, opStatus)
 	if err != nil {
 		return err
 	}
-	if degradedOrBlockedFromUpgrades {
-		return nil
+
+	// only install CSI storageclass if blockCSIDriverInstall is false and CSI driver has been installed.
+	if !blockCSIDriverInstall && c.operandControllerStarted {
+		storageClassAPIDeps := c.getCheckAPIDependency(infra)
+		err = c.storageClassController.Sync(ctx, c.vSphereConnection, storageClassAPIDeps)
+		// storageclass sync will only return error if somehow updating conditions fails, in which case
+		// we can return error here and degrade the cluster
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext factory.SyncContext, infra *ocpv1.Infrastructure, connectionResult checks.ClusterCheckResult, opStatus *operatorapi.OperatorStatus) (blockCSIDriverInstall bool, err error) {
+	// if there was an OCP error we should degrade the cluster or if we previously created CSIDriver
+	// but we can't connect to vcenter now, we should also degrade the cluster
+	var connectionBlockUpgrade bool
+	err, blockCSIDriverInstall, connectionBlockUpgrade = c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra, opStatus)
+	if err != nil {
+		return blockCSIDriverInstall, err
+	}
+
+	if blockCSIDriverInstall {
+		return blockCSIDriverInstall, nil
 	}
 
 	delay, result, checkRan := c.runClusterCheck(ctx, infra)
 	// if checks did not run
 	if !checkRan {
-		return nil
+		return blockCSIDriverInstall, nil
 	}
 	queue := syncContext.Queue()
 	queueKey := syncContext.QueueKey()
@@ -206,14 +227,15 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		queue.Add(queueKey)
 	})
 
-	err, degradedOrBlockedFromUpgrades, clusterCheckBlockUpgrade := c.blockUpgradeOrDegradeCluster(ctx, result, infra, opStatus)
+	var clusterCheckBlockUpgrade bool
+	err, blockCSIDriverInstall, clusterCheckBlockUpgrade = c.blockUpgradeOrDegradeCluster(ctx, result, infra, opStatus)
 	if err != nil {
-		return err
+		return blockCSIDriverInstall, err
 	}
 
 	// if checks failed, we should exit potentially without starting CSI driver
-	if degradedOrBlockedFromUpgrades {
-		return nil
+	if blockCSIDriverInstall {
+		return blockCSIDriverInstall, nil
 	}
 
 	blockUpgrade := connectionBlockUpgrade || clusterCheckBlockUpgrade
@@ -222,20 +244,9 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		utils.InstallErrorMetric.Reset()
 	}
 
-	// sync storage class
-	if c.storageClassController != nil {
-		storageClassAPIDeps := c.getCheckAPIDependency(infra)
-		err = c.storageClassController.Sync(ctx, c.vSphereConnection, storageClassAPIDeps)
-		// storageclass sync will only return error if somehow updating conditions fails, in which case
-		// we can return error here and degrade the cluster
-		if err != nil {
-			return err
-		}
-	}
-
 	// if operand was not started previously and block upgrade is false and clusterdegrade is also false
 	// then and only then we should start CSI driver operator
-	if !c.operandControllerStarted && !degradedOrBlockedFromUpgrades {
+	if !c.operandControllerStarted && !blockCSIDriverInstall {
 		go c.runConditionalController(ctx)
 		c.operandControllerStarted = true
 	}
@@ -243,7 +254,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	if blockUpgrade {
 		upgradeableStatus = operatorapi.ConditionFalse
 	}
-	return c.updateConditions(ctx, c.name, result, opStatus, upgradeableStatus)
+	return blockCSIDriverInstall, c.updateConditions(ctx, c.name, result, opStatus, upgradeableStatus)
 }
 
 func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, error) {
@@ -467,7 +478,7 @@ func (c *VSphereController) addUpgradeableBlockCondition(
 	return blockUpgradeCondition, true
 }
 
-func (c *VSphereController) createStorageClassController() *storageclasscontroller.StorageClassController {
+func (c *VSphereController) createStorageClassController() storageclasscontroller.StorageClassSyncInterface {
 	scBytes, err := assets.ReadFile("storageclass.yaml")
 	if err != nil {
 		panic("unable to read storageclass file")

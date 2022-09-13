@@ -52,7 +52,17 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 		infraLister:     infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
+	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
 	return c
+}
+
+type dummyStorageClassController struct {
+	syncCalled int
+}
+
+func (c *dummyStorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+	c.syncCalled += 1
+	return nil
 }
 
 func TestSync(t *testing.T) {
@@ -78,6 +88,7 @@ func TestSync(t *testing.T) {
 		expectError                  error
 		failVCenterConnection        bool
 		operandStarted               bool
+		storageClassCreated          bool
 	}{
 		{
 			name:                         "when all configuration is right",
@@ -97,7 +108,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: true,
+			operandStarted:      true,
+			storageClassCreated: true,
 		},
 		{
 			name:                         "when we can't connect to vcenter",
@@ -118,8 +130,9 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionUnknown,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_unknown",failure_reason="vsphere_connection_failed"} 1`,
-			operandStarted:  false,
+			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_unknown",failure_reason="vsphere_connection_failed"} 1`,
+			operandStarted:      false,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when we can't connect to vcenter but CSI driver was installed previously, degrade cluster",
@@ -132,6 +145,7 @@ func TestSync(t *testing.T) {
 			failVCenterConnection:        true,
 			expectError:                  fmt.Errorf("can't talk to vcenter"),
 			operandStarted:               true,
+			storageClassCreated:          false,
 		},
 		{
 			name:                         "when vcenter version is older, block upgrades",
@@ -150,7 +164,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			operandStarted: true,
+			operandStarted:      true,
+			storageClassCreated: true,
 		},
 		{
 			name:                         "when host version is older, block upgrades",
@@ -170,8 +185,9 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			expectedMetrics: `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="check_deprecated_esxi_version"} 1`,
-			operandStarted:  true,
+			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="check_deprecated_esxi_version"} 1`,
+			operandStarted:      true,
+			storageClassCreated: true,
 		},
 		{
 			name:                         "when vcenter version is older but csi driver exists, degrade cluster",
@@ -182,6 +198,7 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectError:                  fmt.Errorf("found older vcenter version, expected is 6.7.3"),
 			operandStarted:               true,
+			storageClassCreated:          false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI driver exists",
@@ -203,7 +220,8 @@ func TestSync(t *testing.T) {
 			},
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
 vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
-			operandStarted: false,
+			operandStarted:      false,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI node object exists",
@@ -225,7 +243,8 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			},
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
 vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
-			operandStarted: false,
+			operandStarted:      false,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when node hw-version was old first and got upgraded",
@@ -246,7 +265,8 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: true,
+			operandStarted:      true,
+			storageClassCreated: true,
 		},
 		{
 			name:                         "sync before the next recheck interval",
@@ -280,7 +300,8 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 					Status: opv1.ConditionFalse,
 				},
 			},
-			operandStarted: true,
+			operandStarted:      true,
+			storageClassCreated: true,
 		},
 		{
 			name:                         "when host version is 7.0.1 and csi driver exists, mark upgradeable: false",
@@ -300,7 +321,8 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 					Status: opv1.ConditionFalse,
 				},
 			},
-			operandStarted: true,
+			operandStarted:      true,
+			storageClassCreated: true,
 		},
 	}
 
@@ -331,6 +353,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			testlib.WaitForSync(commonApiClient, stopCh)
 
 			ctrl := newVsphereController(commonApiClient)
+			scController := ctrl.storageClassController.(*dummyStorageClassController)
 
 			var cleanUpFunc func()
 			var conn *vclib.VSphereConnection
@@ -366,6 +389,15 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			err = ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
 			if test.expectError == nil && err != nil {
 				t.Fatalf("Unexpected error that could degrade cluster: %+v", err)
+			}
+
+			// check storageclass results
+			if test.storageClassCreated && scController.syncCalled == 0 {
+				t.Fatalf("expected storageclass to be created")
+			}
+
+			if !test.storageClassCreated && scController.syncCalled > 0 {
+				t.Fatalf("unexpected storageclass created")
 			}
 
 			if test.expectError != nil && err == nil {
