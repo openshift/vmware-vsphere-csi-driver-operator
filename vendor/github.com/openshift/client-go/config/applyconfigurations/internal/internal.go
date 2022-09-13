@@ -112,6 +112,14 @@ var schemaYAML = typed.YAMLObject(`types:
         elementType:
           namedType: __untyped_deduced_
         elementRelationship: separable
+- name: com.github.openshift.api.config.v1.AWSIngressSpec
+  map:
+    fields:
+    - name: type
+      type:
+        scalar: string
+    unions:
+    - discriminator: type
 - name: com.github.openshift.api.config.v1.AWSPlatformSpec
   map:
     fields:
@@ -1513,6 +1521,21 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.openshift.api.config.v1.IngressStatus
       default: {}
+- name: com.github.openshift.api.config.v1.IngressPlatformSpec
+  map:
+    fields:
+    - name: aws
+      type:
+        namedType: com.github.openshift.api.config.v1.AWSIngressSpec
+    - name: type
+      type:
+        scalar: string
+      default: ""
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: aws
+        discriminatorValue: AWS
 - name: com.github.openshift.api.config.v1.IngressSpec
   map:
     fields:
@@ -1532,6 +1555,10 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+    - name: loadbalancer
+      type:
+        namedType: com.github.openshift.api.config.v1.LoadBalancer
+      default: {}
     - name: requiredHSTSPolicies
       type:
         list:
@@ -1664,6 +1691,13 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: string
       default: ""
+- name: com.github.openshift.api.config.v1.LoadBalancer
+  map:
+    fields:
+    - name: platform
+      type:
+        namedType: com.github.openshift.api.config.v1.IngressPlatformSpec
+      default: {}
 - name: com.github.openshift.api.config.v1.MTUMigration
   map:
     fields:
@@ -2742,6 +2776,58 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         namedType: com.github.openshift.api.config.v1.SecretNameReference
       default: {}
+- name: com.github.openshift.api.config.v1alpha1.GatherConfig
+  map:
+    fields:
+    - name: dataPolicy
+      type:
+        scalar: string
+    - name: disabledGatherers
+      type:
+        list:
+          elementType:
+            scalar: string
+          elementRelationship: atomic
+- name: com.github.openshift.api.config.v1alpha1.InsightsDataGather
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.InsightsDataGatherSpec
+      default: {}
+    - name: status
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.InsightsDataGatherStatus
+      default: {}
+- name: com.github.openshift.api.config.v1alpha1.InsightsDataGatherSpec
+  map:
+    fields:
+    - name: gatherConfig
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.GatherConfig
+      default: {}
+- name: com.github.openshift.api.config.v1alpha1.InsightsDataGatherStatus
+  map:
+    elementType:
+      scalar: untyped
+      list:
+        elementType:
+          namedType: __untyped_atomic_
+        elementRelationship: atomic
+      map:
+        elementType:
+          namedType: __untyped_deduced_
+        elementRelationship: separable
 - name: io.k8s.api.core.v1.ConfigMapKeySelector
   map:
     fields:
@@ -2961,9 +3047,6 @@ var schemaYAML = typed.YAMLObject(`types:
         map:
           elementType:
             scalar: string
-    - name: clusterName
-      type:
-        scalar: string
     - name: creationTimestamp
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time

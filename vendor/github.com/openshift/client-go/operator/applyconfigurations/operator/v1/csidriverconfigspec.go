@@ -9,8 +9,8 @@ import (
 // CSIDriverConfigSpecApplyConfiguration represents an declarative configuration of the CSIDriverConfigSpec type for use
 // with apply.
 type CSIDriverConfigSpecApplyConfiguration struct {
-	DriverName *v1.CSIDriverName                             `json:"driverName,omitempty"`
-	VSphere    *VSphereCSIDriverConfigSpecApplyConfiguration `json:"vsphere,omitempty"`
+	DriverType *v1.CSIDriverType                             `json:"driverType,omitempty"`
+	VSphere    *VSphereCSIDriverConfigSpecApplyConfiguration `json:"vSphere,omitempty"`
 }
 
 // CSIDriverConfigSpecApplyConfiguration constructs an declarative configuration of the CSIDriverConfigSpec type for use with
@@ -19,11 +19,11 @@ func CSIDriverConfigSpec() *CSIDriverConfigSpecApplyConfiguration {
 	return &CSIDriverConfigSpecApplyConfiguration{}
 }
 
-// WithDriverName sets the DriverName field in the declarative configuration to the given value
+// WithDriverType sets the DriverType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the DriverName field is set to the value of the last call.
-func (b *CSIDriverConfigSpecApplyConfiguration) WithDriverName(value v1.CSIDriverName) *CSIDriverConfigSpecApplyConfiguration {
-	b.DriverName = &value
+// If called multiple times, the DriverType field is set to the value of the last call.
+func (b *CSIDriverConfigSpecApplyConfiguration) WithDriverType(value v1.CSIDriverType) *CSIDriverConfigSpecApplyConfiguration {
+	b.DriverType = &value
 	return b
 }
 

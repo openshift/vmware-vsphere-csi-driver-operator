@@ -303,17 +303,17 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.openshift.api.operator.v1.CSIDriverConfigSpec
   map:
     fields:
-    - name: driverName
+    - name: driverType
       type:
         scalar: string
       default: ""
-    - name: vsphere
+    - name: vSphere
       type:
         namedType: com.github.openshift.api.operator.v1.VSphereCSIDriverConfigSpec
     unions:
-    - discriminator: driverName
+    - discriminator: driverType
       fields:
-      - fieldName: vsphere
+      - fieldName: vSphere
         discriminatorValue: VSphere
 - name: com.github.openshift.api.operator.v1.CSISnapshotController
   map:
@@ -496,6 +496,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: driverConfig
       type:
         namedType: com.github.openshift.api.operator.v1.CSIDriverConfigSpec
+      default: {}
     - name: logLevel
       type:
         scalar: string
@@ -1971,7 +1972,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: dnsManagementPolicy
       type:
         scalar: string
-      default: ""
+      default: Managed
     - name: providerParameters
       type:
         namedType: com.github.openshift.api.operator.v1.ProviderLoadBalancerParameters
@@ -3096,9 +3097,6 @@ var schemaYAML = typed.YAMLObject(`types:
         map:
           elementType:
             scalar: string
-    - name: clusterName
-      type:
-        scalar: string
     - name: creationTimestamp
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
