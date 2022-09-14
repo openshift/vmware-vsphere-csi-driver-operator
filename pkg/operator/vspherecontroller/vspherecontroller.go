@@ -65,7 +65,6 @@ const (
 	resyncDuration                    = 20 * time.Minute
 	envVMWareVsphereDriverSyncerImage = "VMWARE_VSPHERE_SYNCER_IMAGE"
 	storageClassControllerName        = "VMwareVSphereDriverStorageClassController"
-	driverName                        = "csi.vsphere.vmware.com"
 	storageClassName                  = "thin-csi"
 )
 

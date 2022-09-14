@@ -3,10 +3,11 @@ package vspherecontroller
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"os"
 	"strings"
+
+	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
@@ -132,7 +133,7 @@ func (c *VSphereController) createCSIDriver() {
 }
 
 func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
-	clusterCSIDriver, err := c.apiClients.ClusterCSIDriverInformer.Lister().Get(driverName)
+	clusterCSIDriver, err := c.apiClients.ClusterCSIDriverInformer.Lister().Get(utils.VSphereDriverName)
 	if err != nil {
 		return err
 	}

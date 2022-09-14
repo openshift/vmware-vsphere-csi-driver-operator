@@ -2,6 +2,9 @@ package operator
 
 import (
 	"context"
+	"strings"
+	"time"
+
 	opv1 "github.com/openshift/api/operator/v1"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
@@ -16,8 +19,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
-	"strings"
-	"time"
 )
 
 type DriverFeaturesController struct {
@@ -66,7 +67,7 @@ func NewDriverFeaturesController(
 		operatorClient,
 	).ToController(
 		c.name,
-		recorder.WithComponentSuffix("feature-config-controlller-"+strings.ToLower(name)),
+		recorder.WithComponentSuffix("feature-config-controller-"+strings.ToLower(name)),
 	)
 }
 
@@ -101,24 +102,5 @@ func (d DriverFeaturesController) Sync(ctx context.Context, controllerContext fa
 	}
 
 	_, _, err = resourceapply.ApplyConfigMap(ctx, d.kubeClient.CoreV1(), controllerContext.Recorder(), defaultFeatureConfigMap)
-	if err != nil {
-		return err
-	}
-	availableCondition := opv1.OperatorCondition{
-		Type:   d.name + opv1.OperatorStatusTypeAvailable,
-		Status: opv1.ConditionTrue,
-	}
-
-	progressingCondition := opv1.OperatorCondition{
-		Type:   d.name + opv1.OperatorStatusTypeProgressing,
-		Status: opv1.ConditionFalse,
-	}
-
-	_, _, err = v1helpers.UpdateStatus(
-		ctx,
-		d.operatorClient,
-		v1helpers.UpdateConditionFn(availableCondition),
-		v1helpers.UpdateConditionFn(progressingCondition),
-	)
 	return err
 }

@@ -4,6 +4,7 @@ data:
   "csi-auth-check": "true"
   "online-volume-extend": "true"
   "block-volume-snapshot": "true"
+  "improved-volume-topology": "false" # operator will set this value to true if cluster supports CSI topology
 kind: ConfigMap
 metadata:
   name: internal-feature-states.csi.vsphere.vmware.com

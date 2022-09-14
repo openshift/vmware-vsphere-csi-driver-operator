@@ -113,8 +113,8 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		clusterCSIDriverInformer,
 		controllerConfig.EventRecorder,
 	)
-	featureConfigBytes, err := assets.ReadFile("vsphere_features_config.yaml")
 
+	featureConfigBytes, err := assets.ReadFile("vsphere_features_config.yaml")
 	if err != nil {
 		return err
 	}

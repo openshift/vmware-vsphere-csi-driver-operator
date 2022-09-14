@@ -1,13 +1,14 @@
 package targetconfigcontroller
 
 import (
+	"testing"
+
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	iniv1 "gopkg.in/ini.v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"testing"
 )
 
 func TestApplyClusterCSIDriverChange(t *testing.T) {
@@ -27,7 +28,7 @@ func TestApplyClusterCSIDriverChange(t *testing.T) {
 			name:             "when driver does have topology enabled",
 			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
 			operatorObj:      testlib.MakeFakeDriverInstance(),
-			expectedTopology: "k8s-region,k8s-zone",
+			expectedTopology: "k8s-zone,k8s-region",
 		},
 	}
 
