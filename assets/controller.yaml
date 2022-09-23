@@ -4,8 +4,8 @@ metadata:
   name: vmware-vsphere-csi-driver-controller
   namespace: openshift-cluster-csi-drivers
   annotations:
-    config.openshift.io/inject-proxy: csi-driver
-    config.openshift.io/inject-proxy-cabundle: csi-driver
+    config.openshift.io/inject-proxy: csi-driver,vsphere-syncer
+    config.openshift.io/inject-proxy-cabundle: csi-driver,vsphere-syncer
 spec:
   strategy:
     type: RollingUpdate
