@@ -1,9 +1,13 @@
 package vspherecontroller
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
@@ -54,7 +58,6 @@ func (c *VSphereController) createCSIDriver() {
 			"rbac/prometheus_rolebinding.yaml",
 			"rbac/snapshotter_role.yaml",
 			"rbac/snapshotter_binding.yaml",
-			"vsphere_features_config.yaml",
 			"controller_sa.yaml",
 			"controller_pdb.yaml",
 			"node_sa.yaml",
@@ -89,6 +92,7 @@ func (c *VSphereController) createCSIDriver() {
 		WithVSphereCredentials(defaultNamespace, secretName, c.apiClients.SecretInformer),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
+		c.topologyHook,
 		csidrivercontrollerservicecontroller.WithObservedProxyDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithCABundleDeploymentHook(
 			defaultNamespace,
@@ -115,6 +119,7 @@ func (c *VSphereController) createCSIDriver() {
 			trustedCAConfigMap,
 			c.apiClients.ConfigMapInformer,
 		),
+		WithConfigMapDaemonSetAnnotationHook("vsphere-csi-config", defaultNamespace, c.apiClients.ConfigMapInformer),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
@@ -125,6 +130,26 @@ func (c *VSphereController) createCSIDriver() {
 		name:       driverOperandName,
 		controller: csiControllerSet,
 	})
+}
+
+func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
+	clusterCSIDriver, err := c.apiClients.ClusterCSIDriverInformer.Lister().Get(utils.VSphereDriverName)
+	if err != nil {
+		return err
+	}
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
+	if len(topologyCategories) > 0 {
+		containers := deployment.Spec.Template.Spec.Containers
+		for i := range containers {
+			if containers[i].Name != "csi-provisioner" {
+				continue
+			}
+
+			containers[i].Args = append(containers[i].Args, "--feature-gates=Topology=true", "--strict-topology")
+		}
+		deployment.Spec.Template.Spec.Containers = containers
+	}
+	return nil
 }
 
 func WithVSphereCredentials(
@@ -208,6 +233,44 @@ func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFun
 		ds.Spec.Template.Spec.Containers = maybeAppendDebug(ds.Spec.Template.Spec.Containers, opSpec)
 		return nil
 	}
+}
+
+func WithConfigMapDaemonSetAnnotationHook(configMapName, namespace string, configMapInformer corev1informers.ConfigMapInformer) csidrivernodeservicecontroller.DaemonSetHookFunc {
+	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
+		inputHashes, err := resourcehash.MultipleObjectHashStringMapForObjectReferenceFromLister(
+			configMapInformer.Lister(),
+			nil,
+			resourcehash.NewObjectRef().ForConfigMap().InNamespace(namespace).Named(configMapName),
+		)
+		if err != nil {
+			return fmt.Errorf("invalid dependency reference: %w", err)
+		}
+
+		return addObjectHash(ds, inputHashes)
+	}
+}
+
+func addObjectHash(daemonSet *appsv1.DaemonSet, inputHashes map[string]string) error {
+	if daemonSet == nil {
+		return fmt.Errorf("invalid daemonSet: %v", daemonSet)
+	}
+	if daemonSet.Annotations == nil {
+		daemonSet.Annotations = map[string]string{}
+	}
+	if daemonSet.Spec.Template.Annotations == nil {
+		daemonSet.Spec.Template.Annotations = map[string]string{}
+	}
+	for k, v := range inputHashes {
+		annotationKey := fmt.Sprintf("operator.openshift.io/dep-%s", k)
+		if len(annotationKey) > 63 {
+			hash := sha256.Sum256([]byte(k))
+			annotationKey = fmt.Sprintf("operator.openshift.io/dep-%x", hash)
+			annotationKey = annotationKey[:63]
+		}
+		daemonSet.Annotations[annotationKey] = v
+		daemonSet.Spec.Template.Annotations[annotationKey] = v
+	}
+	return nil
 }
 
 // maybeAppendDebug works like the append() builtin; it returns a new slice of containers

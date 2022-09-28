@@ -125,7 +125,8 @@ spec:
             - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
             - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
             - --http-endpoint=localhost:8202
-            # needed only for topology aware setup
+            # needed only for topology aware setup, it is expected that
+            # operator will set this field is needed.
             # - "--strict-topology"
           env:
             - name: ADDRESS

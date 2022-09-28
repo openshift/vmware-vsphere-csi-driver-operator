@@ -3,6 +3,11 @@ package targetconfigcontroller
 import (
 	"context"
 	"fmt"
+	ocpconfigv1 "github.com/openshift/api/config/v1"
+	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	corev1 "k8s.io/api/core/v1"
 	"strings"
 	"time"
 
@@ -19,6 +24,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	iniv1 "gopkg.in/ini.v1"
 
 	"gopkg.in/gcfg.v1"
 )
@@ -29,40 +35,47 @@ const (
 )
 
 type TargetConfigController struct {
-	name            string
-	targetNamespace string
-	manifest        []byte
-	kubeClient      kubernetes.Interface
-	operatorClient  v1helpers.OperatorClient
-	configMapLister corelister.ConfigMapLister
-	infraLister     infralister.InfrastructureLister
+	name                   string
+	targetNamespace        string
+	manifest               []byte
+	csiConfigManifest      []byte
+	kubeClient             kubernetes.Interface
+	operatorClient         v1helpers.OperatorClient
+	configMapLister        corelister.ConfigMapLister
+	clusterCSIDriverLister clustercsidriverlister.ClusterCSIDriverLister
+	infraLister            infralister.InfrastructureLister
 }
 
 func NewTargetConfigController(
 	name,
 	targetNamespace string,
 	manifest []byte,
+	csiConfigManifest []byte,
 	kubeClient kubernetes.Interface,
 	kubeInformers v1helpers.KubeInformersForNamespaces,
 	operatorClient v1helpers.OperatorClient,
 	configInformer configinformers.SharedInformerFactory,
+	clusterCSIDriverInformer clustercsidriverinformer.ClusterCSIDriverInformer,
 	recorder events.Recorder,
 ) factory.Controller {
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
 	infraInformer := configInformer.Config().V1().Infrastructures()
 	c := &TargetConfigController{
-		name:            name,
-		targetNamespace: targetNamespace,
-		manifest:        manifest,
-		kubeClient:      kubeClient,
-		operatorClient:  operatorClient,
-		configMapLister: configMapInformer.Lister(),
-		infraLister:     infraInformer.Lister(),
+		name:                   name,
+		targetNamespace:        targetNamespace,
+		manifest:               manifest,
+		kubeClient:             kubeClient,
+		operatorClient:         operatorClient,
+		configMapLister:        configMapInformer.Lister(),
+		infraLister:            infraInformer.Lister(),
+		csiConfigManifest:      csiConfigManifest,
+		clusterCSIDriverLister: clusterCSIDriverInformer.Lister(),
 	}
 	return factory.New().WithInformers(
 		configMapInformer.Informer(),
 		infraInformer.Informer(),
 		operatorClient.Informer(),
+		clusterCSIDriverInformer.Informer(),
 	).WithSync(
 		c.sync,
 	).ResyncEvery(
@@ -93,6 +106,11 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		return err
 	}
 
+	clusterCSIDriver, err := c.clusterCSIDriverLister.Get(utils.VSphereDriverName)
+	if err != nil {
+		return err
+	}
+
 	// TODO: none of our CSI operators check whether they are running in the correct cloud. Is
 	// this something we want to change? These operators are supposed to be deployed by CSO, which
 	// already does this checking for us.
@@ -114,16 +132,7 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		return err
 	}
 
-	cmString := string(c.manifest)
-	for pattern, value := range map[string]string{
-		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
-		"${VCENTER}":     cfg.Workspace.VCenterIP,
-		"${DATACENTERS}": cfg.Workspace.Datacenter, // TODO: datacenters?
-	} {
-		cmString = strings.ReplaceAll(cmString, pattern, value)
-	}
-
-	requiredCM := resourceread.ReadConfigMapV1OrDie([]byte(cmString))
+	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver)
 
 	// TODO: check if configMap has been deployed and set appropriate conditions
 	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
@@ -148,4 +157,36 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		v1helpers.UpdateConditionFn(progressingCondition),
 	)
 	return err
+}
+
+func (c TargetConfigController) applyClusterCSIDriverChange(
+	infra *ocpconfigv1.Infrastructure, sourceCFG vsphere.VSphereConfig, clusterCSIDriver *opv1.ClusterCSIDriver) (*corev1.ConfigMap, error) {
+	csiConfigString := string(c.csiConfigManifest)
+
+	for pattern, value := range map[string]string{
+		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
+		"${VCENTER}":     sourceCFG.Workspace.VCenterIP,
+		"${DATACENTERS}": sourceCFG.Workspace.Datacenter, // TODO: datacenters?
+	} {
+		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
+	}
+
+	csiConfig, err := iniv1.Load([]byte(csiConfigString))
+	if err != nil {
+		return nil, fmt.Errorf("error loading ini file: %v", err)
+	}
+
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
+	if len(topologyCategories) > 0 {
+		topologyCategoryString := strings.Join(topologyCategories, ",")
+		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
+	}
+
+	// lets dump the ini file to a string
+	var finalConfigString strings.Builder
+	csiConfig.WriteTo(&finalConfigString)
+
+	requiredCM := resourceread.ReadConfigMapV1OrDie(c.manifest)
+	requiredCM.Data["cloud.conf"] = finalConfigString.String()
+	return requiredCM, nil
 }

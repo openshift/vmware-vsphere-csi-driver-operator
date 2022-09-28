@@ -3,10 +3,7 @@ kind: ConfigMap
 metadata:
   namespace: openshift-cluster-csi-drivers
   name: vsphere-csi-config
+# rest of the cloud-config is populated via operator and
+# csi-cloud-config.ini is used as a basis.
 data:
-  cloud.conf: |
-    [Global]
-    cluster-id = "${CLUSTER_ID}"
-    [VirtualCenter "${VCENTER}"]
-    insecure-flag = "true"
-    datacenters = "${DATACENTERS}"
+  cloud.conf: ""

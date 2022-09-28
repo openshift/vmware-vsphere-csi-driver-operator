@@ -3,19 +3,24 @@ package testlib
 import (
 	"embed"
 	"fmt"
+
 	ocpv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfig "github.com/openshift/client-go/config/clientset/versioned/fake"
 	cfginformers "github.com/openshift/client-go/config/informers/externalversions"
+	fakeoperator "github.com/openshift/client-go/operator/clientset/versioned/fake"
+	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
+	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	fakecore "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
 //go:embed *.yaml
@@ -45,6 +50,9 @@ func WaitForSync(clients *utils.APIClient, stopCh <-chan struct{}) {
 	clients.KubeInformers.InformersFor("").WaitForCacheSync(stopCh)
 	clients.KubeInformers.InformersFor(cloudConfigNamespace).WaitForCacheSync(stopCh)
 	clients.ConfigInformers.WaitForCacheSync(stopCh)
+	if clients.OCPOperatorInformers != nil {
+		clients.OCPOperatorInformers.WaitForCacheSync(stopCh)
+	}
 }
 
 func StartFakeInformer(clients *utils.APIClient, stopCh <-chan struct{}) {
@@ -53,8 +61,11 @@ func StartFakeInformer(clients *utils.APIClient, stopCh <-chan struct{}) {
 	}{
 		clients.KubeInformers,
 		clients.ConfigInformers,
+		clients.OCPOperatorInformers,
 	} {
-		informer.Start(stopCh)
+		if informer != nil {
+			informer.Start(stopCh)
+		}
 	}
 }
 
@@ -85,6 +96,35 @@ func NewFakeClients(coreObjects []runtime.Object, operatorObject *FakeDriverInst
 	return apiClient
 }
 
+func AddClusterCSIDriverClient(apiClient *utils.APIClient, obj *opv1.ClusterCSIDriver) *utils.APIClient {
+	// fakeOperatorClient holds client for clients to github.com/openshift/api/operator APIs
+	fakeOperatorClient := fakeoperator.NewSimpleClientset(obj)
+	ocpOperatorInformer := operatorinformers.NewSharedInformerFactory(fakeOperatorClient, 0)
+	clusterCSIDriverInformer := ocpOperatorInformer.Operator().V1().ClusterCSIDrivers()
+	apiClient.OCPOperatorInformers = ocpOperatorInformer
+	apiClient.ClusterCSIDriverInformer = clusterCSIDriverInformer
+	return apiClient
+}
+
+func GetClusterCSIDriver(hasTopology bool) *opv1.ClusterCSIDriver {
+	c := &opv1.ClusterCSIDriver{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: infraGlobalName,
+		},
+		Spec: opv1.ClusterCSIDriverSpec{
+			DriverConfig: opv1.CSIDriverConfigSpec{
+				DriverType: opv1.VSphereDriverType,
+				VSphere:    &opv1.VSphereCSIDriverConfigSpec{TopologyCategories: []string{"k8s-zone", "k8s-region"}},
+			},
+		},
+		Status: opv1.ClusterCSIDriverStatus{},
+	}
+	if !hasTopology {
+		c.Spec.DriverConfig = opv1.CSIDriverConfigSpec{}
+	}
+	return c
+}
+
 func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error {
 	for _, obj := range objects {
 		switch obj.(type) {
@@ -103,11 +143,42 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 		case *v1.Node:
 			nodeInformer := clients.NodeInformer
 			nodeInformer.Informer().GetStore().Add(obj)
+		case *opv1.ClusterCSIDriver:
+			clusterCSIDriverInformer := clients.ClusterCSIDriverInformer.Informer()
+			clusterCSIDriverInformer.GetStore().Add(obj)
 		default:
 			return fmt.Errorf("Unknown initalObject type: %+v", obj)
 		}
 	}
 	return nil
+}
+
+func GetLegacyVSphereConfig() (vsphere.VSphereConfig, error) {
+	var cfg vsphere.VSphereConfig
+	err := gcfg.ReadStringInto(&cfg, getVSphereConfigString())
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func getVSphereConfigString() string {
+	return `
+[Global]
+user = "administrator@vsphere.local"
+password = "foobar"
+port = "443"
+insecure-flag = "1"
+
+[Workspace]
+server = "foobar.lan"
+datacenter = "Datacenter"
+default-datastore = "baz"
+folder = "k8s"
+
+[VirtualCenter "foobar.lan"]
+datacenters = "Datacenter"
+`
 }
 
 func GetMatchingCondition(status []opv1.OperatorCondition, conditionType string) *opv1.OperatorCondition {
