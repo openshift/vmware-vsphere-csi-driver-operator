@@ -8,6 +8,7 @@ import (
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"strings"
 	"time"
 
@@ -163,10 +164,29 @@ func (c TargetConfigController) applyClusterCSIDriverChange(
 	infra *ocpconfigv1.Infrastructure, sourceCFG vsphere.VSphereConfig, clusterCSIDriver *opv1.ClusterCSIDriver) (*corev1.ConfigMap, error) {
 	csiConfigString := string(c.csiConfigManifest)
 
+	datacenters := sourceCFG.Workspace.Datacenter
+
+	virtualCenterIPs := sets.StringKeySet(sourceCFG.VirtualCenter)
+
+	if len(virtualCenterIPs) != 1 {
+		return nil, fmt.Errorf("cloud config must define a single VirtualCenter")
+	}
+
+	var vCenterDatacenter string
+
+	virtualCenterIP := virtualCenterIPs.List()[0]
+	if virtualCenterConfig, ok := sourceCFG.VirtualCenter[virtualCenterIP]; ok {
+		vCenterDatacenter = virtualCenterConfig.Datacenters
+	}
+
+	if len(vCenterDatacenter) > 0 {
+		datacenters = vCenterDatacenter
+	}
+
 	for pattern, value := range map[string]string{
 		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
 		"${VCENTER}":     sourceCFG.Workspace.VCenterIP,
-		"${DATACENTERS}": sourceCFG.Workspace.Datacenter, // TODO: datacenters?
+		"${DATACENTERS}": datacenters,
 	} {
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
 	}
