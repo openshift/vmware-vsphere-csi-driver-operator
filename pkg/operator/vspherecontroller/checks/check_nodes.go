@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -236,33 +237,40 @@ func getVM(ctx context.Context, checkOpts CheckArgs, node *v1.Node) (*mo.Virtual
 	vmClient := checkOpts.vmConnection.Client.Client
 	vmConfig := checkOpts.vmConnection.Config
 
-	// Find datastore
-	finder := find.NewFinder(vmClient, false)
-	dc, err := finder.Datacenter(ctx, vmConfig.Workspace.Datacenter)
+	dataCenterNames, err := utils.GetDatacenters(vmConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to access Datacenter %s: %s", vmConfig.Workspace.Datacenter, err)
+		return nil, err
 	}
 
-	// Find VM reference in the datastore, by UUID
-	s := object.NewSearchIndex(dc.Client())
 	vmUUID := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(node.Spec.ProviderID, "vsphere://")))
+	for _, dcName := range dataCenterNames {
+		// Find datastore
+		finder := find.NewFinder(vmClient, false)
+		dc, err := finder.Datacenter(ctx, dcName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to access Datacenter %s: %s", dcName, err)
+		}
 
-	svm, err := s.FindByUuid(ctx, dc, vmUUID, true, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find VM by UUID %s: %s", vmUUID, err)
+		// Find VM reference in the datastore, by UUID
+		s := object.NewSearchIndex(dc.Client())
+
+		svm, err := s.FindByUuid(ctx, dc, vmUUID, true, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find VM %s by UUID %s: %s", node.Name, vmUUID, err)
+		}
+		if svm == nil {
+			continue
+		}
+
+		// Find VM properties
+		vm := object.NewVirtualMachine(vmClient, svm.Reference())
+
+		var o mo.VirtualMachine
+		err = vm.Properties(ctx, vm.Reference(), nodeProperties, &o)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load VM %s: %s", node.Name, err)
+		}
+		return &o, nil
 	}
-	if svm == nil {
-		return nil, fmt.Errorf("unable to find VM by UUID %s", vmUUID)
-	}
-
-	// Find VM properties
-	vm := object.NewVirtualMachine(vmClient, svm.Reference())
-
-	var o mo.VirtualMachine
-	err = vm.Properties(ctx, vm.Reference(), nodeProperties, &o)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load VM %s: %s", node.Name, err)
-	}
-
-	return &o, nil
+	return nil, fmt.Errorf("unable to find VM %s by UUID %s", node.Name, vmUUID)
 }
