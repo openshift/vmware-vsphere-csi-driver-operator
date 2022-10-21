@@ -1,6 +1,7 @@
 package vspherecontroller
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1informers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/klog/v2"
 )
@@ -62,7 +64,6 @@ func (c *VSphereController) createCSIDriver() {
 			"controller_pdb.yaml",
 			"node_sa.yaml",
 			"csidriver.yaml",
-			"volumesnapshotclass.yaml",
 			"service.yaml",
 			"ca_configmap.yaml",
 			// Static assets used by the webhook
@@ -73,6 +74,25 @@ func (c *VSphereController) createCSIDriver() {
 			"webhook/rbac/role.yaml",
 			"webhook/rbac/rolebinding.yaml",
 			"webhook/pdb.yaml",
+		},
+	).WithConditionalStaticResourcesController(
+		"VMwareVSphereDriverConditionalStaticResourcesController",
+		c.kubeClient,
+		c.apiClients.DynamicClient,
+		c.apiClients.KubeInformers,
+		assets.ReadFile,
+		[]string{
+			"volumesnapshotclass.yaml",
+		},
+		// Only install when CRD exists.
+		func() bool {
+			name := "volumesnapshotclasses.snapshot.storage.k8s.io"
+			_, err := c.apiClients.ApiExtClient.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), name, metav1.GetOptions{})
+			return err == nil
+		},
+		// Don't ever remove.
+		func() bool {
+			return false
 		},
 	).WithCSIConfigObserverController(
 		"VMwareVSphereDriverCSIConfigObserverController",
