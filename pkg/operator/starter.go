@@ -18,6 +18,7 @@ import (
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
+	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
@@ -43,6 +44,12 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	secretInformer := kubeInformersForNamespaces.InformersFor(utils.DefaultNamespace).Core().V1().Secrets()
 	configMapInformer := kubeInformersForNamespaces.InformersFor(utils.DefaultNamespace).Core().V1().ConfigMaps()
 	nodeInformer := kubeInformersForNamespaces.InformersFor("").Core().V1().Nodes()
+
+	// Create config clientset and informer. This is used to get the cluster ID
+	apiExtClient, err := apiextclient.NewForConfig(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
+	if err != nil {
+		return err
+	}
 
 	// Create config clientset and informer. This is used to get the cluster ID
 	configClient := configclient.NewForConfigOrDie(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
@@ -71,6 +78,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	commonAPIClient := utils.APIClient{
 		OperatorClient:           operatorClient,
 		KubeClient:               kubeClient,
+		ApiExtClient:             apiExtClient,
 		KubeInformers:            kubeInformersForNamespaces,
 		SecretInformer:           secretInformer,
 		ConfigMapInformer:        configMapInformer,
