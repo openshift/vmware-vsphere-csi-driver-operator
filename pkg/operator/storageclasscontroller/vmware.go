@@ -46,6 +46,7 @@ type storagePolicyAPI struct {
 	policyName           string
 	tagName              string
 	categoryName         string
+	policyCreated        bool
 }
 
 var _ vCenterInterface = &storagePolicyAPI{}
@@ -128,11 +129,23 @@ func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string
 		if err != nil {
 			return v.policyName, fmt.Errorf("unable to fetch datastore %s: %v", dataStore, err)
 		}
+
+		// skip creation of tags on a datastore if it already has been tagged.
+		if v.policyCreated && v.checkForTagOnDatastore(ds) {
+			continue
+		}
+
 		err = v.createOrUpdateTag(ctx, ds)
 		if err != nil {
 			return v.policyName, fmt.Errorf("error creating or updating tag %s: %v", v.tagName, err)
 		}
 	}
+
+	// create storage policy only if we did not create it already
+	if !v.policyCreated {
+		return v.policyName, nil
+	}
+
 	err = v.createStorageProfile(ctx)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error create storage policy profile %s: %v", v.policyName, err)
@@ -148,8 +161,7 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	}
 
 	if found {
-		klog.V(3).Infof("found existing storage policy %s", v.policyName)
-		return v.policyName, nil
+		v.policyCreated = true
 	}
 
 	vSphereInfraConfig := v.infra.Spec.PlatformSpec.VSphere
@@ -162,6 +174,13 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	if err != nil {
 		return v.policyName, fmt.Errorf("error fetching default datastore %s: %v", dsName, err)
 	}
+
+	// if we previously created the storage policy and datastore is already tagged
+	// we don't need to do anything
+	if v.policyCreated && v.checkForTagOnDatastore(ds) {
+		return v.policyName, nil
+	}
+
 	err = v.createOrUpdateTag(ctx, ds)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error creating or applying tag %s: %v", v.tagName, err)
@@ -173,6 +192,16 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	}
 
 	return v.policyName, nil
+}
+
+func (v *storagePolicyAPI) checkForTagOnDatastore(dsMo *mo.Datastore) bool {
+	datastoreTags := dsMo.Tag
+	for _, tag := range datastoreTags {
+		if tag.Key == v.tagName {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error {
