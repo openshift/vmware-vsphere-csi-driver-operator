@@ -157,7 +157,12 @@ func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deplo
 	if err != nil {
 		return err
 	}
-	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
+
+	infra, err := c.infraLister.Get(infraGlobalName)
+	if err != nil {
+		return err
+	}
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
 	if len(topologyCategories) > 0 {
 		containers := deployment.Spec.Template.Spec.Containers
 		for i := range containers {

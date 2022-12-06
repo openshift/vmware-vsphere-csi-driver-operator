@@ -92,9 +92,14 @@ func (d DriverFeaturesController) Sync(ctx context.Context, controllerContext fa
 		return err
 	}
 
+	infra, err := d.infraLister.Get(utils.InfraGlobalName)
+	if err != nil {
+		return err
+	}
+
 	defaultFeatureConfigMap := resourceread.ReadConfigMapV1OrDie(d.manifest)
 
-	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
 	if len(topologyCategories) > 0 {
 		requiredData := defaultFeatureConfigMap.Data
 		requiredData["improved-volume-topology"] = "true"

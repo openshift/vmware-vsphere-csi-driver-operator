@@ -89,6 +89,58 @@ func (v *storagePolicyAPI) getDefaultDatastore(ctx context.Context) (*mo.Datasto
 	return &dsMo, nil
 }
 
+func (v *storagePolicyAPI) getDatastore(ctx context.Context, dcName string, dsName string) (*mo.Datastore, error) {
+	vmClient := v.vcenterApiConnection.Client
+	finder := find.NewFinder(vmClient.Client, false)
+
+	dc, err := finder.Datacenter(ctx, dcName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to access datacenter %s: %s", dcName, err)
+	}
+
+	finder.SetDatacenter(dc)
+	ds, err := finder.Datastore(ctx, dsName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to access datastore %s: %s", dsName, err)
+	}
+
+	var dsMo mo.Datastore
+	pc := property.DefaultCollector(dc.Client())
+	properties := []string{DatastoreInfoProperty, SummaryProperty}
+	err = pc.RetrieveOne(ctx, ds.Reference(), properties, &dsMo)
+	if err != nil {
+		return nil, fmt.Errorf("error getting properties of datastore %s: %v", dsName, err)
+	}
+	return &dsMo, nil
+}
+
+func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string, error) {
+	var err error
+	failureDomains := v.infra.Spec.PlatformSpec.VSphere.FailureDomains
+	if len(failureDomains) <= 1 {
+		return "", fmt.Errorf("cluster has only one failure domain defined")
+	}
+
+	for _, failureDomain := range failureDomains {
+		dataCenter := failureDomain.Topology.Datacenter
+		dataStore := failureDomain.Topology.Datastore
+		ds, err := v.getDatastore(ctx, dataCenter, dataStore)
+		if err != nil {
+			return v.policyName, fmt.Errorf("unable to fetch datastore %s: %v", dataStore, err)
+		}
+		err = v.createOrUpdateTag(ctx, ds)
+		if err != nil {
+			return v.policyName, fmt.Errorf("error creating or updating tag %s: %v", v.tagName, err)
+		}
+	}
+	err = v.createStorageProfile(ctx)
+	if err != nil {
+		return v.policyName, fmt.Errorf("error create storage policy profile %s: %v", v.policyName, err)
+	}
+
+	return v.policyName, nil
+}
+
 func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, error) {
 	found, err := v.checkForExistingPolicy(ctx)
 	if err != nil {
@@ -98,6 +150,11 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	if found {
 		klog.V(3).Infof("found existing storage policy %s", v.policyName)
 		return v.policyName, nil
+	}
+
+	vSphereInfraConfig := v.infra.Spec.PlatformSpec.VSphere
+	if vSphereInfraConfig != nil && len(vSphereInfraConfig.FailureDomains) > 1 {
+		return v.createZonalStoragePolicy(ctx)
 	}
 
 	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
@@ -185,7 +242,7 @@ func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datasto
 		klog.V(2).Infof("Updated tag %s", v.tagName)
 	}
 
-	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
+	dsName := ds.Name
 	err = tagManager.AttachTag(ctx, tag.ID, ds)
 	if err != nil {
 		klog.Errorf("error attaching tag %s to datastore %s: %v", v.tagName, dsName, err)

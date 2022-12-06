@@ -188,7 +188,7 @@ func (c TargetConfigController) applyClusterCSIDriverChange(
 		return nil, fmt.Errorf("error loading ini file: %v", err)
 	}
 
-	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
 	if len(topologyCategories) > 0 {
 		topologyCategoryString := strings.Join(topologyCategories, ",")
 		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
