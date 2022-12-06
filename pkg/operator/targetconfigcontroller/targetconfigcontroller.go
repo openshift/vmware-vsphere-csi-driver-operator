@@ -3,13 +3,14 @@ package targetconfigcontroller
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	ocpconfigv1 "github.com/openshift/api/config/v1"
 	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	corev1 "k8s.io/api/core/v1"
-	"strings"
-	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
@@ -133,6 +134,9 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 	}
 
 	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver)
+	if err != nil {
+		return err
+	}
 
 	// TODO: check if configMap has been deployed and set appropriate conditions
 	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
@@ -163,10 +167,18 @@ func (c TargetConfigController) applyClusterCSIDriverChange(
 	infra *ocpconfigv1.Infrastructure, sourceCFG vsphere.VSphereConfig, clusterCSIDriver *opv1.ClusterCSIDriver) (*corev1.ConfigMap, error) {
 	csiConfigString := string(c.csiConfigManifest)
 
+	dataCenterNames, err := utils.GetDatacenters(&sourceCFG)
+
+	if err != nil {
+		return nil, err
+	}
+
+	datacenters := strings.Join(dataCenterNames, ",")
+
 	for pattern, value := range map[string]string{
 		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
 		"${VCENTER}":     sourceCFG.Workspace.VCenterIP,
-		"${DATACENTERS}": sourceCFG.Workspace.Datacenter, // TODO: datacenters?
+		"${DATACENTERS}": datacenters,
 	} {
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
 	}
