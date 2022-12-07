@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
@@ -27,6 +29,13 @@ const (
 	categoryNameTemplate = "openshift-%s"
 	policyNameTemplate   = "openshift-storage-policy-%s"
 	vim25Prefix          = "urn:vim25:"
+
+	create_tag_api      = "create_tag"
+	update_tag_api      = "update_tag"
+	attach_tag_api      = "attach_tag"
+	create_category_api = "create_category"
+	update_category_api = "update_category"
+	create_profile_api  = "create_profile"
 )
 
 var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine", "Folder"}
@@ -47,6 +56,9 @@ type storagePolicyAPI struct {
 	tagName              string
 	categoryName         string
 	policyCreated        bool
+	// mainly used for verifying test status
+	// Keep track of mutable API calls being made
+	apiTestInfo map[string]int
 }
 
 var _ vCenterInterface = &storagePolicyAPI{}
@@ -58,6 +70,7 @@ func newStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnectio
 		categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
 		policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
 		tagName:              infra.Status.InfrastructureName,
+		apiTestInfo:          map[string]int{},
 	}
 	return storagePolicyAPIClient
 }
@@ -131,7 +144,7 @@ func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string
 		}
 
 		// skip creation of tags on a datastore if it already has been tagged.
-		if v.policyCreated && v.checkForTagOnDatastore(ds) {
+		if v.policyCreated && v.checkForTagOnDatastore(ctx, ds) {
 			continue
 		}
 
@@ -141,8 +154,8 @@ func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string
 		}
 	}
 
-	// create storage policy only if we did not create it already
-	if !v.policyCreated {
+	// If we already created storage policy, we should return it
+	if v.policyCreated {
 		return v.policyName, nil
 	}
 
@@ -177,7 +190,7 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 
 	// if we previously created the storage policy and datastore is already tagged
 	// we don't need to do anything
-	if v.policyCreated && v.checkForTagOnDatastore(ds) {
+	if v.policyCreated && v.checkForTagOnDatastore(ctx, ds) {
 		return v.policyName, nil
 	}
 
@@ -186,19 +199,31 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 		return v.policyName, fmt.Errorf("error creating or applying tag %s: %v", v.tagName, err)
 	}
 
-	err = v.createStorageProfile(ctx)
-	if err != nil {
-		return v.policyName, fmt.Errorf("error create storage policy profile %s: %v", v.policyName, err)
+	if !v.policyCreated {
+		err = v.createStorageProfile(ctx)
+		if err != nil {
+			return v.policyName, fmt.Errorf("error create storage policy profile %s: %v", v.policyName, err)
+		}
 	}
 
 	return v.policyName, nil
 }
 
-func (v *storagePolicyAPI) checkForTagOnDatastore(dsMo *mo.Datastore) bool {
-	datastoreTags := dsMo.Tag
-	for _, tag := range datastoreTags {
-		if tag.Key == v.tagName {
-			return true
+func (v *storagePolicyAPI) checkForTagOnDatastore(ctx context.Context, dsMo *mo.Datastore) bool {
+	tagManager := tags.NewManager(v.vcenterApiConnection.RestClient)
+	attachedTags, err := tagManager.GetAttachedTagsOnObjects(ctx, []mo.Reference{dsMo.Reference()})
+
+	if err != nil {
+		klog.Errorf("error fetching tags: %v", err)
+		return false
+	}
+
+	for _, tagObject := range attachedTags {
+		tagObjectArray := tagObject.Tags
+		for _, tag := range tagObjectArray {
+			if tag.Name == v.tagName {
+				return true
+			}
 		}
 	}
 	return false
@@ -222,7 +247,9 @@ func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datasto
 			AssociableTypes: associatedTypes,
 			Cardinality:     "SINGLE",
 		}
+		v.apiTestInfo[create_category_api]++
 		catId, err := tagManager.CreateCategory(ctx, category)
+
 		if err != nil {
 			return fmt.Errorf("error creating category %s: %v", v.categoryName, err)
 		}
@@ -233,6 +260,7 @@ func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datasto
 		associatedTypes = updateAssociatedTypes(existingAssociatedTypes)
 		category.AssociableTypes = associatedTypes
 		klog.V(4).Infof("Final categories are: %+v", associatedTypes)
+		v.apiTestInfo[update_category_api]++
 		err := tagManager.UpdateCategory(ctx, category)
 		if err != nil {
 			return fmt.Errorf("error updating category %s: %v", v.categoryName, err)
@@ -251,6 +279,7 @@ func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datasto
 			Description: "Added by openshift-install do not remove",
 			CategoryID:  category.ID,
 		}
+		v.apiTestInfo[create_tag_api]++
 		tagID, err := tagManager.CreateTag(ctx, tag)
 		if err != nil {
 			return fmt.Errorf("error creating tag %s: %v", v.tagName, err)
@@ -264,6 +293,7 @@ func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datasto
 			CategoryID:  category.ID,
 			ID:          tag.ID,
 		}
+		v.apiTestInfo[update_tag_api]++
 		err := tagManager.UpdateTag(ctx, tag)
 		if err != nil {
 			return fmt.Errorf("error updating tag %s: %v", v.tagName, err)
@@ -271,7 +301,8 @@ func (v *storagePolicyAPI) createOrUpdateTag(ctx context.Context, ds *mo.Datasto
 		klog.V(2).Infof("Updated tag %s", v.tagName)
 	}
 
-	dsName := ds.Name
+	dsName := ds.Summary.Name
+	v.apiTestInfo[attach_tag_api]++
 	err = tagManager.AttachTag(ctx, tag.ID, ds)
 	if err != nil {
 		klog.Errorf("error attaching tag %s to datastore %s: %v", v.tagName, dsName, err)
@@ -291,6 +322,7 @@ func (v *storagePolicyAPI) createStorageProfile(ctx context.Context) error {
 
 	var policySpec types.PbmCapabilityProfileCreateSpec
 	policySpec.Name = v.policyName
+	policySpec.Category = "REQUIREMENT"
 	policySpec.ResourceType.ResourceType = string(types.PbmProfileResourceTypeEnumSTORAGE)
 
 	policyID := fmt.Sprintf("com.vmware.storage.tag.%s.property", v.categoryName)
@@ -316,6 +348,7 @@ func (v *storagePolicyAPI) createStorageProfile(ctx context.Context) error {
 		}},
 	}
 
+	v.apiTestInfo[create_profile_api]++
 	pid, err := pbmClient.CreateProfile(ctx, policySpec)
 	if err != nil {
 		msg := fmt.Sprintf("error creating profile: %v", err)
@@ -363,6 +396,43 @@ func (v *storagePolicyAPI) checkForExistingPolicy(ctx context.Context) (bool, er
 	return false, nil
 }
 
+func (v *storagePolicyAPI) deleteStoragePolicy(ctx context.Context) error {
+	rtype := types.PbmProfileResourceType{
+		ResourceType: string(types.PbmProfileResourceTypeEnumSTORAGE),
+	}
+
+	category := types.PbmProfileCategoryEnumREQUIREMENT
+
+	pbmClient, err := pbm.NewClient(ctx, v.vcenterApiConnection.Client.Client)
+	if err != nil {
+		return err
+	}
+
+	ids, err := pbmClient.QueryProfile(ctx, rtype, string(category))
+	if err != nil {
+		return err
+	}
+
+	profiles, err := pbmClient.RetrieveContent(ctx, ids)
+	if err != nil {
+		return err
+	}
+
+	var foundProfile types.PbmProfileId
+
+	for _, p := range profiles {
+		if p.GetPbmProfile().Name == v.policyName {
+			foundProfile = p.GetPbmProfile().ProfileId
+		}
+	}
+	_, err = pbmClient.DeleteProfile(ctx, []types.PbmProfileId{foundProfile})
+	if err != nil {
+		return fmt.Errorf("error deleting profile: %v", err)
+	}
+	return nil
+
+}
+
 func notFoundError(err error) bool {
 	errorString := err.Error()
 	r := regexp.MustCompile("404")
@@ -373,13 +443,23 @@ func updateAssociatedTypes(associatedTypes []string) []string {
 	incomingTypesSet := sets.NewString(appendPrefix(associatedTypes)...)
 	additionTypes := appendPrefix(associatedTypesRaw)
 	finalAssociatedTypes := incomingTypesSet.Insert(additionTypes...)
-	return finalAssociatedTypes.List()
+	associatedTypeFinalList := finalAssociatedTypes.List()
+	sort.Strings(associatedTypeFinalList)
+	return associatedTypeFinalList
 }
 
 func appendPrefix(associableTypes []string) []string {
 	var appendedTypes []string
 	for _, associableType := range associableTypes {
-		appendedTypes = append(appendedTypes, vim25Prefix+associableType)
+		if strings.HasPrefix(associableType, vim25Prefix) {
+			appendedTypes = append(appendedTypes, associableType)
+		} else {
+			appendedTypes = append(appendedTypes, vim25Prefix+associableType)
+		}
 	}
+	// We are sorting this array because some part of vSphere that applies these tags
+	// is confused by ordering and considers same associated types in different order as
+	// different associated type.
+	sort.Strings(appendedTypes)
 	return appendedTypes
 }
