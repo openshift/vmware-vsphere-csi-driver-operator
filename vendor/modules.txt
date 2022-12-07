@@ -328,12 +328,13 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/vmware/govmomi v0.28.0
+# github.com/vmware/govmomi v0.29.0
 ## explicit; go 1.17
 github.com/vmware/govmomi
 github.com/vmware/govmomi/find
 github.com/vmware/govmomi/history
 github.com/vmware/govmomi/internal
+github.com/vmware/govmomi/internal/version
 github.com/vmware/govmomi/list
 github.com/vmware/govmomi/lookup
 github.com/vmware/govmomi/lookup/methods
@@ -343,6 +344,7 @@ github.com/vmware/govmomi/object
 github.com/vmware/govmomi/ovf
 github.com/vmware/govmomi/pbm
 github.com/vmware/govmomi/pbm/methods
+github.com/vmware/govmomi/pbm/simulator
 github.com/vmware/govmomi/pbm/types
 github.com/vmware/govmomi/property
 github.com/vmware/govmomi/session
@@ -359,8 +361,11 @@ github.com/vmware/govmomi/toolbox/process
 github.com/vmware/govmomi/toolbox/vix
 github.com/vmware/govmomi/units
 github.com/vmware/govmomi/vapi/internal
+github.com/vmware/govmomi/vapi/library
 github.com/vmware/govmomi/vapi/rest
+github.com/vmware/govmomi/vapi/simulator
 github.com/vmware/govmomi/vapi/tags
+github.com/vmware/govmomi/vapi/vcenter
 github.com/vmware/govmomi/view
 github.com/vmware/govmomi/vim25
 github.com/vmware/govmomi/vim25/debug

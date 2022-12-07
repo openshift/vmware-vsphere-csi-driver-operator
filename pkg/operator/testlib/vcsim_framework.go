@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
+	_ "github.com/vmware/govmomi/pbm/simulator"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25/types"
 	"gopkg.in/gcfg.v1"
@@ -70,6 +71,10 @@ func SetupSimulator(modelDir string) (*vclib.VSphereConnection, func(), error) {
 		model.Remove()
 	}
 	return conn, cleanup, nil
+}
+
+func SetupPBMSimulator() {
+
 }
 
 func ConnectToSimulator(s *simulator.Server) (*govmomi.Client, error) {

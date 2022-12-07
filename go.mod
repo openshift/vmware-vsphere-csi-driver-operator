@@ -10,7 +10,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20221101173919-2b70f05de50e
 	github.com/prometheus/client_golang v1.12.1
 	github.com/spf13/cobra v1.4.0
-	github.com/vmware/govmomi v0.28.0
+	github.com/vmware/govmomi v0.29.0
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/ini.v1 v1.51.0
 	k8s.io/api v0.25.4
