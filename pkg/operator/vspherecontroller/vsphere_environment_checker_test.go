@@ -3,6 +3,7 @@ package vspherecontroller
 import (
 	"context"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
+	"os"
 	"testing"
 	"time"
 
@@ -63,9 +64,11 @@ func TestEnvironmentCheck(t *testing.T) {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
 			testlib.WaitForSync(commonApiClient, stopCh)
+			workingDir, _ := os.Getwd()
+			t.Logf("working directory is: %s", workingDir)
 
 			checker := newVSphereEnvironmentChecker()
-			conn, cleanUpFunc, connError := setupSimulator(defaultModel)
+			conn, cleanUpFunc, connError := testlib.SetupSimulator(testlib.DefaultModel)
 			if connError != nil {
 				t.Fatalf("unexpected error while connecting to simulator: %v", connError)
 			}
@@ -79,7 +82,7 @@ func TestEnvironmentCheck(t *testing.T) {
 			time.Sleep(5 * time.Second)
 
 			if test.vcenterVersion != "" {
-				customizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
+				testlib.CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
 			}
 			csiDriverLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 			csiNodeLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()

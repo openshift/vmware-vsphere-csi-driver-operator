@@ -3,7 +3,6 @@ package testlib
 import (
 	"embed"
 	"fmt"
-
 	ocpv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfig "github.com/openshift/client-go/config/clientset/versioned/fake"
