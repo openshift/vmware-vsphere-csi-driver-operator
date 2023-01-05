@@ -177,7 +177,7 @@ func (v *storagePolicyAPI) attachTags(ctx context.Context, dcName, dsName string
 
 	err = v.createOrUpdateTag(ctx, ds)
 	if err != nil {
-		return fmt.Errorf("error creating or updating tag %s: %v", v.tagName, err)
+		return fmt.Errorf("error tagging datastore %s with %s: %v", dsName, v.tagName, err)
 	}
 	return nil
 }
