@@ -254,6 +254,44 @@ func GetInfraObject() *ocpv1.Infrastructure {
 	}
 }
 
+func GetSingleFailureDomainInfra() *ocpv1.Infrastructure {
+	return &ocpv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: infraGlobalName,
+		},
+		Spec: ocpv1.InfrastructureSpec{
+			CloudConfig: ocpv1.ConfigMapFileReference{
+				Name: "cloud-provider-config",
+				Key:  "config",
+			},
+			PlatformSpec: ocpv1.PlatformSpec{
+				Type: ocpv1.VSpherePlatformType,
+				VSphere: &ocpv1.VSpherePlatformSpec{
+					FailureDomains: []ocpv1.VSpherePlatformFailureDomainSpec{
+						{
+							Name:   "us-east-1",
+							Region: "us-east",
+							Server: "vcenter.lan",
+							Zone:   "us-east-1a",
+							Topology: ocpv1.VSpherePlatformTopology{
+								ComputeCluster: "/DC0/host/DC0_H0",
+								Datacenter:     "DC0",
+								Datastore:      "/DC0/datastore/LocalDS_0",
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: ocpv1.InfrastructureStatus{
+			InfrastructureName: "vsphere2",
+			PlatformStatus: &ocpv1.PlatformStatus{
+				Type: ocpv1.VSpherePlatformType,
+			},
+		},
+	}
+}
+
 func GetZonalInfra() *ocpv1.Infrastructure {
 	return &ocpv1.Infrastructure{
 		ObjectMeta: metav1.ObjectMeta{

@@ -132,9 +132,6 @@ func (v *storagePolicyAPI) getDatastore(ctx context.Context, dcName string, dsNa
 func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string, error) {
 	var err error
 	failureDomains := v.infra.Spec.PlatformSpec.VSphere.FailureDomains
-	if len(failureDomains) <= 1 {
-		return "", fmt.Errorf("cluster has only one failure domain defined")
-	}
 
 	var aggregatedErrors []error
 
@@ -193,7 +190,7 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	}
 
 	vSphereInfraConfig := v.infra.Spec.PlatformSpec.VSphere
-	if vSphereInfraConfig != nil && len(vSphereInfraConfig.FailureDomains) > 1 {
+	if vSphereInfraConfig != nil && len(vSphereInfraConfig.FailureDomains) > 0 {
 		return v.createZonalStoragePolicy(ctx)
 	}
 
