@@ -55,7 +55,7 @@ func TestCreateStoragePolicyOnce(t *testing.T) {
 	if !found {
 		t.Errorf("expected policy to be created found none")
 	}
-	validateApiCallCount(t, storagePolicyAPIClient, map[string]int{
+	validateAPICallCount(t, storagePolicyAPIClient, map[string]int{
 		create_tag_api:      1,
 		create_category_api: 1,
 		attach_tag_api:      1,
@@ -117,7 +117,7 @@ func TestDuplicatePolicyCreation(t *testing.T) {
 		t.Errorf("expected policy to be created found none")
 	}
 	// calling createStoragePolicy should not result in multiple calls to create tags and categories
-	validateApiCallCount(t, storagePolicyAPIClient, map[string]int{
+	validateAPICallCount(t, storagePolicyAPIClient, map[string]int{
 		create_tag_api:      1,
 		create_category_api: 1,
 		attach_tag_api:      1,
@@ -171,7 +171,7 @@ func TestZonalPolicyCreation(t *testing.T) {
 	if !found {
 		t.Errorf("expected policy to be created found none")
 	}
-	validateApiCallCount(t, storagePolicyAPIClient, map[string]int{
+	validateAPICallCount(t, storagePolicyAPIClient, map[string]int{
 		create_tag_api:      1,
 		create_category_api: 1,
 		update_category_api: 1,
@@ -180,7 +180,7 @@ func TestZonalPolicyCreation(t *testing.T) {
 	})
 }
 
-func validateApiCallCount(t *testing.T, vmwareAPI *storagePolicyAPI, expectedMap map[string]int) {
+func validateAPICallCount(t *testing.T, vmwareAPI *storagePolicyAPI, expectedMap map[string]int) {
 	for k, v := range expectedMap {
 		actualCount := vmwareAPI.apiTestInfo[k]
 		if actualCount != v {
