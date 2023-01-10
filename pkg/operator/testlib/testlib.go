@@ -23,7 +23,7 @@ import (
 	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
-//go:embed *.yaml
+//go:embed *.yaml *.ini
 var f embed.FS
 
 const (
@@ -153,32 +153,24 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 	return nil
 }
 
-func GetLegacyVSphereConfig() (vsphere.VSphereConfig, error) {
+func GetLegacyVSphereConfig(fileName string) (vsphere.VSphereConfig, error) {
 	var cfg vsphere.VSphereConfig
-	err := gcfg.ReadStringInto(&cfg, getVSphereConfigString())
+	err := gcfg.ReadStringInto(&cfg, getVSphereConfigString(fileName))
 	if err != nil {
 		return cfg, err
 	}
 	return cfg, nil
 }
 
-func getVSphereConfigString() string {
-	return `
-[Global]
-user = "administrator@vsphere.local"
-password = "foobar"
-port = "443"
-insecure-flag = "1"
-
-[Workspace]
-server = "foobar.lan"
-datacenter = "Datacenter"
-default-datastore = "baz"
-folder = "k8s"
-
-[VirtualCenter "foobar.lan"]
-datacenters = "Datacenter"
-`
+func getVSphereConfigString(fileName string) string {
+	if fileName == "" {
+		fileName = "simple_config.ini"
+	}
+	data, err := ReadFile(fileName)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 func GetMatchingCondition(status []opv1.OperatorCondition, conditionType string) *opv1.OperatorCondition {

@@ -13,22 +13,42 @@ import (
 
 func TestApplyClusterCSIDriverChange(t *testing.T) {
 	tests := []struct {
-		name             string
-		clusterCSIDriver *opv1.ClusterCSIDriver
-		operatorObj      *testlib.FakeDriverInstance
-		expectedTopology string
+		name               string
+		clusterCSIDriver   *opv1.ClusterCSIDriver
+		operatorObj        *testlib.FakeDriverInstance
+		expectedTopology   string
+		configFileName     string
+		expectedDatacenter string
+		expectError        bool
 	}{
 		{
-			name:             "when driver does not have topology enabled",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(false),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			expectedTopology: "",
+			name:               "when driver does not have topology enabled",
+			clusterCSIDriver:   testlib.GetClusterCSIDriver(false),
+			operatorObj:        testlib.MakeFakeDriverInstance(),
+			expectedDatacenter: "Datacenter",
+			expectedTopology:   "",
 		},
 		{
-			name:             "when driver does have topology enabled",
+			name:               "when driver does have topology enabled",
+			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
+			operatorObj:        testlib.MakeFakeDriverInstance(),
+			expectedDatacenter: "Datacenter",
+			expectedTopology:   "k8s-zone,k8s-region",
+		},
+		{
+			name:             "when configuration has more than one vcenter",
 			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
 			operatorObj:      testlib.MakeFakeDriverInstance(),
-			expectedTopology: "k8s-zone,k8s-region",
+			configFileName:   "multiple_vc.ini",
+			expectError:      true,
+		},
+		{
+			name:               "when configuration has more than one datacenter",
+			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
+			operatorObj:        testlib.MakeFakeDriverInstance(),
+			configFileName:     "multiple_dc.ini",
+			expectedDatacenter: "Datacentera, DatacenterB",
+			expectedTopology:   "k8s-zone,k8s-region",
 		},
 	}
 
@@ -71,12 +91,21 @@ func TestApplyClusterCSIDriverChange(t *testing.T) {
 				infraLister:            infraInformer.Lister(),
 				clusterCSIDriverLister: commonApiClient.ClusterCSIDriverInformer.Lister(),
 			}
-			legacyVsphereConfig, err := testlib.GetLegacyVSphereConfig()
+			legacyVsphereConfig, err := testlib.GetLegacyVSphereConfig(tc.configFileName)
 			if err != nil {
 				t.Fatalf("error loading legacy vsphere config: %v", err)
 			}
 
 			configMap, err := ctrl.applyClusterCSIDriverChange(infra, legacyVsphereConfig, tc.clusterCSIDriver)
+
+			// if we expected error and we got some, we should stop running this test
+			if tc.expectError && err != nil {
+				return
+			}
+
+			if tc.expectError && err == nil {
+				t.Fatal("Expected error got none")
+			}
 			if err != nil {
 				t.Fatalf("error creating configmap: %v", err)
 			}
@@ -95,6 +124,10 @@ func TestApplyClusterCSIDriverChange(t *testing.T) {
 				if labelSection == nil || labelSection.String() != tc.expectedTopology {
 					t.Fatalf("expected topology %v, unexpected topology found %v", tc.expectedTopology, labelSection)
 				}
+			}
+			datacenters, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("datacenters")
+			if datacenters.String() != tc.expectedDatacenter {
+				t.Fatalf("expected datacenter to be %s, got %s", tc.expectedDatacenter, datacenters.String())
 			}
 
 		})
