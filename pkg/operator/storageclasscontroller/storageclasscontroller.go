@@ -3,8 +3,9 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
-	v1 "github.com/openshift/api/config/v1"
 	"strings"
+
+	v1 "github.com/openshift/api/config/v1"
 
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
@@ -24,6 +25,10 @@ const (
 	SummaryProperty       = "summary"
 )
 
+type StorageClassSyncInterface interface {
+	Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+}
+
 type StorageClassController struct {
 	name                 string
 	targetNamespace      string
@@ -41,7 +46,7 @@ func NewStorageClassController(
 	kubeClient kubernetes.Interface,
 	operatorClient v1helpers.OperatorClient,
 	recorder events.Recorder,
-) *StorageClassController {
+) StorageClassSyncInterface {
 	c := &StorageClassController{
 		name:                 name,
 		targetNamespace:      targetNamespace,
@@ -72,6 +77,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 		}
 		return checks.MakeClusterCheckResultPass(), checks.ClusterCheckAllGood
 	}
+
 	checkResult, overallClusterStatus := checkResultFunc()
 	return c.updateConditions(ctx, checkResult, overallClusterStatus)
 }

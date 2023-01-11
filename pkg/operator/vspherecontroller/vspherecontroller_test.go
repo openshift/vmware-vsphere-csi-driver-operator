@@ -50,7 +50,17 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 		infraLister:     infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
+	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
 	return c
+}
+
+type dummyStorageClassController struct {
+	syncCalled int
+}
+
+func (c *dummyStorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+	c.syncCalled += 1
+	return nil
 }
 
 func TestSync(t *testing.T) {
@@ -66,6 +76,7 @@ func TestSync(t *testing.T) {
 		expectError                  error
 		failVCenterConnection        bool
 		operandStarted               bool
+		storageClassCreated          bool
 	}{
 		{
 			name:                         "when all configuration is right",
@@ -84,7 +95,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: true,
+			operandStarted:      true,
+			storageClassCreated: true,
 		},
 		{
 			name:                         "when we can't connect to vcenter",
@@ -104,7 +116,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionUnknown,
 				},
 			},
-			operandStarted: false,
+			operandStarted:      false,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when we can't connect to vcenter but CSI driver was installed previously, degrade cluster",
@@ -116,6 +129,7 @@ func TestSync(t *testing.T) {
 			failVCenterConnection:        true,
 			expectError:                  fmt.Errorf("can't talk to vcenter"),
 			operandStarted:               true,
+			storageClassCreated:          false,
 		},
 		{
 			name:                         "when vcenter version is older, block upgrades",
@@ -133,7 +147,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 			},
-			operandStarted: false,
+			operandStarted:      false,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when vcenter version is older but csi driver exists, degrade cluster",
@@ -143,6 +158,7 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectError:                  fmt.Errorf("found older vcenter version, expected is 6.7.3"),
 			operandStarted:               true,
+			storageClassCreated:          false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI driver exists",
@@ -161,7 +177,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: false,
+			operandStarted:      false,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI node object exists",
@@ -180,7 +197,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: false,
+			operandStarted:      false,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when node hw-version was old first and got upgraded",
@@ -200,7 +218,8 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 			},
-			operandStarted: true,
+			operandStarted:      true,
+			storageClassCreated: false,
 		},
 	}
 
@@ -224,6 +243,7 @@ func TestSync(t *testing.T) {
 			testlib.WaitForSync(commonApiClient, stopCh)
 
 			ctrl := newVsphereController(commonApiClient)
+			scController := ctrl.storageClassController.(*dummyStorageClassController)
 
 			var cleanUpFunc func()
 			var conn *vclib.VSphereConnection
@@ -252,6 +272,15 @@ func TestSync(t *testing.T) {
 			err = ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
 			if test.expectError == nil && err != nil {
 				t.Fatalf("Unexpected error that could degrade cluster: %+v", err)
+			}
+
+			// check storageclass results
+			if test.storageClassCreated && scController.syncCalled == 0 {
+				t.Fatalf("expected storageclass to be created")
+			}
+
+			if !test.storageClassCreated && scController.syncCalled > 0 {
+				t.Fatalf("unexpected storageclass created")
 			}
 
 			if test.expectError != nil && err == nil {
