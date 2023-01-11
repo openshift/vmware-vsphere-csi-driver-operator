@@ -63,6 +63,10 @@ spec:
               mountPath: /csi
             - name: device-dir
               mountPath: /dev
+            - name: etc-selinux
+              mountPath: /etc/selinux
+            - name: sys-fs
+              mountPath: /sys/fs
           ports:
             - name: healthz
               # Due to hostNetwork, this port is open on all nodes!
@@ -142,4 +146,12 @@ spec:
         - name: device-dir
           hostPath:
             path: /dev
+            type: Directory
+        - name: etc-selinux
+          hostPath:
+            path: /etc/selinux
+            type: DirectoryOrCreate
+        - name: sys-fs
+          hostPath:
+            path: /sys/fs
             type: Directory
