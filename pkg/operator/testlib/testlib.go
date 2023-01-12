@@ -3,6 +3,7 @@ package testlib
 import (
 	"embed"
 	"fmt"
+
 	ocpv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	fakeconfig "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -10,15 +11,17 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
+	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	fakecore "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
-//go:embed *.yaml
+//go:embed *.yaml *.ini
 var f embed.FS
 
 const (
@@ -215,6 +218,26 @@ datacenters = "DC0"
 `,
 		},
 	}
+}
+
+func GetLegacyVSphereConfig(fileName string) (vsphere.VSphereConfig, error) {
+	var cfg vsphere.VSphereConfig
+	err := gcfg.ReadStringInto(&cfg, getVSphereConfigString(fileName))
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func getVSphereConfigString(fileName string) string {
+	if fileName == "" {
+		fileName = "simple_config.ini"
+	}
+	data, err := ReadFile(fileName)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 func GetSecret() *v1.Secret {
