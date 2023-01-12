@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	ocpconfigv1 "github.com/openshift/api/config/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
@@ -19,6 +21,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 
 	"gopkg.in/gcfg.v1"
 )
@@ -114,16 +117,10 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		return err
 	}
 
-	cmString := string(c.manifest)
-	for pattern, value := range map[string]string{
-		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
-		"${VCENTER}":     cfg.Workspace.VCenterIP,
-		"${DATACENTERS}": cfg.Workspace.Datacenter, // TODO: datacenters?
-	} {
-		cmString = strings.ReplaceAll(cmString, pattern, value)
+	requiredCM, err := c.applyConfigMapChanges(infra, cfg)
+	if err != nil {
+		return err
 	}
-
-	requiredCM := resourceread.ReadConfigMapV1OrDie([]byte(cmString))
 
 	// TODO: check if configMap has been deployed and set appropriate conditions
 	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
@@ -148,4 +145,27 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 		v1helpers.UpdateConditionFn(progressingCondition),
 	)
 	return err
+}
+
+func (c TargetConfigController) applyConfigMapChanges(infra *ocpconfigv1.Infrastructure, sourceCFG vsphere.VSphereConfig) (*corev1.ConfigMap, error) {
+	cmString := string(c.manifest)
+
+	dataCenterNames, err := utils.GetDatacenters(&sourceCFG)
+
+	if err != nil {
+		return nil, err
+	}
+
+	datacenters := strings.Join(dataCenterNames, ",")
+
+	for pattern, value := range map[string]string{
+		"${CLUSTER_ID}":  infra.Status.InfrastructureName,
+		"${VCENTER}":     sourceCFG.Workspace.VCenterIP,
+		"${DATACENTERS}": datacenters,
+	} {
+		cmString = strings.ReplaceAll(cmString, pattern, value)
+	}
+
+	requiredCM := resourceread.ReadConfigMapV1OrDie([]byte(cmString))
+	return requiredCM, nil
 }
