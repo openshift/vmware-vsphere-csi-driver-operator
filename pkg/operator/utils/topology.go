@@ -4,12 +4,26 @@ import (
 	"fmt"
 	"strings"
 
+	v1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
-func GetTopologyCategories(clusterCSIDriver *opv1.ClusterCSIDriver) []string {
+const (
+	defaultOpenshiftZoneCategory   = "openshift-zone"
+	defaultOpenshiftRegionCategory = "openshift-region"
+)
+
+func GetTopologyCategories(clusterCSIDriver *opv1.ClusterCSIDriver, infra *v1.Infrastructure) []string {
+	vSpherePlatformConfig := infra.Spec.PlatformSpec.VSphere
+	if vSpherePlatformConfig != nil {
+		failureDomains := vSpherePlatformConfig.FailureDomains
+		if len(failureDomains) > 0 {
+			return []string{defaultOpenshiftZoneCategory, defaultOpenshiftRegionCategory}
+		}
+	}
+
 	driverConfig := clusterCSIDriver.Spec.DriverConfig
 	if driverConfig.DriverType == opv1.VSphereDriverType {
 		vSphereConfig := driverConfig.VSphere

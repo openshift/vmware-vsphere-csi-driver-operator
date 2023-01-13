@@ -336,7 +336,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 				utils.InstallErrorMetric.With(test.initialErrorMetricLabels).Set(test.initialErrorMetricValue)
 			}
 
-			nodes := defaultNodes()
+			nodes := testlib.DefaultNodes()
 			for _, node := range nodes {
 				test.initialObjects = append(test.initialObjects, runtime.Object(node))
 			}
@@ -358,9 +358,9 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			var cleanUpFunc func()
 			var conn *vclib.VSphereConnection
 			var connError error
-			conn, cleanUpFunc, connError = setupSimulator(defaultModel)
+			conn, cleanUpFunc, connError = testlib.SetupSimulator(testlib.DefaultModel)
 			if test.vcenterVersion != "" {
-				customizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
+				testlib.CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
 			}
 			ctrl.vsphereConnectionFunc = makeVsphereConnectionFunc(conn, test.failVCenterConnection, connError)
 			defer func() {
@@ -377,7 +377,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			if hostVersion == "" {
 				hostVersion = "7.0.2"
 			}
-			err = customizeHostVersion(defaultHostId, hostVersion)
+			err = testlib.CustomizeHostVersion(testlib.DefaultHostId, hostVersion)
 			if err != nil {
 				t.Fatalf("Failed to customize host: %s", err)
 			}
@@ -439,7 +439,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 func setHardwareVersionsFunc(nodes []*v1.Node, conn *vclib.VSphereConnection, hardwareVersions []string) func() error {
 	return func() error {
 		for i := range nodes {
-			err := setHWVersion(conn, nodes[i], hardwareVersions[i])
+			err := testlib.SetHWVersion(conn, nodes[i], hardwareVersions[i])
 			if err != nil {
 				return err
 			}

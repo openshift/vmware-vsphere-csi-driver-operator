@@ -166,6 +166,7 @@ func NewVirtualMachine(ctx *Context, parent types.ManagedObjectReference, spec *
 	vm.Summary.OverallStatus = types.ManagedEntityStatusGreen
 	vm.ConfigStatus = types.ManagedEntityStatusGreen
 
+	// put vm in the folder only if no errors occurred
 	f, _ := asFolderMO(folder)
 	folderPutChild(ctx, f, vm)
 
@@ -839,7 +840,7 @@ func (vm *VirtualMachine) RefreshStorageInfo(ctx *Context, req *types.RefreshSto
 
 		files, err := ioutil.ReadDir(directory)
 		if err != nil {
-			body.Fault_ = soap.ToSoapFault(err)
+			body.Fault_ = Fault("", ctx.Map.FileManager().fault(directory, err, new(types.CannotAccessFile)))
 			return body
 		}
 
@@ -1162,15 +1163,15 @@ func (vm *VirtualMachine) configureDevice(ctx *Context, devices object.VirtualDe
 			c.MacAddress = vm.generateMAC(*c.UnitNumber - 7) // Note 7 == PCI offset
 		}
 
-		if spec.Operation == types.VirtualDeviceConfigSpecOperationAdd {
-			vm.Guest.Net = append(vm.Guest.Net, types.GuestNicInfo{
-				Network:        name,
-				IpAddress:      nil,
-				MacAddress:     c.MacAddress,
-				Connected:      true,
-				DeviceConfigId: c.Key,
-			})
+		vm.Guest.Net = append(vm.Guest.Net, types.GuestNicInfo{
+			Network:        name,
+			IpAddress:      nil,
+			MacAddress:     c.MacAddress,
+			Connected:      true,
+			DeviceConfigId: c.Key,
+		})
 
+		if spec.Operation == types.VirtualDeviceConfigSpecOperationAdd {
 			if c.ResourceAllocation == nil {
 				c.ResourceAllocation = &types.VirtualEthernetCardResourceAllocation{
 					Reservation: types.NewInt64(0),
@@ -1183,6 +1184,10 @@ func (vm *VirtualMachine) configureDevice(ctx *Context, devices object.VirtualDe
 			}
 		}
 	case *types.VirtualDisk:
+		// NOTE: either of capacityInBytes and capacityInKB may not be specified
+		x.CapacityInBytes = getDiskSize(x)
+		x.CapacityInKB = getDiskSize(x) / 1024
+
 		summary = fmt.Sprintf("%s KB", numberToString(x.CapacityInKB, ','))
 		switch b := d.Backing.(type) {
 		case types.BaseVirtualDeviceFileBackingInfo:
@@ -1349,6 +1354,13 @@ func (vm *VirtualMachine) removeDevice(ctx *Context, devices object.VirtualDevic
 			case *types.VirtualEthernetCardDistributedVirtualPortBackingInfo:
 				net.Type = "DistributedVirtualPortgroup"
 				net.Value = b.Port.PortgroupKey
+			}
+
+			for j, nicInfo := range vm.Guest.Net {
+				if nicInfo.DeviceConfigId == key {
+					vm.Guest.Net = append(vm.Guest.Net[:j], vm.Guest.Net[j+1:]...)
+					break
+				}
 			}
 
 			networks := vm.Network
