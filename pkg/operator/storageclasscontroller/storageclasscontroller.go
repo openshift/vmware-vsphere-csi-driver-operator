@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	v1 "github.com/openshift/api/config/v1"
+
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
@@ -22,13 +24,18 @@ const (
 	SummaryProperty       = "summary"
 )
 
+type StorageClassSyncInterface interface {
+	Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+}
+
 type StorageClassController struct {
-	name            string
-	targetNamespace string
-	manifest        []byte
-	kubeClient      kubernetes.Interface
-	operatorClient  v1helpers.OperatorClient
-	recorder        events.Recorder
+	name                 string
+	targetNamespace      string
+	manifest             []byte
+	kubeClient           kubernetes.Interface
+	operatorClient       v1helpers.OperatorClient
+	recorder             events.Recorder
+	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 }
 
 func NewStorageClassController(
@@ -38,7 +45,7 @@ func NewStorageClassController(
 	kubeClient kubernetes.Interface,
 	operatorClient v1helpers.OperatorClient,
 	recorder events.Recorder,
-) *StorageClassController {
+) StorageClassSyncInterface {
 	c := &StorageClassController{
 		name:            name,
 		targetNamespace: targetNamespace,
@@ -65,6 +72,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 		}
 		return checks.MakeClusterCheckResultPass(), checks.ClusterCheckAllGood
 	}
+
 	checkResult, overallClusterStatus := checkResultFunc()
 	return c.updateConditions(ctx, checkResult, overallClusterStatus)
 }
