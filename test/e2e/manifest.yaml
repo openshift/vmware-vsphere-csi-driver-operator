@@ -22,3 +22,4 @@ DriverInfo:
     controllerExpansion: true
     nodeExpansion: true
     snapshotDataSource: false
+    multiplePVsSameID: true
