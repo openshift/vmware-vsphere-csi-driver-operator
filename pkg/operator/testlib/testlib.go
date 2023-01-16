@@ -21,7 +21,7 @@ import (
 	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
-//go:embed *.yaml *.ini
+//go:embed *.ini
 var f embed.FS
 
 const (
