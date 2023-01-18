@@ -3,15 +3,17 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	v1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
+	csiscc "github.com/openshift/library-go/pkg/operator/csi/csistorageclasscontroller"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	"k8s.io/apimachinery/pkg/runtime"
-	"testing"
 )
 
 const (
@@ -51,6 +53,12 @@ func newStorageClassController(apiClients *utils.APIClient, storageclassfile str
 		spFunc = newFakeStoragePolicyAPIFailure
 	}
 
+	evaluator := csiscc.NewStorageClassStateEvaluator(
+		apiClients.KubeClient,
+		apiClients.ClusterCSIDriverInformer.Lister(),
+		rc,
+	)
+
 	c := &StorageClassController{
 		name:                 testScControllerName,
 		targetNamespace:      testScControllerNamespace,
@@ -59,6 +67,7 @@ func newStorageClassController(apiClients *utils.APIClient, storageclassfile str
 		operatorClient:       apiClients.OperatorClient,
 		recorder:             rc,
 		makeStoragePolicyAPI: spFunc,
+		scStateEvaluator:     evaluator,
 	}
 
 	return c
