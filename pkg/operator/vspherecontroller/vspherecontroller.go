@@ -120,6 +120,7 @@ func NewVSphereController(
 		apiClients.SecretInformer.Informer(),
 		infraInformer.Informer(),
 		scInformer.Informer(),
+		apiClients.ClusterCSIDriverInformer.Informer(),
 	).WithSync(c.sync).
 		ResyncEvery(resyncDuration).
 		WithSyncDegradedOnError(apiClients.OperatorClient).ToController(c.name, rc)
@@ -489,6 +490,7 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 		scBytes,
 		c.apiClients.KubeClient,
 		c.apiClients.OperatorClient,
+		c.apiClients.ClusterCSIDriverInformer,
 		c.eventRecorder,
 	)
 	return storageClassController

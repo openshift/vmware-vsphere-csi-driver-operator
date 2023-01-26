@@ -93,6 +93,7 @@ func NewFakeClients(coreObjects []runtime.Object, operatorObject *FakeDriverInst
 
 	apiClient.ConfigClientSet = configClient
 	apiClient.ConfigInformers = configInformerFactory
+	AddClusterCSIDriverClient(apiClient, GetClusterCSIDriver(false))
 	return apiClient
 }
 
