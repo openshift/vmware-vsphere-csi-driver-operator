@@ -18,6 +18,7 @@ require (
 	k8s.io/component-base v0.23.0
 	k8s.io/klog/v2 v2.40.1
 	k8s.io/legacy-cloud-providers v0.20.4
+	gopkg.in/ini.v1 v1.51.0
 )
 
 require (
