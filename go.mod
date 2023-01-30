@@ -19,7 +19,7 @@ require (
 	k8s.io/client-go v0.26.1
 	k8s.io/component-base v0.26.1
 	k8s.io/klog/v2 v2.80.1
-	k8s.io/legacy-cloud-providers v0.25.1
+	k8s.io/legacy-cloud-providers v0.26.1
 )
 
 require (
@@ -105,7 +105,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiserver v0.26.1 // indirect
-	k8s.io/cloud-provider v0.25.1 // indirect
+	k8s.io/cloud-provider v0.26.1 // indirect
 	k8s.io/kms v0.26.1 // indirect
 	k8s.io/kube-aggregator v0.26.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20221012153701-172d655c2280 // indirect
