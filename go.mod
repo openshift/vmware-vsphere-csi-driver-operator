@@ -12,13 +12,13 @@ require (
 	github.com/spf13/cobra v1.2.1
 	github.com/vmware/govmomi v0.23.1
 	gopkg.in/gcfg.v1 v1.2.3
+	gopkg.in/ini.v1 v1.62.0
 	k8s.io/api v0.23.1
 	k8s.io/apimachinery v0.23.1
 	k8s.io/client-go v0.23.0
 	k8s.io/component-base v0.23.0
 	k8s.io/klog/v2 v2.40.1
 	k8s.io/legacy-cloud-providers v0.20.4
-	gopkg.in/ini.v1 v1.51.0
 )
 
 require (
