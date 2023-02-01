@@ -490,6 +490,7 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 		scBytes,
 		c.apiClients.KubeClient,
 		c.apiClients.OperatorClient,
+		c.scLister,
 		c.apiClients.ClusterCSIDriverInformer,
 		c.eventRecorder,
 	)
