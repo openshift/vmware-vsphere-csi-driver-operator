@@ -535,9 +535,9 @@ func (c *VSphereController) createCSIConfigMap(
 		return fmt.Errorf("unable to fetch default datastore url: %v", err)
 	}
 
-	url := defaultDatastore.Summary.Url
+	datastoreURL := defaultDatastore.Summary.Url
 
-	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, url)
+	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, datastoreURL)
 	if err != nil {
 		return err
 	}
@@ -547,6 +547,9 @@ func (c *VSphereController) createCSIConfigMap(
 	if err != nil {
 		return fmt.Errorf("error applying vsphere csi driver config: %v", err)
 	}
+
+	globalSharedState := utils.GetGlobalSharedState()
+	globalSharedState.SetCSIConfigState(true)
 	return nil
 }
 
@@ -554,7 +557,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	infra *ocpconfigv1.Infrastructure,
 	sourceCFG vsphere.VSphereConfig,
 	clusterCSIDriver *operatorapi.ClusterCSIDriver,
-	datastoreUrl string) (*corev1.ConfigMap, error) {
+	datastoreURL string) (*corev1.ConfigMap, error) {
 
 	csiConfigString := string(c.csiConfigManifest)
 
@@ -570,7 +573,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		"${CLUSTER_ID}":              infra.Status.InfrastructureName,
 		"${VCENTER}":                 sourceCFG.Workspace.VCenterIP,
 		"${DATACENTERS}":             datacenters,
-		"${MIGRATION_DATASTORE_URL}": datastoreUrl,
+		"${MIGRATION_DATASTORE_URL}": datastoreURL,
 	} {
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
 	}
