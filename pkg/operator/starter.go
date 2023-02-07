@@ -25,7 +25,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 )
 
 const (
@@ -89,16 +88,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ClusterCSIDriverInformer: clusterCSIDriverInformer,
 	}
 
-	vSphereController := vspherecontroller.NewVSphereController(
-		"VMwareVSphereController",
-		utils.DefaultNamespace,
-		commonAPIClient,
-		controllerConfig.EventRecorder)
-
-	if err != nil {
-		return err
-	}
-
 	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config.yaml")
 	if err != nil {
 		return err
@@ -109,18 +98,13 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		return err
 	}
 
-	targetConfigController := targetconfigcontroller.NewTargetConfigController(
-		"VMwareVSphereDriverTargetConfigController",
+	vSphereController := vspherecontroller.NewVSphereController(
+		"VMwareVSphereController",
 		utils.DefaultNamespace,
-		cloudConfigBytes,
+		commonAPIClient,
 		csiConfigBytes,
-		kubeClient,
-		kubeInformersForNamespaces,
-		operatorClient,
-		configInformers,
-		clusterCSIDriverInformer,
-		controllerConfig.EventRecorder,
-	)
+		cloudConfigBytes,
+		controllerConfig.EventRecorder)
 
 	featureConfigBytes, err := assets.ReadFile("vsphere_features_config.yaml")
 	if err != nil {
@@ -144,9 +128,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	go dynamicInformers.Start(ctx.Done())
 	go configInformers.Start(ctx.Done())
 	go ocpOperatorInformer.Start(ctx.Done())
-
-	klog.Info("Starting targetconfigcontroller")
-	go targetConfigController.Run(ctx, 1)
 
 	klog.Infof("Starting feature config controller")
 	go driverFeatureConfigController.Run(ctx, 1)

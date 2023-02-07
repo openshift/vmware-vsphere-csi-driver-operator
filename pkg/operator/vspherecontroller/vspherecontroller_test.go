@@ -10,10 +10,12 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
+	iniv1 "gopkg.in/ini.v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/component-base/metrics/testutil"
@@ -35,21 +37,27 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	nodeLister := apiClients.NodeInformer.Lister()
 	rc := events.NewInMemoryRecorder(testControllerName)
 
+	cloudConfigBytes, _ := assets.ReadFile("vsphere_cloud_config.yaml")
+
+	csiConfigBytes, _ := assets.ReadFile("csi_cloud_config.ini")
+
 	c := &VSphereController{
-		name:            testControllerName,
-		targetNamespace: defaultNamespace,
-		kubeClient:      apiClients.KubeClient,
-		operatorClient:  apiClients.OperatorClient,
-		configMapLister: configMapInformer.Lister(),
-		secretLister:    apiClients.SecretInformer.Lister(),
-		csiNodeLister:   csiNodeLister,
-		scLister:        scInformer.Lister(),
-		csiDriverLister: csiDriverLister,
-		nodeLister:      nodeLister,
-		apiClients:      *apiClients,
-		eventRecorder:   rc,
-		vSphereChecker:  newVSphereEnvironmentChecker(),
-		infraLister:     infraInformer.Lister(),
+		name:              testControllerName,
+		targetNamespace:   defaultNamespace,
+		kubeClient:        apiClients.KubeClient,
+		operatorClient:    apiClients.OperatorClient,
+		configMapLister:   configMapInformer.Lister(),
+		secretLister:      apiClients.SecretInformer.Lister(),
+		csiNodeLister:     csiNodeLister,
+		scLister:          scInformer.Lister(),
+		csiDriverLister:   csiDriverLister,
+		nodeLister:        nodeLister,
+		manifest:          cloudConfigBytes,
+		csiConfigManifest: csiConfigBytes,
+		apiClients:        *apiClients,
+		eventRecorder:     rc,
+		vSphereChecker:    newVSphereEnvironmentChecker(),
+		infraLister:       infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
 	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
@@ -434,6 +442,119 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			}
 		})
 	}
+}
+
+func TestApplyClusterCSIDriver(t *testing.T) {
+	tests := []struct {
+		name               string
+		clusterCSIDriver   *opv1.ClusterCSIDriver
+		operatorObj        *testlib.FakeDriverInstance
+		expectedTopology   string
+		configFileName     string
+		expectedDatacenter string
+		expectError        bool
+	}{
+		{
+			name:               "when driver does not have topology enabled",
+			clusterCSIDriver:   testlib.GetClusterCSIDriver(false),
+			operatorObj:        testlib.MakeFakeDriverInstance(),
+			expectedDatacenter: "Datacenter",
+			expectedTopology:   "",
+		},
+		{
+			name:               "when driver does have topology enabled",
+			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
+			operatorObj:        testlib.MakeFakeDriverInstance(),
+			expectedDatacenter: "Datacenter",
+			expectedTopology:   "k8s-zone,k8s-region",
+		},
+		{
+			name:             "when configuration has more than one vcenter",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			configFileName:   "multiple_vc.ini",
+			expectError:      true,
+		},
+		{
+			name:               "when configuration has more than one datacenter",
+			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
+			operatorObj:        testlib.MakeFakeDriverInstance(),
+			configFileName:     "multiple_dc.ini",
+			expectedDatacenter: "Datacentera, DatacenterB",
+			expectedTopology:   "k8s-zone,k8s-region",
+		},
+	}
+
+	for i := range tests {
+		tc := tests[i]
+		t.Run(tc.name, func(t *testing.T) {
+			infra := testlib.GetInfraObject()
+			commonApiClient := testlib.NewFakeClients([]runtime.Object{}, tc.operatorObj, infra)
+			testlib.AddClusterCSIDriverClient(commonApiClient, tc.clusterCSIDriver)
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			go testlib.StartFakeInformer(commonApiClient, stopCh)
+			if err := testlib.AddInitialObjects([]runtime.Object{tc.clusterCSIDriver}, commonApiClient); err != nil {
+				t.Fatalf("error adding initial objects: %v", err)
+			}
+
+			testlib.WaitForSync(commonApiClient, stopCh)
+			ctrl := newVsphereController(commonApiClient)
+
+			legacyVsphereConfig, err := testlib.GetLegacyVSphereConfig(tc.configFileName)
+			if err != nil {
+				t.Fatalf("error loading legacy vsphere config: %v", err)
+			}
+
+			configMap, err := ctrl.applyClusterCSIDriverChange(infra, legacyVsphereConfig, tc.clusterCSIDriver, "foobar")
+
+			// if we expected error and we got some, we should stop running this test
+			if tc.expectError && err != nil {
+				return
+			}
+
+			if tc.expectError && err == nil {
+				t.Fatal("Expected error got none")
+			}
+			if err != nil {
+				t.Fatalf("error creating configmap: %v", err)
+			}
+
+			configMapIni := configMap.Data["cloud.conf"]
+			csiConfig, err := iniv1.Load([]byte(configMapIni))
+			if err != nil {
+				t.Fatalf("error loading result ini: %v", err)
+			}
+
+			labelSection, _ := csiConfig.Section("Labels").GetKey("topology-categories")
+			if tc.expectedTopology == "" && labelSection != nil {
+				t.Fatalf("unexpected topology found %v", labelSection)
+			}
+			if tc.expectedTopology != "" {
+				if labelSection == nil || labelSection.String() != tc.expectedTopology {
+					t.Fatalf("expected topology %v, unexpected topology found %v", tc.expectedTopology, labelSection)
+				}
+			}
+			datacenters, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("datacenters")
+			if err != nil {
+				t.Fatalf("error getting datacenters: %v", err)
+			}
+			if datacenters.String() != tc.expectedDatacenter {
+				t.Fatalf("expected datacenter to be %s, got %s", tc.expectedDatacenter, datacenters.String())
+			}
+
+			datastoreURL, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("migration-datastore-url")
+			if err != nil {
+				t.Fatalf("error getting datasore url: %v", err)
+			}
+			if datastoreURL.String() != "foobar" {
+				t.Fatalf("expected datastoreURL to be %s got %s", "foobar", datastoreURL)
+			}
+
+		})
+	}
+
 }
 
 func setHardwareVersionsFunc(nodes []*v1.Node, conn *vclib.VSphereConnection, hardwareVersions []string) func() error {

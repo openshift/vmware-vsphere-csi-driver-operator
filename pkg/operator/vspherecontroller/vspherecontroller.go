@@ -11,16 +11,22 @@ import (
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"gopkg.in/gcfg.v1"
+	iniv1 "gopkg.in/ini.v1"
+	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/legacy-cloud-providers/vsphere"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 
+	ocpconfigv1 "github.com/openshift/api/config/v1"
 	ocpv1 "github.com/openshift/api/config/v1"
 	operatorapi "github.com/openshift/api/operator/v1"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
+	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
@@ -41,6 +47,7 @@ type VSphereController struct {
 	configMapLister          corelister.ConfigMapLister
 	secretLister             corelister.SecretLister
 	scLister                 storagelister.StorageClassLister
+	clusterCSIDriverLister   clustercsidriverlister.ClusterCSIDriverLister
 	infraLister              infralister.InfrastructureLister
 	nodeLister               corelister.NodeLister
 	csiDriverLister          storagelister.CSIDriverLister
@@ -50,6 +57,7 @@ type VSphereController struct {
 	storageClassController   storageclasscontroller.StorageClassSyncInterface
 	operandControllerStarted bool
 	vSphereConnection        *vclib.VSphereConnection
+	csiConfigManifest        []byte
 	vSphereChecker           vSphereEnvironmentCheckInterface
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() (*vclib.VSphereConnection, checks.ClusterCheckResult, bool)
@@ -80,6 +88,8 @@ type conditionalController struct {
 func NewVSphereController(
 	name, targetNamespace string,
 	apiClients utils.APIClient,
+	csiConfigManifest []byte,
+	cloudConfigManifest []byte,
 	recorder events.Recorder,
 ) factory.Controller {
 	kubeInformers := apiClients.KubeInformers
@@ -94,20 +104,23 @@ func NewVSphereController(
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 
 	c := &VSphereController{
-		name:            name,
-		targetNamespace: targetNamespace,
-		kubeClient:      apiClients.KubeClient,
-		operatorClient:  apiClients.OperatorClient,
-		configMapLister: configMapInformer.Lister(),
-		secretLister:    apiClients.SecretInformer.Lister(),
-		csiNodeLister:   csiNodeLister,
-		scLister:        scInformer.Lister(),
-		csiDriverLister: csiDriverLister,
-		nodeLister:      nodeLister,
-		apiClients:      apiClients,
-		eventRecorder:   rc,
-		vSphereChecker:  newVSphereEnvironmentChecker(),
-		infraLister:     infraInformer.Lister(),
+		name:                   name,
+		targetNamespace:        targetNamespace,
+		kubeClient:             apiClients.KubeClient,
+		operatorClient:         apiClients.OperatorClient,
+		configMapLister:        configMapInformer.Lister(),
+		secretLister:           apiClients.SecretInformer.Lister(),
+		csiNodeLister:          csiNodeLister,
+		scLister:               scInformer.Lister(),
+		csiDriverLister:        csiDriverLister,
+		nodeLister:             nodeLister,
+		apiClients:             apiClients,
+		eventRecorder:          rc,
+		vSphereChecker:         newVSphereEnvironmentChecker(),
+		manifest:               cloudConfigManifest,
+		csiConfigManifest:      csiConfigManifest,
+		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
+		infraLister:            infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -212,6 +225,12 @@ func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext fa
 
 	if blockCSIDriverInstall {
 		return blockCSIDriverInstall, nil
+	}
+
+	err = c.createCSIConfigMap(ctx, syncContext, infra)
+
+	if err != nil {
+		return blockCSIDriverInstall, err
 	}
 
 	delay, result, checkRan := c.runClusterCheck(ctx, infra)
@@ -476,6 +495,105 @@ func (c *VSphereController) addUpgradeableBlockCondition(
 		}
 	}
 	return blockUpgradeCondition, true
+}
+
+func (c *VSphereController) createCSIConfigMap(
+	ctx context.Context,
+	syncContext factory.SyncContext,
+	infra *ocpv1.Infrastructure) error {
+
+	clusterCSIDriver, err := c.clusterCSIDriverLister.Get(utils.VSphereDriverName)
+	if err != nil {
+		return err
+	}
+
+	// TODO: none of our CSI operators check whether they are running in the correct cloud. Is
+	// this something we want to change? These operators are supposed to be deployed by CSO, which
+	// already does this checking for us.
+	cloudConfig := infra.Spec.CloudConfig
+	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get cloud config: %w", err)
+	}
+
+	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
+	if !ok {
+		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
+	}
+
+	var cfg vsphere.VSphereConfig
+	err = gcfg.ReadStringInto(&cfg, cfgString)
+	if err != nil {
+		return err
+	}
+
+	storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, c.vSphereConnection, infra)
+
+	defaultDatastore, err := storageApiClient.GetDefaultDatastore(ctx)
+
+	if err != nil {
+		return fmt.Errorf("unable to fetch default datastore url: %v", err)
+	}
+
+	url := defaultDatastore.Summary.Url
+
+	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, url)
+	if err != nil {
+		return err
+	}
+
+	// TODO: check if configMap has been deployed and set appropriate conditions
+	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
+	if err != nil {
+		return fmt.Errorf("error applying vsphere csi driver config: %v", err)
+	}
+	return nil
+}
+
+func (c *VSphereController) applyClusterCSIDriverChange(
+	infra *ocpconfigv1.Infrastructure,
+	sourceCFG vsphere.VSphereConfig,
+	clusterCSIDriver *operatorapi.ClusterCSIDriver,
+	datastoreUrl string) (*corev1.ConfigMap, error) {
+
+	csiConfigString := string(c.csiConfigManifest)
+
+	dataCenterNames, err := utils.GetDatacenters(&sourceCFG)
+
+	if err != nil {
+		return nil, err
+	}
+
+	datacenters := strings.Join(dataCenterNames, ",")
+
+	for pattern, value := range map[string]string{
+		"${CLUSTER_ID}":              infra.Status.InfrastructureName,
+		"${VCENTER}":                 sourceCFG.Workspace.VCenterIP,
+		"${DATACENTERS}":             datacenters,
+		"${MIGRATION_DATASTORE_URL}": datastoreUrl,
+	} {
+		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
+	}
+
+	csiConfig, err := iniv1.Load([]byte(csiConfigString))
+	if err != nil {
+		return nil, fmt.Errorf("error loading ini file: %v", err)
+	}
+
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
+	if len(topologyCategories) > 0 {
+		topologyCategoryString := strings.Join(topologyCategories, ",")
+		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
+	}
+
+	// lets dump the ini file to a string
+	var finalConfigString strings.Builder
+	csiConfig.WriteTo(&finalConfigString)
+
+	requiredCM := resourceread.ReadConfigMapV1OrDie(c.manifest)
+	requiredCM.Data["cloud.conf"] = finalConfigString.String()
+	return requiredCM, nil
+
 }
 
 func (c *VSphereController) createStorageClassController() storageclasscontroller.StorageClassSyncInterface {

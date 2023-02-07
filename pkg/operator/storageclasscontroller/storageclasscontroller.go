@@ -54,7 +54,8 @@ func NewStorageClassController(
 		kubeClient:           kubeClient,
 		operatorClient:       operatorClient,
 		recorder:             recorder,
-		makeStoragePolicyAPI: newStoragePolicyAPI,
+		makeStoragePolicyAPI: NewStoragePolicyAPI,
+		scStateEvaluator:     evaluator,
 	}
 
 	return c
