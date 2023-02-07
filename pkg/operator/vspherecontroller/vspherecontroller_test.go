@@ -42,22 +42,23 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	csiConfigBytes, _ := assets.ReadFile("csi_cloud_config.ini")
 
 	c := &VSphereController{
-		name:              testControllerName,
-		targetNamespace:   defaultNamespace,
-		kubeClient:        apiClients.KubeClient,
-		operatorClient:    apiClients.OperatorClient,
-		configMapLister:   configMapInformer.Lister(),
-		secretLister:      apiClients.SecretInformer.Lister(),
-		csiNodeLister:     csiNodeLister,
-		scLister:          scInformer.Lister(),
-		csiDriverLister:   csiDriverLister,
-		nodeLister:        nodeLister,
-		manifest:          cloudConfigBytes,
-		csiConfigManifest: csiConfigBytes,
-		apiClients:        *apiClients,
-		eventRecorder:     rc,
-		vSphereChecker:    newVSphereEnvironmentChecker(),
-		infraLister:       infraInformer.Lister(),
+		name:                   testControllerName,
+		targetNamespace:        defaultNamespace,
+		kubeClient:             apiClients.KubeClient,
+		operatorClient:         apiClients.OperatorClient,
+		configMapLister:        configMapInformer.Lister(),
+		secretLister:           apiClients.SecretInformer.Lister(),
+		csiNodeLister:          csiNodeLister,
+		scLister:               scInformer.Lister(),
+		csiDriverLister:        csiDriverLister,
+		nodeLister:             nodeLister,
+		manifest:               cloudConfigBytes,
+		csiConfigManifest:      csiConfigBytes,
+		apiClients:             *apiClients,
+		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
+		eventRecorder:          rc,
+		vSphereChecker:         newVSphereEnvironmentChecker(),
+		infraLister:            infraInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
 	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
@@ -339,6 +340,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 		t.Run(test.name, func(t *testing.T) {
 			// These tests can't run in parallel!
 			utils.InstallErrorMetric.Reset()
+			utils.InitGlobalState()
 
 			if test.initialErrorMetricLabels != nil {
 				utils.InstallErrorMetric.With(test.initialErrorMetricLabels).Set(test.initialErrorMetricValue)
@@ -348,8 +350,12 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			for _, node := range nodes {
 				test.initialObjects = append(test.initialObjects, runtime.Object(node))
 			}
-
 			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
+			clusterCSIDriver := testlib.GetClusterCSIDriver(false)
+			testlib.AddClusterCSIDriverClient(commonApiClient, clusterCSIDriver)
+
+			test.initialObjects = append(test.initialObjects, runtime.Object(clusterCSIDriver))
+
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 

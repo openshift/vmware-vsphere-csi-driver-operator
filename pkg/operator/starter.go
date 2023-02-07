@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller"
 
@@ -88,6 +89,9 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ClusterCSIDriverInformer: clusterCSIDriverInformer,
 	}
 
+	// initialize shared global state
+	utils.InitGlobalState()
+
 	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config.yaml")
 	if err != nil {
 		return err
@@ -105,6 +109,19 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		csiConfigBytes,
 		cloudConfigBytes,
 		controllerConfig.EventRecorder)
+
+	// targetConfigController is only used for maintaining conditions which
+	// were previously added by the operator
+	targetConfigController := targetconfigcontroller.NewTargetConfigController(
+		"VMwareVSphereDriverTargetConfigController",
+		utils.DefaultNamespace,
+		kubeClient,
+		kubeInformersForNamespaces,
+		operatorClient,
+		configInformers,
+		clusterCSIDriverInformer,
+		controllerConfig.EventRecorder,
+	)
 
 	featureConfigBytes, err := assets.ReadFile("vsphere_features_config.yaml")
 	if err != nil {
@@ -128,6 +145,9 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	go dynamicInformers.Start(ctx.Done())
 	go configInformers.Start(ctx.Done())
 	go ocpOperatorInformer.Start(ctx.Done())
+
+	klog.Info("Starting targetconfigcontroller")
+	go targetConfigController.Run(ctx, 1)
 
 	klog.Infof("Starting feature config controller")
 	go driverFeatureConfigController.Run(ctx, 1)

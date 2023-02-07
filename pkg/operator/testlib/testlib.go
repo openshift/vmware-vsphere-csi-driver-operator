@@ -110,7 +110,7 @@ func AddClusterCSIDriverClient(apiClient *utils.APIClient, obj *opv1.ClusterCSID
 func GetClusterCSIDriver(hasTopology bool) *opv1.ClusterCSIDriver {
 	c := &opv1.ClusterCSIDriver{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: infraGlobalName,
+			Name: "csi.vsphere.vmware.com",
 		},
 		Spec: opv1.ClusterCSIDriverSpec{
 			DriverConfig: opv1.CSIDriverConfigSpec{
