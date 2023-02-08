@@ -65,6 +65,7 @@ func newStorageClassController(apiClients *utils.APIClient, storageclassfile str
 		manifest:             scBytes,
 		kubeClient:           apiClients.KubeClient,
 		operatorClient:       apiClients.OperatorClient,
+		storageClassLister:   apiClients.KubeInformers.InformersFor("").Storage().V1().StorageClasses().Lister(),
 		recorder:             rc,
 		makeStoragePolicyAPI: spFunc,
 		scStateEvaluator:     evaluator,

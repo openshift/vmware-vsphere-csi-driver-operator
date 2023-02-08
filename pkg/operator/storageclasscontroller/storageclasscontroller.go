@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"k8s.io/client-go/kubernetes"
+	storagev1 "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/klog/v2"
 )
 
@@ -37,6 +38,7 @@ type StorageClassController struct {
 	manifest             []byte
 	kubeClient           kubernetes.Interface
 	operatorClient       v1helpers.OperatorClient
+	storageClassLister   storagev1.StorageClassLister
 	recorder             events.Recorder
 	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 	scStateEvaluator     *csiscc.StorageClassStateEvaluator
@@ -48,6 +50,7 @@ func NewStorageClassController(
 	manifest []byte,
 	kubeClient kubernetes.Interface,
 	operatorClient v1helpers.OperatorClient,
+	storageClassLister storagev1.StorageClassLister,
 	clusterCSIDriverInformer clustercsidriverinformer.ClusterCSIDriverInformer,
 	recorder events.Recorder,
 ) StorageClassSyncInterface {
@@ -62,6 +65,7 @@ func NewStorageClassController(
 		manifest:             manifest,
 		kubeClient:           kubeClient,
 		operatorClient:       operatorClient,
+		storageClassLister:   storageClassLister,
 		recorder:             recorder,
 		makeStoragePolicyAPI: newStoragePolicyAPI,
 		scStateEvaluator:     evaluator,
@@ -163,5 +167,10 @@ func (c *StorageClassController) syncStorageClass(ctx context.Context, policyNam
 	scString = policyReplacer.Replace(scString)
 
 	sc := resourceread.ReadStorageClassV1OrDie([]byte(scString))
+	err := csiscc.SetDefaultStorageClass(c.storageClassLister, sc)
+	if err != nil {
+		return err
+	}
+
 	return c.scStateEvaluator.ApplyStorageClass(ctx, sc, scState)
 }
