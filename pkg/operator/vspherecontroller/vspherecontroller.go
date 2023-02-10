@@ -548,8 +548,6 @@ func (c *VSphereController) createCSIConfigMap(
 		return fmt.Errorf("error applying vsphere csi driver config: %v", err)
 	}
 
-	globalSharedState := utils.GetGlobalSharedState()
-	globalSharedState.SetCSIConfigState(true)
 	return nil
 }
 
@@ -583,7 +581,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		return nil, fmt.Errorf("error loading ini file: %v", err)
 	}
 
-	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver)
 	if len(topologyCategories) > 0 {
 		topologyCategoryString := strings.Join(topologyCategories, ",")
 		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)

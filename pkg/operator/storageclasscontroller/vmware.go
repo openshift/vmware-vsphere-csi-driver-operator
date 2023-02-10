@@ -101,7 +101,7 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	}
 
 	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
-	ds, err := v.getDefaultDatastore(ctx)
+	ds, err := v.GetDefaultDatastore(ctx)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error fetching default datastore %s: %v", dsName, err)
 	}

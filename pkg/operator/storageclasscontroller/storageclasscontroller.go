@@ -55,7 +55,6 @@ func NewStorageClassController(
 		operatorClient:       operatorClient,
 		recorder:             recorder,
 		makeStoragePolicyAPI: NewStoragePolicyAPI,
-		scStateEvaluator:     evaluator,
 	}
 
 	return c

@@ -7,7 +7,6 @@ import (
 
 	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
@@ -65,7 +64,7 @@ func NewTargetConfigController(
 	).WithSync(
 		c.sync,
 	).ResyncEvery(
-		time.Minute, // TODO: figure out what's the idead resync time for this controller
+		20*time.Minute, // TODO: figure out what's the idead resync time for this controller
 	).WithSyncDegradedOnError(
 		operatorClient,
 	).ToController(
@@ -84,14 +83,6 @@ func (c TargetConfigController) sync(ctx context.Context, syncContext factory.Sy
 	}
 
 	if opSpec.ManagementState != opv1.Managed {
-		return nil
-	}
-
-	globalSharedState := utils.GetGlobalSharedState()
-	configMapState := globalSharedState.GetCSIConfigState()
-
-	// if configmap is not created simply return
-	if !configMapState {
 		return nil
 	}
 

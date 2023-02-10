@@ -340,7 +340,6 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 		t.Run(test.name, func(t *testing.T) {
 			// These tests can't run in parallel!
 			utils.InstallErrorMetric.Reset()
-			utils.InitGlobalState()
 
 			if test.initialErrorMetricLabels != nil {
 				utils.InstallErrorMetric.With(test.initialErrorMetricLabels).Set(test.initialErrorMetricValue)
