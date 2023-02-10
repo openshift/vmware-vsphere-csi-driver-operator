@@ -549,8 +549,6 @@ func (c *VSphereController) createCSIConfigMap(
 		return fmt.Errorf("error applying vsphere csi driver config: %v", err)
 	}
 
-	globalSharedState := utils.GetGlobalSharedState()
-	globalSharedState.SetCSIConfigState(true)
 	return nil
 }
 

@@ -83,10 +83,6 @@ func TestApplyClusterCSIDriverChange(t *testing.T) {
 				clusterCSIDriverLister: commonApiClient.ClusterCSIDriverInformer.Lister(),
 			}
 
-			utils.InitGlobalState()
-			globalState := utils.GetGlobalSharedState()
-			globalState.SetCSIConfigState(true)
-
 			err := ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", rc))
 			if err != nil {
 				t.Fatalf("Unexpected error that could degrade cluster: %+v", err)

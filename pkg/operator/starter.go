@@ -89,9 +89,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ClusterCSIDriverInformer: clusterCSIDriverInformer,
 	}
 
-	// initialize shared global state
-	utils.InitGlobalState()
-
 	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config.yaml")
 	if err != nil {
 		return err
