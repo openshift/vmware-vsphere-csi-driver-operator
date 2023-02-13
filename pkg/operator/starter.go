@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller"
 
@@ -25,7 +26,6 @@ import (
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/targetconfigcontroller"
 )
 
 const (
@@ -89,16 +89,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ClusterCSIDriverInformer: clusterCSIDriverInformer,
 	}
 
-	vSphereController := vspherecontroller.NewVSphereController(
-		"VMwareVSphereController",
-		utils.DefaultNamespace,
-		commonAPIClient,
-		controllerConfig.EventRecorder)
-
-	if err != nil {
-		return err
-	}
-
 	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config.yaml")
 	if err != nil {
 		return err
@@ -109,11 +99,19 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		return err
 	}
 
+	vSphereController := vspherecontroller.NewVSphereController(
+		"VMwareVSphereController",
+		utils.DefaultNamespace,
+		commonAPIClient,
+		csiConfigBytes,
+		cloudConfigBytes,
+		controllerConfig.EventRecorder)
+
+	// targetConfigController is only used for maintaining conditions which
+	// were previously added by the operator
 	targetConfigController := targetconfigcontroller.NewTargetConfigController(
 		"VMwareVSphereDriverTargetConfigController",
 		utils.DefaultNamespace,
-		cloudConfigBytes,
-		csiConfigBytes,
 		kubeClient,
 		kubeInformersForNamespaces,
 		operatorClient,
