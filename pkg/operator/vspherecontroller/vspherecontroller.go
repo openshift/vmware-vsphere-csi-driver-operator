@@ -167,6 +167,13 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		return nil
 	}
 
+	clusterCSIDriver, err := c.clusterCSIDriverLister.Get(utils.VSphereDriverName)
+	if err != nil {
+		return err
+	}
+
+	utils.UpdateMetrics(infra, clusterCSIDriver)
+
 	driverCheckFlag, err := c.driverAlreadyStarted(ctx)
 	if err != nil {
 		return err
@@ -197,7 +204,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		}
 	}()
 
-	blockCSIDriverInstall, err := c.installCSIDriver(ctx, syncContext, infra, connectionResult, opStatus)
+	blockCSIDriverInstall, err := c.installCSIDriver(ctx, syncContext, infra, clusterCSIDriver, connectionResult, opStatus)
 	if err != nil {
 		return err
 	}
@@ -212,10 +219,18 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 			return err
 		}
 	}
+
 	return nil
 }
 
-func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext factory.SyncContext, infra *ocpv1.Infrastructure, connectionResult checks.ClusterCheckResult, opStatus *operatorapi.OperatorStatus) (blockCSIDriverInstall bool, err error) {
+func (c *VSphereController) installCSIDriver(
+	ctx context.Context,
+	syncContext factory.SyncContext,
+	infra *ocpv1.Infrastructure,
+	clusterCSIDriver *operatorapi.ClusterCSIDriver,
+	connectionResult checks.ClusterCheckResult,
+	opStatus *operatorapi.OperatorStatus) (blockCSIDriverInstall bool, err error) {
+
 	// if there was an OCP error we should degrade the cluster or if we previously created CSIDriver
 	// but we can't connect to vcenter now, we should also degrade the cluster
 	var connectionBlockUpgrade bool
@@ -228,7 +243,7 @@ func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext fa
 		return blockCSIDriverInstall, nil
 	}
 
-	err = c.createCSIConfigMap(ctx, syncContext, infra)
+	err = c.createCSIConfigMap(ctx, syncContext, infra, clusterCSIDriver)
 
 	if err != nil {
 		return blockCSIDriverInstall, err
@@ -501,12 +516,8 @@ func (c *VSphereController) addUpgradeableBlockCondition(
 func (c *VSphereController) createCSIConfigMap(
 	ctx context.Context,
 	syncContext factory.SyncContext,
-	infra *ocpv1.Infrastructure) error {
-
-	clusterCSIDriver, err := c.clusterCSIDriverLister.Get(utils.VSphereDriverName)
-	if err != nil {
-		return err
-	}
+	infra *ocpv1.Infrastructure,
+	clusterCSIDriver *operatorapi.ClusterCSIDriver) error {
 
 	// TODO: none of our CSI operators check whether they are running in the correct cloud. Is
 	// this something we want to change? These operators are supposed to be deployed by CSO, which
