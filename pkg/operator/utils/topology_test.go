@@ -213,6 +213,24 @@ func TestUpdateMetrics(t *testing.T) {
 		},
 	}
 
+	oneFailureDomainInfra := emptyInfra.DeepCopy()
+	oneFailureDomainInfra.Spec.PlatformSpec.VSphere.FailureDomains = []cfgv1.VSpherePlatformFailureDomainSpec{
+		{
+			Name:   "region1-zone1",
+			Region: "region1",
+			Zone:   "zone1",
+			Server: "vcenter1",
+			Topology: cfgv1.VSpherePlatformTopology{
+				Datacenter:     "datacenter1",
+				ComputeCluster: "computecluster1",
+				Networks:       nil,
+				Datastore:      "datastore1",
+				ResourcePool:   "resourcepool1",
+				Folder:         "folder1",
+			},
+		},
+	}
+
 	tests := []struct {
 		name             string
 		infra            *cfgv1.Infrastructure
@@ -331,6 +349,25 @@ vsphere_infrastructure_failure_domains{scope="zones"} 4
 # TYPE vsphere_topology_tags gauge
 vsphere_topology_tags{source="clustercsidriver"} 0
 vsphere_topology_tags{source="infrastructure"} 2
+`,
+		},
+		{
+			name:             "infra with 1 failure-domain",
+			infra:            oneFailureDomainInfra,
+			clusterCSIDriver: twoCategoriesClusterCSIDriver,
+			expectedMetrics: `
+# HELP vsphere_infrastructure_failure_domains [ALPHA] Number of vSphere failure domains
+# TYPE vsphere_infrastructure_failure_domains gauge
+vsphere_infrastructure_failure_domains{scope="datacenters"} 1
+vsphere_infrastructure_failure_domains{scope="datastores"} 1
+vsphere_infrastructure_failure_domains{scope="failure_domains"} 1
+vsphere_infrastructure_failure_domains{scope="regions"} 1
+vsphere_infrastructure_failure_domains{scope="vcenters"} 1
+vsphere_infrastructure_failure_domains{scope="zones"} 1
+# HELP vsphere_topology_tags [ALPHA] Number of vSphere topology tags
+# TYPE vsphere_topology_tags gauge
+vsphere_topology_tags{source="clustercsidriver"} 2
+vsphere_topology_tags{source="infrastructure"} 0
 `,
 		},
 	}
