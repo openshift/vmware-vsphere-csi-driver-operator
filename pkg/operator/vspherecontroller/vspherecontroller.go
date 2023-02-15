@@ -18,7 +18,6 @@ import (
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 
-	ocpconfigv1 "github.com/openshift/api/config/v1"
 	ocpv1 "github.com/openshift/api/config/v1"
 	operatorapi "github.com/openshift/api/operator/v1"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
@@ -564,7 +563,7 @@ func (c *VSphereController) createCSIConfigMap(
 }
 
 func (c *VSphereController) applyClusterCSIDriverChange(
-	infra *ocpconfigv1.Infrastructure,
+	infra *ocpv1.Infrastructure,
 	sourceCFG vsphere.VSphereConfig,
 	clusterCSIDriver *operatorapi.ClusterCSIDriver,
 	datastoreURL string) (*corev1.ConfigMap, error) {

@@ -19,7 +19,7 @@ func GetInfraTopologyCategories(infra *cfgv1.Infrastructure) []string {
 	vSpherePlatformConfig := infra.Spec.PlatformSpec.VSphere
 	if vSpherePlatformConfig != nil {
 		failureDomains := vSpherePlatformConfig.FailureDomains
-		if len(failureDomains) > 0 {
+		if len(failureDomains) > 1 {
 			return []string{defaultOpenshiftZoneCategory, defaultOpenshiftRegionCategory}
 		}
 	}
