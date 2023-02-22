@@ -118,6 +118,7 @@ spec:
           args:
             - --csi-address=$(ADDRESS)
             - --default-fstype=ext4
+            - --timeout=300s
             # - --feature-gates=Topology=true
             # - --extra-create-metadata=true
             - --v=${LOG_LEVEL}
@@ -167,6 +168,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --csi-address=$(ADDRESS)
+            - --timeout=300s
             - --http-endpoint=localhost:8203
             - --leader-election
             - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
@@ -210,6 +212,7 @@ spec:
           args:
             - --csi-address=$(ADDRESS)
             - --http-endpoint=localhost:8204
+            - --timeout=300s
             - --leader-election
             - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
             - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
@@ -253,6 +256,7 @@ spec:
           args:
             - --csi-address=$(ADDRESS)
             - --metrics-address=localhost:8205
+            - --timeout=300s
             - --leader-election
             - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
             - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
