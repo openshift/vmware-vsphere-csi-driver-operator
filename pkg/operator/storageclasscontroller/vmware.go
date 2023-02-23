@@ -32,7 +32,7 @@ const (
 var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine", "Folder"}
 
 type vCenterInterface interface {
-	getDefaultDatastore(ctx context.Context) (*mo.Datastore, error)
+	GetDefaultDatastore(ctx context.Context) (*mo.Datastore, error)
 	createStoragePolicy(ctx context.Context) (string, error)
 	checkForExistingPolicy(ctx context.Context) (bool, error)
 	createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error
@@ -50,7 +50,7 @@ type storagePolicyAPI struct {
 
 var _ vCenterInterface = &storagePolicyAPI{}
 
-func newStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
+func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
 	storagePolicyAPIClient := &storagePolicyAPI{
 		vcenterApiConnection: connection,
 		infra:                infra,
@@ -61,7 +61,7 @@ func newStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnectio
 	return storagePolicyAPIClient
 }
 
-func (v *storagePolicyAPI) getDefaultDatastore(ctx context.Context) (*mo.Datastore, error) {
+func (v *storagePolicyAPI) GetDefaultDatastore(ctx context.Context) (*mo.Datastore, error) {
 	vmClient := v.vcenterApiConnection.Client
 	config := v.vcenterApiConnection.Config
 	finder := find.NewFinder(vmClient.Client, false)
@@ -101,7 +101,7 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	}
 
 	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
-	ds, err := v.getDefaultDatastore(ctx)
+	ds, err := v.GetDefaultDatastore(ctx)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error fetching default datastore %s: %v", dsName, err)
 	}
