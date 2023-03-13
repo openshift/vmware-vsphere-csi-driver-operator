@@ -18,6 +18,8 @@ spec:
     metadata:
       labels:
         app: vmware-vsphere-csi-driver-node
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       hostNetwork: true
       serviceAccount: vmware-vsphere-csi-driver-node-sa
