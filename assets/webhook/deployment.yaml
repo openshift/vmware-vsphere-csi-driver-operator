@@ -16,6 +16,8 @@ spec:
     metadata:
       labels:
         app: vmware-vsphere-csi-driver-webhook
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       serviceName: vmware-vsphere-csi-driver-webhook-svc
       serviceAccountName: vmware-vsphere-csi-driver-webhook-sa
