@@ -29,6 +29,7 @@ var f embed.FS
 const (
 	cloudConfigNamespace = "openshift-config"
 	infraGlobalName      = "cluster"
+	storageOperatorName  = "cluster"
 	secretName           = "vmware-vsphere-cloud-credentials"
 	defaultNamespace     = "openshift-cluster-csi-drivers"
 )
@@ -147,6 +148,9 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 		case *opv1.ClusterCSIDriver:
 			clusterCSIDriverInformer := clients.ClusterCSIDriverInformer.Informer()
 			clusterCSIDriverInformer.GetStore().Add(obj)
+		case *opv1.Storage:
+			storageInformer := clients.OCPOperatorInformers.Operator().V1().Storages().Informer()
+			storageInformer.GetStore().Add(obj)
 		default:
 			return fmt.Errorf("Unknown initalObject type: %+v", obj)
 		}
@@ -252,6 +256,21 @@ func GetInfraObject() *ocpv1.Infrastructure {
 				Type: ocpv1.VSpherePlatformType,
 			},
 		},
+	}
+}
+
+func GetStorageOperator(driver opv1.StorageDriverType) *opv1.Storage {
+	return &opv1.Storage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: storageOperatorName,
+		},
+		Spec: opv1.StorageSpec{
+			OperatorSpec: opv1.OperatorSpec{
+				ManagementState: opv1.Managed,
+			},
+			VSphereStorageDriver: driver,
+		},
+		Status: opv1.StorageStatus{},
 	}
 }
 

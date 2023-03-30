@@ -35,6 +35,7 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
 	nodeLister := apiClients.NodeInformer.Lister()
+	storageLister := apiClients.OCPOperatorInformers.Operator().V1().Storages().Lister()
 	rc := events.NewInMemoryRecorder(testControllerName)
 
 	cloudConfigBytes, _ := assets.ReadFile("vsphere_cloud_config.yaml")
@@ -59,6 +60,7 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 		eventRecorder:          rc,
 		vSphereChecker:         newVSphereEnvironmentChecker(),
 		infraLister:            infraInformer.Lister(),
+		storageLister:          storageLister,
 	}
 	c.controllers = []conditionalController{}
 	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
@@ -82,6 +84,7 @@ func TestSync(t *testing.T) {
 
 	tests := []struct {
 		name                         string
+		storageCR                    *opv1.Storage
 		clusterCSIDriverObject       *testlib.FakeDriverInstance
 		initialObjects               []runtime.Object
 		initialErrorMetricValue      float64
@@ -101,6 +104,7 @@ func TestSync(t *testing.T) {
 	}{
 		{
 			name:                         "when all configuration is right",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.2",
@@ -122,6 +126,7 @@ func TestSync(t *testing.T) {
 		},
 		{
 			name:                         "when we can't connect to vcenter",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.2",
@@ -145,6 +150,7 @@ func TestSync(t *testing.T) {
 		},
 		{
 			name:                         "when we can't connect to vcenter but CSI driver was installed previously, degrade cluster",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.2",
@@ -158,6 +164,7 @@ func TestSync(t *testing.T) {
 		},
 		{
 			name:                         "when vcenter version is older, block upgrades",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
@@ -178,6 +185,7 @@ func TestSync(t *testing.T) {
 		},
 		{
 			name:                         "when host version is older, block upgrades",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.1",
@@ -200,6 +208,7 @@ func TestSync(t *testing.T) {
 		},
 		{
 			name:                         "when vcenter version is older but csi driver exists, degrade cluster",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
@@ -211,6 +220,7 @@ func TestSync(t *testing.T) {
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI driver exists",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.2",
@@ -234,6 +244,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI node object exists",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.2",
@@ -257,6 +268,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 		},
 		{
 			name:                         "when node hw-version was old first and got upgraded",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			vcenterVersion:               "7.0.2",
@@ -279,6 +291,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 		},
 		{
 			name:                         "sync before the next recheck interval",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			skipCheck:                    true,
@@ -293,6 +306,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 		},
 		{
 			name:                         "when vcenter version is 7.0.1 and csi driver exists, mark upgradeable: false",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			vcenterVersion:               "7.0.1", // Minimum for upgrade is 7.0.2
@@ -314,6 +328,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 		},
 		{
 			name:                         "when host version is 7.0.1 and csi driver exists, mark upgradeable: false",
+			storageCR:                    testlib.GetStorageOperator(opv1.CSIWithMigrationDriver),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			vcenterVersion:               "7.0.2",
@@ -330,6 +345,29 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 					Status: opv1.ConditionFalse,
 				},
 			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when upgrade is blocked because CSI migration is disabled",
+			storageCR:                    testlib.GetStorageOperator(opv1.LegacyDeprecatedInTreeDriver),
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="csi_migration_disabled"} 1`,
 			operandStarted:      true,
 			storageClassCreated: true,
 		},
@@ -353,12 +391,13 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			clusterCSIDriver := testlib.GetClusterCSIDriver(false)
 			testlib.AddClusterCSIDriverClient(commonApiClient, clusterCSIDriver)
 
-			test.initialObjects = append(test.initialObjects, runtime.Object(clusterCSIDriver))
+			test.initialObjects = append(test.initialObjects, clusterCSIDriver)
+			test.initialObjects = append(test.initialObjects, test.storageCR)
 
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
-			go testlib.StartFakeInformer(commonApiClient, stopCh)
+			testlib.StartFakeInformer(commonApiClient, stopCh)
 			if err := testlib.AddInitialObjects(test.initialObjects, commonApiClient); err != nil {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
@@ -499,7 +538,7 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
-			go testlib.StartFakeInformer(commonApiClient, stopCh)
+			testlib.StartFakeInformer(commonApiClient, stopCh)
 			if err := testlib.AddInitialObjects([]runtime.Object{tc.clusterCSIDriver}, commonApiClient); err != nil {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
@@ -675,7 +714,7 @@ func TestAddUpgradeableBlockCondition(t *testing.T) {
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
-			go testlib.StartFakeInformer(commonApiClient, stopCh)
+			testlib.StartFakeInformer(commonApiClient, stopCh)
 			if err := testlib.AddInitialObjects([]runtime.Object{}, commonApiClient); err != nil {
 				t.Fatalf("error adding initial objects: %v", err)
 			}

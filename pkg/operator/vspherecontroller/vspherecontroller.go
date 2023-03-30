@@ -20,8 +20,8 @@ import (
 
 	ocpv1 "github.com/openshift/api/config/v1"
 	operatorapi "github.com/openshift/api/operator/v1"
-	infralister "github.com/openshift/client-go/config/listers/config/v1"
-	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
+	configlister "github.com/openshift/client-go/config/listers/config/v1"
+	oplister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -46,8 +46,9 @@ type VSphereController struct {
 	configMapLister          corelister.ConfigMapLister
 	secretLister             corelister.SecretLister
 	scLister                 storagelister.StorageClassLister
-	clusterCSIDriverLister   clustercsidriverlister.ClusterCSIDriverLister
-	infraLister              infralister.InfrastructureLister
+	clusterCSIDriverLister   oplister.ClusterCSIDriverLister
+	storageLister            oplister.StorageLister
+	infraLister              configlister.InfrastructureLister
 	nodeLister               corelister.NodeLister
 	csiDriverLister          storagelister.CSIDriverLister
 	csiNodeLister            storagelister.CSINodeLister
@@ -95,6 +96,7 @@ func NewVSphereController(
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
 	infraInformer := ocpConfigInformer.Config().V1().Infrastructures()
+	storageInformer := apiClients.OCPOperatorInformers.Operator().V1().Storages()
 	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
@@ -120,6 +122,7 @@ func NewVSphereController(
 		csiConfigManifest:      csiConfigManifest,
 		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
 		infraLister:            infraInformer.Lister(),
+		storageLister:          storageInformer.Lister(),
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -131,6 +134,7 @@ func NewVSphereController(
 		configMapInformer.Informer(),
 		apiClients.SecretInformer.Informer(),
 		infraInformer.Informer(),
+		storageInformer.Informer(),
 		scInformer.Informer(),
 		apiClients.ClusterCSIDriverInformer.Informer(),
 	).WithSync(c.sync).
@@ -374,6 +378,7 @@ func (c *VSphereController) getCheckAPIDependency(infra *ocpv1.Infrastructure) c
 		CSINodeLister:   c.csiNodeLister,
 		CSIDriverLister: c.csiDriverLister,
 		NodeLister:      c.nodeLister,
+		StorageLister:   c.storageLister,
 	}
 	return checkerApiClient
 }

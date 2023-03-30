@@ -45,6 +45,7 @@ func newVSphereEnvironmentChecker() *vSphereEnvironmentCheckerComposite {
 		&checks.CheckExistingDriver{},
 		&checks.VCenterChecker{},
 		&checks.NodeChecker{},
+		&checks.CheckMigrationDisabled{},
 	}
 	return checker
 }
