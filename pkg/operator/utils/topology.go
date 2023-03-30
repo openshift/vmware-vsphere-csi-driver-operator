@@ -61,7 +61,16 @@ func GetDatacenters(config *vsphere.VSphereConfig) ([]string, error) {
 	return datacenters, nil
 }
 
-func UpdateMetrics(infra *cfgv1.Infrastructure, clusterCSIDriver *opv1.ClusterCSIDriver) {
+func UpdateMetrics(infra *cfgv1.Infrastructure, clusterCSIDriver *opv1.ClusterCSIDriver, storage *opv1.Storage) {
+	var vSphereStorageDriverValues = []opv1.StorageDriverType{"", opv1.LegacyDeprecatedInTreeDriver, opv1.CSIWithMigrationDriver}
+	for _, value := range vSphereStorageDriverValues {
+		if storage.Spec.VSphereStorageDriver == value {
+			CSIMigrationStatus.WithLabelValues(string(value)).Set(1.0)
+		} else {
+			CSIMigrationStatus.WithLabelValues(string(value)).Set(0.0)
+		}
+	}
+
 	domains := GetCSIDriverTopologyCategories(clusterCSIDriver)
 	TopologyTagsMetric.WithLabelValues(topologyTagSourceClusterCSIDriver).Set(float64(len(domains)))
 	domains = GetInfraTopologyCategories(infra)
