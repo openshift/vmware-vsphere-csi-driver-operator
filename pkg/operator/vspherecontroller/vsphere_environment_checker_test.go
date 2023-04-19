@@ -2,13 +2,14 @@ package vspherecontroller
 
 import (
 	"context"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"os"
 	"testing"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 
+	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 )
 
@@ -56,10 +57,13 @@ func TestEnvironmentCheck(t *testing.T) {
 		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
 			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
+			storageOperator := testlib.GetStorageOperator(opv1.CSIWithMigrationDriver)
+			test.initialObjects = append(test.initialObjects, storageOperator)
+
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
-			go testlib.StartFakeInformer(commonApiClient, stopCh)
+			testlib.StartFakeInformer(commonApiClient, stopCh)
 			if err := testlib.AddInitialObjects(test.initialObjects, commonApiClient); err != nil {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
@@ -87,12 +91,14 @@ func TestEnvironmentCheck(t *testing.T) {
 			csiDriverLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 			csiNodeLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
 			nodeLister := commonApiClient.NodeInformer.Lister()
+			storageLister := commonApiClient.OCPOperatorInformers.Operator().V1().Storages().Lister()
 
 			checkerApiClient := &checks.KubeAPIInterfaceImpl{
 				Infrastructure:  testlib.GetInfraObject(),
 				CSINodeLister:   csiNodeLister,
 				CSIDriverLister: csiDriverLister,
 				NodeLister:      nodeLister,
+				StorageLister:   storageLister,
 			}
 			checkOpts := checks.NewCheckArgs(conn, checkerApiClient)
 			var result checks.ClusterCheckResult

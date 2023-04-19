@@ -86,6 +86,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ConfigClientSet:          configClient,
 		ConfigInformers:          configInformers,
 		DynamicClient:            dynamicClient,
+		OCPOperatorInformers:     ocpOperatorInformer,
 		ClusterCSIDriverInformer: clusterCSIDriverInformer,
 	}
 

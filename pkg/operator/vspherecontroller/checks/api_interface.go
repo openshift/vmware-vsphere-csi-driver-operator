@@ -2,6 +2,8 @@ package checks
 
 import (
 	ocpv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	oplister "github.com/openshift/client-go/operator/listers/operator/v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -16,6 +18,7 @@ type KubeAPIInterface interface {
 	ListCSINodes() ([]*storagev1.CSINode, error)
 	GetStorageClass(name string) (*storagev1.StorageClass, error)
 	GetInfrastructure() *ocpv1.Infrastructure
+	GetStorage(name string) (*operatorv1.Storage, error)
 }
 
 type KubeAPIInterfaceImpl struct {
@@ -24,6 +27,7 @@ type KubeAPIInterfaceImpl struct {
 	CSINodeLister      storagelister.CSINodeLister
 	CSIDriverLister    storagelister.CSIDriverLister
 	StorageClassLister storagelister.StorageClassLister
+	StorageLister      oplister.StorageLister
 }
 
 func (k *KubeAPIInterfaceImpl) ListNodes() ([]*v1.Node, error) {
@@ -44,4 +48,8 @@ func (k *KubeAPIInterfaceImpl) GetStorageClass(name string) (*storagev1.StorageC
 
 func (k *KubeAPIInterfaceImpl) GetInfrastructure() *ocpv1.Infrastructure {
 	return k.Infrastructure
+}
+
+func (k *KubeAPIInterfaceImpl) GetStorage(name string) (*operatorv1.Storage, error) {
+	return k.StorageLister.Get(name)
 }
