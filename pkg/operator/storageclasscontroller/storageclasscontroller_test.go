@@ -21,8 +21,9 @@ const (
 
 type fakeStoragePolicyAPI struct {
 	vCenterInterface
-	ret string
-	err error
+	apiCallCount int
+	ret          string
+	err          error
 }
 
 func (v *fakeStoragePolicyAPI) createStoragePolicy(ctx context.Context) (string, error) {
@@ -157,6 +158,9 @@ func TestSync(t *testing.T) {
 			}
 			// err will be nil on even on failure, need to check conditions instead
 			err := scController.Sync(context.TODO(), conn, apiDeps)
+			if err != nil {
+				t.Errorf("failed to sync controller: %+v", err)
+			}
 
 			_, status, _, err := scController.operatorClient.GetOperatorState()
 			if err != nil {
@@ -174,6 +178,75 @@ func TestSync(t *testing.T) {
 				}
 			}
 
+		})
+	}
+}
+
+func TestSyncMultiple(t *testing.T) {
+	tests := []struct {
+		name                   string
+		storagePolicySyncFails bool
+		expectError            bool
+	}{
+		{
+			name:                   "when policy sync is successful",
+			storagePolicySyncFails: false,
+			expectError:            false,
+		},
+		{
+			name:                   "when policy sync failed",
+			storagePolicySyncFails: true,
+			expectError:            true,
+		},
+	}
+
+	for i := range tests {
+		test := tests[i]
+		t.Run(test.name, func(t *testing.T) {
+			initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+			clusterCSIDriverObject := testlib.MakeFakeDriverInstance()
+			configObjects := runtime.Object(testlib.GetInfraObject())
+			commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
+			storageClass := "storageclass1.yaml"
+			apiDeps := getCheckAPIDependency(commonApiClient)
+			var conn *vclib.VSphereConnection
+			scController := newStorageClassController(commonApiClient, storageClass, test.storagePolicySyncFails)
+			scController.backoff = defaultBackoff
+
+			// err will be nil on even on failure, need to check conditions instead
+			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), conn, apiDeps)
+			scController.policyName = policyName
+
+			if test.expectError {
+				if clusterCheckResult.CheckError == nil {
+					t.Errorf("Expected error got none")
+				}
+				if len(policyName) > 0 {
+					t.Errorf("Unexpected policy name")
+				}
+			} else {
+				if clusterCheckResult.CheckError != nil {
+					t.Errorf("Expected no error got: %v", clusterCheckResult.CheckError)
+				}
+			}
+			// setting this to nil will cause the test that uses makeStoragePolicyAPI call to panic
+			if !test.storagePolicySyncFails {
+				scController.makeStoragePolicyAPI = nil
+			}
+
+			policyName, clusterCheckResult = scController.syncStoragePolicy(context.TODO(), conn, apiDeps)
+			if test.expectError {
+				if clusterCheckResult.CheckError == nil {
+					t.Errorf("Expected error got none")
+				}
+				if len(policyName) > 0 {
+					t.Errorf("Unexpected policy name")
+				}
+			} else {
+				if clusterCheckResult.CheckError != nil {
+					t.Errorf("Expected no error got: %v", clusterCheckResult.CheckError)
+				}
+			}
 		})
 	}
 }
