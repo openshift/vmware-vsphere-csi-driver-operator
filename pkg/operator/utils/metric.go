@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	failureReason = "failure_reason"
-	condition     = "condition"
+	failureReason   = "failure_reason"
+	condition       = "condition"
+	migrationStatus = "status"
 
 	topologyTagSource                 = "source"
 	topologyTagSourceClusterCSIDriver = "clustercsidriver"
@@ -48,10 +49,19 @@ var (
 		},
 		[]string{domainScope},
 	)
+	CSIMigrationStatus = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Name:           "vsphere_csi_migration",
+			Help:           "CSI migration status for vSphere volumes",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{migrationStatus},
+	)
 )
 
 func init() {
 	legacyregistry.MustRegister(InstallErrorMetric)
 	legacyregistry.MustRegister(TopologyTagsMetric)
 	legacyregistry.MustRegister(InfrastructureFailureDomains)
+	legacyregistry.MustRegister(CSIMigrationStatus)
 }

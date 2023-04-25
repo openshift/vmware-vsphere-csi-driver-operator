@@ -11,6 +11,8 @@ import (
 )
 
 func TestUpdateMetrics(t *testing.T) {
+	storage := &opv1.Storage{Spec: opv1.StorageSpec{VSphereStorageDriver: opv1.CSIWithMigrationDriver}}
+
 	emptyClusterCSIDriver := &opv1.ClusterCSIDriver{
 		Spec: opv1.ClusterCSIDriverSpec{
 			DriverConfig: opv1.CSIDriverConfigSpec{
@@ -375,8 +377,7 @@ vsphere_topology_tags{source="infrastructure"} 0
 		t.Run(test.name, func(t *testing.T) {
 			// Reset metrics from previous tests. Note: the tests can't run in parallel!
 			legacyregistry.Reset()
-
-			UpdateMetrics(test.infra, test.clusterCSIDriver)
+			UpdateMetrics(test.infra, test.clusterCSIDriver, storage)
 			if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(test.expectedMetrics), "vsphere_topology_tags", "vsphere_infrastructure_failure_domains"); err != nil {
 				t.Errorf("Unexpected metric: %s", err)
 			}

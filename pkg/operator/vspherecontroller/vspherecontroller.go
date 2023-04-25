@@ -66,6 +66,7 @@ type VSphereController struct {
 const (
 	cloudConfigNamespace              = "openshift-config"
 	infraGlobalName                   = "cluster"
+	storageOperatorName               = "cluster"
 	secretName                        = "vmware-vsphere-cloud-credentials"
 	trustedCAConfigMap                = "vmware-vsphere-csi-driver-trusted-ca-bundle"
 	defaultNamespace                  = "openshift-cluster-csi-drivers"
@@ -175,7 +176,12 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		return err
 	}
 
-	utils.UpdateMetrics(infra, clusterCSIDriver)
+	storage, err := c.storageLister.Get(storageOperatorName)
+	if err != nil {
+		return err
+	}
+
+	utils.UpdateMetrics(infra, clusterCSIDriver, storage)
 
 	driverCheckFlag, err := c.driverAlreadyStarted(ctx)
 	if err != nil {
