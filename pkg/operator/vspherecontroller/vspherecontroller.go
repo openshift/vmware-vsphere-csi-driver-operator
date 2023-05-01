@@ -67,6 +67,7 @@ const (
 	infraGlobalName                   = "cluster"
 	cloudCredSecretName               = "vmware-vsphere-cloud-credentials"
 	metricsCertSecretName             = "vmware-vsphere-csi-driver-controller-metrics-serving-cert"
+	webhookSecretName                 = "vmware-vsphere-csi-driver-webhook-secret"
 	trustedCAConfigMap                = "vmware-vsphere-csi-driver-trusted-ca-bundle"
 	defaultNamespace                  = "openshift-cluster-csi-drivers"
 	driverOperandName                 = "vmware-vsphere-csi-driver"
