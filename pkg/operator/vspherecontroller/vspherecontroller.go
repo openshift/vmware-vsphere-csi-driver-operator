@@ -65,7 +65,8 @@ type VSphereController struct {
 const (
 	cloudConfigNamespace              = "openshift-config"
 	infraGlobalName                   = "cluster"
-	secretName                        = "vmware-vsphere-cloud-credentials"
+	cloudCredSecretName               = "vmware-vsphere-cloud-credentials"
+	metricsCertSecretName             = "vmware-vsphere-csi-driver-controller-metrics-serving-cert"
 	trustedCAConfigMap                = "vmware-vsphere-csi-driver-trusted-ca-bundle"
 	defaultNamespace                  = "openshift-cluster-csi-drivers"
 	driverOperandName                 = "vmware-vsphere-csi-driver"
@@ -415,19 +416,19 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 		return err
 	}
 
-	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(secretName)
+	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
 	if err != nil {
 		return err
 	}
 	userKey := cfg.Workspace.VCenterIP + "." + "username"
 	username, ok := secret.Data[userKey]
 	if !ok {
-		return fmt.Errorf("error parsing secret %q: key %q not found", secretName, userKey)
+		return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, userKey)
 	}
 	passwordKey := cfg.Workspace.VCenterIP + "." + "password"
 	password, ok := secret.Data[passwordKey]
 	if !ok {
-		return fmt.Errorf("error parsing secret %q: key %q not found", secretName, passwordKey)
+		return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
 	}
 
 	vs := vclib.NewVSphereConnection(string(username), string(password), cfg)
