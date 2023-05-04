@@ -65,8 +65,6 @@ func NewTargetConfigController(
 		c.sync,
 	).ResyncEvery(
 		20*time.Minute, // TODO: figure out what's the idead resync time for this controller
-	).WithSyncDegradedOnError(
-		operatorClient,
 	).ToController(
 		c.name,
 		recorder.WithComponentSuffix("target-config-controller-"+strings.ToLower(name)),

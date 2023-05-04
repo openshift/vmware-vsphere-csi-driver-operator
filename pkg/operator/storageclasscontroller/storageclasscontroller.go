@@ -3,7 +3,9 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	v1 "github.com/openshift/api/config/v1"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
@@ -23,6 +26,18 @@ import (
 const (
 	DatastoreInfoProperty = "info"
 	SummaryProperty       = "summary"
+)
+
+var (
+	defaultBackoff = wait.Backoff{
+		Duration: time.Minute,
+		Factor:   2,
+		Jitter:   0.01,
+		// Don't limit nr. of steps
+		Steps: math.MaxInt32,
+		// Maximum interval between checks.
+		Cap: 30 * time.Minute,
+	}
 )
 
 type StorageClassSyncInterface interface {
@@ -37,6 +52,10 @@ type StorageClassController struct {
 	operatorClient       v1helpers.OperatorClient
 	recorder             events.Recorder
 	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
+	policyName           string
+	backoff              wait.Backoff
+	nextCheck            time.Time
+	lastCheck            time.Time
 }
 
 func NewStorageClassController(
@@ -55,6 +74,8 @@ func NewStorageClassController(
 		operatorClient:       operatorClient,
 		recorder:             recorder,
 		makeStoragePolicyAPI: NewStoragePolicyAPI,
+		backoff:              defaultBackoff,
+		nextCheck:            time.Now(),
 	}
 
 	return c
@@ -69,8 +90,9 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 			utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
 			return syncResult, checks.ClusterCheckAllGood
 		}
+		c.policyName = policyName
 
-		err := c.syncStorageClass(ctx, policyName)
+		err := c.syncStorageClass(ctx)
 		if err != nil {
 			klog.Errorf("error syncing storage class: %v", err)
 			return checks.MakeClusterDegradedError(checks.CheckStatusOpenshiftAPIError, err), checks.ClusterCheckDegrade
@@ -83,8 +105,14 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 }
 
 func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) (string, checks.ClusterCheckResult) {
-	infra := apiDeps.GetInfrastructure()
+	// if we are running the checks after creating the policy successfully
+	// then lets run checks less frequently.
+	if !time.Now().After(c.nextCheck) && len(c.policyName) > 0 {
+		klog.V(4).Infof("Returning without running any checks")
+		return c.policyName, checks.MakeClusterCheckResultPass()
+	}
 
+	infra := apiDeps.GetInfrastructure()
 	apiClient := c.makeStoragePolicyAPI(ctx, connection, infra)
 
 	// we expect all API calls to finish within apiTimeout or else operator might be stuck
@@ -92,6 +120,11 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connecti
 	defer cancel()
 
 	policyName, err := apiClient.createStoragePolicy(tctx)
+
+	nextRunDelay := c.backoff.Step()
+	c.lastCheck = time.Now()
+	c.nextCheck = c.lastCheck.Add(nextRunDelay)
+
 	if err != nil {
 		return "", checks.MakeGenericVCenterAPIError(err)
 	}
@@ -135,10 +168,10 @@ func (c *StorageClassController) updateConditions(ctx context.Context, lastCheck
 	return nil
 }
 
-func (c *StorageClassController) syncStorageClass(ctx context.Context, policyName string) error {
+func (c *StorageClassController) syncStorageClass(ctx context.Context) error {
 	scString := string(c.manifest)
 	pairs := []string{
-		"${STORAGE_POLICY_NAME}", policyName,
+		"${STORAGE_POLICY_NAME}", c.policyName,
 	}
 
 	policyReplacer := strings.NewReplacer(pairs...)
