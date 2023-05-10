@@ -1065,6 +1065,27 @@ func getDiskSize(disk *types.VirtualDisk) int64 {
 	return disk.CapacityInBytes
 }
 
+func changedDiskSize(oldDisk *types.VirtualDisk, newDiskSpec *types.VirtualDisk) (int64, bool) {
+	// capacity cannot be decreased
+	if newDiskSpec.CapacityInBytes < oldDisk.CapacityInBytes || newDiskSpec.CapacityInKB < oldDisk.CapacityInKB {
+		return 0, false
+	}
+
+	// NOTE: capacity is ignored if specified value is same as before
+	if newDiskSpec.CapacityInBytes == oldDisk.CapacityInBytes {
+		return newDiskSpec.CapacityInKB * 1024, true
+	}
+	if newDiskSpec.CapacityInKB == oldDisk.CapacityInKB {
+		return newDiskSpec.CapacityInBytes, true
+	}
+
+	// CapacityInBytes and CapacityInKB indicate different values
+	if newDiskSpec.CapacityInBytes != newDiskSpec.CapacityInKB*1024 {
+		return 0, false
+	}
+	return newDiskSpec.CapacityInBytes, true
+}
+
 func (vm *VirtualMachine) validateSwitchMembers(id string) types.BaseMethodFault {
 	var dswitch *DistributedVirtualSwitch
 
@@ -1106,7 +1127,12 @@ func (vm *VirtualMachine) validateSwitchMembers(id string) types.BaseMethodFault
 	return nil
 }
 
-func (vm *VirtualMachine) configureDevice(ctx *Context, devices object.VirtualDeviceList, spec *types.VirtualDeviceConfigSpec) types.BaseMethodFault {
+func (vm *VirtualMachine) configureDevice(
+	ctx *Context,
+	devices object.VirtualDeviceList,
+	spec *types.VirtualDeviceConfigSpec,
+	oldDevice types.BaseVirtualDevice) types.BaseMethodFault {
+
 	device := spec.Device
 	d := device.GetVirtualDevice()
 	var controller types.BaseVirtualController
@@ -1184,9 +1210,20 @@ func (vm *VirtualMachine) configureDevice(ctx *Context, devices object.VirtualDe
 			}
 		}
 	case *types.VirtualDisk:
-		// NOTE: either of capacityInBytes and capacityInKB may not be specified
-		x.CapacityInBytes = getDiskSize(x)
-		x.CapacityInKB = getDiskSize(x) / 1024
+		if oldDevice == nil {
+			// NOTE: either of capacityInBytes and capacityInKB may not be specified
+			x.CapacityInBytes = getDiskSize(x)
+			x.CapacityInKB = getDiskSize(x) / 1024
+		} else {
+			if oldDisk, ok := oldDevice.(*types.VirtualDisk); ok {
+				diskSize, ok := changedDiskSize(oldDisk, x)
+				if !ok {
+					return &types.InvalidDeviceOperation{}
+				}
+				x.CapacityInBytes = diskSize
+				x.CapacityInKB = diskSize / 1024
+			}
+		}
 
 		summary = fmt.Sprintf("%s KB", numberToString(x.CapacityInKB, ','))
 		switch b := d.Backing.(type) {
@@ -1220,6 +1257,17 @@ func (vm *VirtualMachine) configureDevice(ctx *Context, devices object.VirtualDe
 			ds := vm.findDatastore(p.Datastore)
 			info.Datastore = &ds.Self
 
+			if oldDevice != nil {
+				if oldDisk, ok := oldDevice.(*types.VirtualDisk); ok {
+					// add previous capacity to datastore freespace
+					ctx.WithLock(ds, func() {
+						ds.Summary.FreeSpace += getDiskSize(oldDisk)
+						ds.Info.GetDatastoreInfo().FreeSpace = ds.Summary.FreeSpace
+					})
+				}
+			}
+
+			// then subtract new capacity from datastore freespace
 			// XXX: compare disk size and free space until windows stat is supported
 			ctx.WithLock(ds, func() {
 				ds.Summary.FreeSpace -= getDiskSize(x)
@@ -1453,7 +1501,7 @@ func (vm *VirtualMachine) configureDevices(ctx *Context, spec *types.VirtualMach
 			}
 
 			key := device.Key
-			err := vm.configureDevice(ctx, devices, dspec)
+			err := vm.configureDevice(ctx, devices, dspec, nil)
 			if err != nil {
 				return err
 			}
@@ -1470,16 +1518,17 @@ func (vm *VirtualMachine) configureDevices(ctx *Context, spec *types.VirtualMach
 			}
 		case types.VirtualDeviceConfigSpecOperationEdit:
 			rspec := *dspec
-			rspec.Device = devices.FindByKey(device.Key)
-			if rspec.Device == nil {
+			oldDevice := devices.FindByKey(device.Key)
+			if oldDevice == nil {
 				return invalid
 			}
+			rspec.Device = oldDevice
 			devices = vm.removeDevice(ctx, devices, &rspec)
 			if device.DeviceInfo != nil {
 				device.DeviceInfo.GetDescription().Summary = "" // regenerate summary
 			}
 
-			err := vm.configureDevice(ctx, devices, dspec)
+			err := vm.configureDevice(ctx, devices, dspec, oldDevice)
 			if err != nil {
 				return err
 			}
@@ -1852,6 +1901,12 @@ func (vm *VirtualMachine) CloneVMTask(ctx *Context, req *types.CloneVM_Task) soa
 		if pool == nil {
 			return nil, &types.InvalidArgument{InvalidProperty: "spec.location.pool"}
 		}
+		if obj := ctx.Map.FindByName(req.Name, folder.ChildEntity); obj != nil {
+			return nil, &types.DuplicateName{
+				Name:   req.Name,
+				Object: obj.Reference(),
+			}
+		}
 		config := types.VirtualMachineConfigSpec{
 			Name:    req.Name,
 			GuestId: vm.Config.GuestId,
@@ -2151,6 +2206,10 @@ func (vm *VirtualMachine) CreateSnapshotTask(ctx *Context, req *types.CreateSnap
 				Name: "snapshot.rootSnapshotList",
 				Val:  append(vm.Snapshot.RootSnapshotList, treeItem),
 			})
+			changes = append(changes, types.PropertyChange{
+				Name: "rootSnapshot",
+				Val:  append(vm.RootSnapshot, treeItem.Snapshot),
+			})
 		}
 
 		snapshot.createSnapshotFiles()
@@ -2198,6 +2257,7 @@ func (vm *VirtualMachine) RemoveAllSnapshotsTask(ctx *Context, req *types.Remove
 
 		ctx.Map.Update(vm, []types.PropertyChange{
 			{Name: "snapshot", Val: nil},
+			{Name: "rootSnapshot", Val: nil},
 		})
 
 		for _, ref := range refs {
