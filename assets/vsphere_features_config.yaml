@@ -11,6 +11,7 @@ data:
   # Although our storgeclass does not support this, it will allow something like
   # https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/2.0/vmware-vsphere-csp-getting-started/GUID-2FB52A3C-76F1-4AA6-8868-318D4E939872.html
   "topology-preferential-datastores": "true"
+  "csi-windows-support": "true"
 kind: ConfigMap
 metadata:
   name: internal-feature-states.csi.vsphere.vmware.com
