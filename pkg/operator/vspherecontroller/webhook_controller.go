@@ -19,12 +19,20 @@ func (c *VSphereController) createWebHookController() {
 		c.operatorClient,
 		c.apiClients.KubeClient,
 		c.apiClients.KubeInformers.InformersFor(defaultNamespace).Apps().V1().Deployments(),
-		[]factory.Informer{c.apiClients.ConfigInformers.Config().V1().Infrastructures().Informer()},
+		[]factory.Informer{
+			c.apiClients.SecretInformer.Informer(),
+			c.apiClients.ConfigInformers.Config().V1().Infrastructures().Informer(),
+		},
 		nil, // optionalManifestHooks
 		WithSyncerImageHook("vsphere-webhook"),
 		csidrivercontrollerservicecontroller.WithControlPlaneTopologyHook(c.apiClients.ConfigInformers),
 		csidrivercontrollerservicecontroller.WithReplicasHook(c.apiClients.KubeInformers.InformersFor("").Core().V1().Nodes().Lister()),
 		WithLogLevelDeploymentHook(),
+		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
+			defaultNamespace,
+			webhookSecretName,
+			c.apiClients.SecretInformer,
+		),
 	)
 	c.controllers = append(c.controllers, conditionalController{
 		name:       webhookController.Name(),
