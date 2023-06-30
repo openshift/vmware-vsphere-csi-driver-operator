@@ -4,12 +4,12 @@ go 1.19
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/openshift/api v0.0.0-20230509100629-894b49f57a15
+	github.com/openshift/api v0.0.0-20230613151523-ba04973d3ed1
 	github.com/openshift/build-machinery-go v0.0.0-20230306181456-d321ffa04533
 	github.com/openshift/client-go v0.0.0-20230503144108-75015d2347cb
-	github.com/openshift/library-go v0.0.0-20230508110756-9b7abe2c9cbf
+	github.com/openshift/library-go v0.0.0-20230626162119-954ade536d6d
 	github.com/prometheus/client_golang v1.14.0
-	github.com/spf13/cobra v1.6.0
+	github.com/spf13/cobra v1.6.1
 	github.com/vmware/govmomi v0.30.0
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/ini.v1 v1.51.0
