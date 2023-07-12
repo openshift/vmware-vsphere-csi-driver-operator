@@ -22,7 +22,6 @@ spec:
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
-      hostNetwork: true
       serviceAccountName: vmware-vsphere-csi-driver-controller-sa
       priorityClassName: system-cluster-critical
       nodeSelector:
@@ -72,7 +71,6 @@ spec:
               value: "59"
           ports:
             - name: healthz
-              # Due to hostNetwork, this port is open on a node!
               containerPort: 10301
               protocol: TCP
           livenessProbe:
