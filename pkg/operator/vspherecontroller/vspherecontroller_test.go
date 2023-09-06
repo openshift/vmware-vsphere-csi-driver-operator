@@ -373,7 +373,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			var connError error
 			conn, cleanUpFunc, connError = setupSimulator(defaultModel)
 			if test.vcenterVersion != "" {
-				customizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
+				CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, "", conn)
 			}
 			ctrl.vsphereConnectionFunc = makeVsphereConnectionFunc(conn, test.failVCenterConnection, connError)
 			defer func() {
@@ -618,7 +618,7 @@ func TestAddUpgradeableBlockCondition(t *testing.T) {
 		{
 			name:             "when no existing condition is found, should add condition",
 			clusterCSIDriver: testlib.MakeFakeDriverInstance(),
-			clusterResult:    testlib.GetTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
+			clusterResult:    GetTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
 			expectedCondition: opv1.OperatorCondition{
 				Type:   conditionType,
 				Status: opv1.ConditionFalse,
@@ -638,7 +638,7 @@ func TestAddUpgradeableBlockCondition(t *testing.T) {
 				}
 				return instance
 			}),
-			clusterResult: testlib.GetTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
+			clusterResult: GetTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
 			expectedCondition: opv1.OperatorCondition{
 				Type:   conditionType,
 				Status: opv1.ConditionFalse,
@@ -658,7 +658,7 @@ func TestAddUpgradeableBlockCondition(t *testing.T) {
 				}
 				return instance
 			}),
-			clusterResult: testlib.GetTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
+			clusterResult: GetTestClusterResult(checks.CheckStatusVSphereConnectionFailed),
 			expectedCondition: opv1.OperatorCondition{
 				Type:   conditionType,
 				Status: opv1.ConditionFalse,
@@ -706,4 +706,11 @@ func (*skippingChecker) Check(ctx context.Context, connection checks.CheckArgs) 
 
 func newSkippingChecker() *skippingChecker {
 	return &skippingChecker{}
+}
+
+func GetTestClusterResult(statusType checks.CheckStatusType) checks.ClusterCheckResult {
+	return checks.ClusterCheckResult{
+		CheckError:  fmt.Errorf("some error"),
+		CheckStatus: statusType,
+	}
 }

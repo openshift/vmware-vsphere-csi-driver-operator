@@ -2,9 +2,10 @@ package vspherecontroller
 
 import (
 	"context"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"testing"
 	"time"
+
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -15,6 +16,7 @@ func TestEnvironmentCheck(t *testing.T) {
 	tests := []struct {
 		name                   string
 		vcenterVersion         string
+		build                  string
 		checksRan              bool
 		result                 checks.CheckStatusType
 		initialObjects         []runtime.Object
@@ -29,8 +31,22 @@ func TestEnvironmentCheck(t *testing.T) {
 			initialObjects:         []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			configObjects:          runtime.Object(testlib.GetInfraObject()),
 			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
-			vcenterVersion:         "7.0.2",
+			vcenterVersion:         "7.0.3",
+			build:                  "21424296",
 			result:                 checks.CheckStatusPass,
+			checksRan:              true,
+			// should reset the steps back to maximum in defaultBackoff
+			expectedBackOffSteps: defaultBackoff.Steps,
+			expectedNextCheck:    time.Now().Add(defaultBackoff.Cap),
+			runCount:             1,
+		},
+		{
+			name:                   "when tests are ran on a unpatched version of vSphere",
+			initialObjects:         []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			configObjects:          runtime.Object(testlib.GetInfraObject()),
+			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
+			vcenterVersion:         "7.0.2",
+			result:                 checks.CheckStatusBuggyMigrationPlatform,
 			checksRan:              true,
 			// should reset the steps back to maximum in defaultBackoff
 			expectedBackOffSteps: defaultBackoff.Steps,
@@ -79,7 +95,7 @@ func TestEnvironmentCheck(t *testing.T) {
 			time.Sleep(5 * time.Second)
 
 			if test.vcenterVersion != "" {
-				customizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
+				CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, test.build, conn)
 			}
 			csiDriverLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 			csiNodeLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
