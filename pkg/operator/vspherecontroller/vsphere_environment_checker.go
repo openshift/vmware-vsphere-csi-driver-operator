@@ -45,6 +45,7 @@ func newVSphereEnvironmentChecker() *vSphereEnvironmentCheckerComposite {
 		&checks.CheckExistingDriver{},
 		&checks.VCenterChecker{},
 		&checks.NodeChecker{},
+		&checks.PatchedVcenterChecker{},
 		&checks.CheckMigrationDisabled{},
 	}
 	return checker
@@ -68,9 +69,7 @@ func (v *vSphereEnvironmentCheckerComposite) Check(
 		allChecks = append(allChecks, result...)
 	}
 
-	overallResult := checks.ClusterCheckResult{
-		Action: checks.CheckActionPass,
-	}
+	overallResult := checks.MakeClusterCheckResultPass()
 
 	// following checks can either block cluster upgrades or degrade the cluster
 	// the severity of degradation is higher than blocking upgrades
@@ -81,7 +80,7 @@ func (v *vSphereEnvironmentCheckerComposite) Check(
 		}
 	}
 
-	if overallResult.Action > checks.CheckActionPass {
+	if overallResult.Action > checks.CheckActionRequiresAdminAck {
 		// Everything else than pass needs a quicker re-check
 		klog.Warningf("Overall check result: %s: %s", checks.ActionToString(overallResult.Action), overallResult.Reason)
 		v.nextCheck = v.lastCheck.Add(nextErrorDelay)
@@ -92,5 +91,5 @@ func (v *vSphereEnvironmentCheckerComposite) Check(
 	klog.V(2).Infof("Overall check result: %s: %s", checks.ActionToString(overallResult.Action), overallResult.Reason)
 	v.backoff = defaultBackoff
 	v.nextCheck = v.lastCheck.Add(defaultBackoff.Cap)
-	return defaultBackoff.Cap, checks.MakeClusterCheckResultPass(), true
+	return defaultBackoff.Cap, overallResult, true
 }

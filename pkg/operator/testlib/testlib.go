@@ -12,7 +12,6 @@ import (
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -151,6 +150,9 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 		case *opv1.Storage:
 			storageInformer := clients.OCPOperatorInformers.Operator().V1().Storages().Informer()
 			storageInformer.GetStore().Add(obj)
+		case *v1.PersistentVolume:
+			pvInformer := clients.KubeInformers.InformersFor("").Core().V1().PersistentVolumes().Informer()
+			pvInformer.GetStore().Add(obj)
 		default:
 			return fmt.Errorf("Unknown initalObject type: %+v", obj)
 		}
@@ -219,6 +221,38 @@ func GetCSIDriver(withOCPAnnotation bool) *storagev1.CSIDriver {
 		}
 	}
 	return driver
+}
+
+func GetIntreePV(pvName string) *v1.PersistentVolume {
+	return &v1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pvName,
+		},
+		Spec: v1.PersistentVolumeSpec{
+			PersistentVolumeSource: v1.PersistentVolumeSource{
+				VsphereVolume: &v1.VsphereVirtualDiskVolumeSource{
+					VolumePath: "foobar/baz.vmdk",
+				},
+			},
+		},
+	}
+}
+
+func GetNodeWithInlinePV(nodeName string, hasIntreePV bool) *v1.Node {
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+		Spec:   v1.NodeSpec{},
+		Status: v1.NodeStatus{},
+	}
+
+	if hasIntreePV {
+		node.Status.VolumesInUse = []v1.UniqueVolumeName{
+			"kubernetes.io/vsphere-volume/foobar",
+		}
+	}
+	return node
 }
 
 func GetCSINode() *storagev1.CSINode {
@@ -397,12 +431,5 @@ func GetSecret() *v1.Secret {
 			"localhost.password": []byte("vsphere-user"),
 			"localhost.username": []byte("vsphere-password"),
 		},
-	}
-}
-
-func GetTestClusterResult(statusType checks.CheckStatusType) checks.ClusterCheckResult {
-	return checks.ClusterCheckResult{
-		CheckError:  fmt.Errorf("some error"),
-		CheckStatus: statusType,
 	}
 }

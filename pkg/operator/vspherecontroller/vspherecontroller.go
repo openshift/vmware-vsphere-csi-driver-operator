@@ -44,12 +44,14 @@ type VSphereController struct {
 	kubeClient               kubernetes.Interface
 	operatorClient           v1helpers.OperatorClientWithFinalizers
 	configMapLister          corelister.ConfigMapLister
+	managedConfigMapLister   corelister.ConfigMapLister
 	secretLister             corelister.SecretLister
 	scLister                 storagelister.StorageClassLister
 	clusterCSIDriverLister   oplister.ClusterCSIDriverLister
 	storageLister            oplister.StorageLister
 	infraLister              configlister.InfrastructureLister
 	nodeLister               corelister.NodeLister
+	pvLister                 corelister.PersistentVolumeLister
 	csiDriverLister          storagelister.CSIDriverLister
 	csiNodeLister            storagelister.CSINodeLister
 	apiClients               utils.APIClient
@@ -75,6 +77,10 @@ const (
 	envVMWareVsphereDriverSyncerImage = "VMWARE_VSPHERE_SYNCER_IMAGE"
 	storageClassControllerName        = "VMwareVSphereDriverStorageClassController"
 	storageClassName                  = "thin-csi"
+
+	managedConfigNamespace = "openshift-config-managed"
+	adminGateConfigMap     = "admin-gates"
+	migrationAck413        = "ack-4.13-kube-127-vsphere-migration-in-4.14"
 )
 
 type conditionalControllerInterface interface {
@@ -96,12 +102,18 @@ func NewVSphereController(
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
+
 	infraInformer := ocpConfigInformer.Config().V1().Infrastructures()
 	storageInformer := apiClients.OCPOperatorInformers.Operator().V1().Storages()
 	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
+	// we need pvLister for checking if cluster is using intree pvs
+	pvLister := kubeInformers.InformersFor("").Core().V1().PersistentVolumes().Lister()
 	nodeLister := apiClients.NodeInformer.Lister()
+
+	// managedConfigMapInformer for applying admin-gates
+	managedConfigMapInformer := kubeInformers.InformersFor(managedConfigNamespace).Core().V1().ConfigMaps()
 
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 
@@ -116,6 +128,8 @@ func NewVSphereController(
 		scLister:               scInformer.Lister(),
 		csiDriverLister:        csiDriverLister,
 		nodeLister:             nodeLister,
+		pvLister:               pvLister,
+		managedConfigMapLister: managedConfigMapInformer.Lister(),
 		apiClients:             apiClients,
 		eventRecorder:          rc,
 		vSphereChecker:         newVSphereEnvironmentChecker(),
@@ -134,6 +148,7 @@ func NewVSphereController(
 		apiClients.OperatorClient.Informer(),
 		configMapInformer.Informer(),
 		apiClients.SecretInformer.Informer(),
+		managedConfigMapInformer.Informer(),
 		infraInformer.Informer(),
 		storageInformer.Informer(),
 		scInformer.Informer(),
@@ -349,6 +364,11 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 		// Set Upgradeable: true with an extra message
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
 		return updateError, true, true
+	case checks.ClusterCheckUpgradesBlockedViaAdminAck:
+		clusterCondition = "upgrade_blocked_admin_ack"
+		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
+		updateError := c.addRequiresAdminAck(ctx, result, c.name)
+		return updateError, false, false
 	}
 	return nil, false, false
 }
@@ -385,6 +405,7 @@ func (c *VSphereController) getCheckAPIDependency(infra *ocpv1.Infrastructure) c
 		CSIDriverLister: c.csiDriverLister,
 		NodeLister:      c.nodeLister,
 		StorageLister:   c.storageLister,
+		PvLister:        c.pvLister,
 	}
 	return checkerApiClient
 }
@@ -492,6 +513,23 @@ func (c *VSphereController) updateConditions(
 		return updateErr
 	}
 	return nil
+}
+
+func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckResult checks.ClusterCheckResult, name string) error {
+	adminGate, err := c.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
+	if err != nil {
+		return fmt.Errorf("failed to get admin-gate configmap: %v", err)
+	}
+
+	klog.Infof("Updating admin-gates")
+
+	_, ok := adminGate.Data[migrationAck413]
+	if !ok {
+		adminGate.Data[migrationAck413] = "vSphere CSI migration will be enabled in Openshift-4.14. Your cluster appears to be using in-tree vSphere volumes and is on a vSphere version that has CSI migration related bugs. See - https://access.redhat.com/node/7011683 for more information, before upgrading to 4.14."
+
+	}
+	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), c.eventRecorder, adminGate)
+	return err
 }
 
 func (c *VSphereController) addUpgradeableBlockCondition(
