@@ -209,7 +209,7 @@ func checkForIntreePluginUse(result ClusterCheckResult, apiDependencies KubeAPII
 		return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
 	}
 
-	klog.Infof("Checking for intree plugin use")
+	klog.V(2).Infof("Checking for intree plugin use")
 
 	allGoodCheckResult := MakeClusterCheckResultPass()
 
@@ -229,6 +229,7 @@ func checkForIntreePluginUse(result ClusterCheckResult, apiDependencies KubeAPII
 
 	for _, pv := range pvs {
 		if pv.Spec.VsphereVolume != nil {
+			klog.V(2).Infof("found vSphere in-tree persistent volumes in the cluster")
 			usingvSphereVolumes = true
 			break
 		}
@@ -240,11 +241,12 @@ func checkForIntreePluginUse(result ClusterCheckResult, apiDependencies KubeAPII
 
 	nodes, err := apiDependencies.ListNodes()
 	if err != nil {
-		reason := fmt.Errorf("csi driver installed failed with %s, unable to list pvs: %v", result.Reason, err)
+		reason := fmt.Errorf("csi driver installed failed with %s, unable to list nodes: %v", result.Reason, err)
 		return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
 	}
 
 	if checkInlineIntreeVolumeUse(nodes) {
+		klog.V(2).Infof("found vSphere in-line persistent volumes in the cluster")
 		return ClusterCheckUpgradesBlockedViaAdminAck, allGoodCheckResult
 	}
 	return ClusterCheckAllGood, allGoodCheckResult

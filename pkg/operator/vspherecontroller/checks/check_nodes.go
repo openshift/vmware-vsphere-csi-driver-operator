@@ -171,7 +171,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 
 	esxiBuildNumber := hostSystem.Config.Product.Build
 
-	klog.Infof("checking for patched version of ESXi for CSI migration: %s-%s", hostAPIVersion, esxiBuildNumber)
+	klog.V(2).Infof("checking for patched version of ESXi for CSI migration: %s-%s", hostAPIVersion, esxiBuildNumber)
 
 	meetsMigrationPatchVersionRequirement, err := checkForMinimumPatchedVersion(hostAPIVersion, esxiBuildNumber)
 	if err != nil {
@@ -179,7 +179,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 	}
 
 	if !meetsMigrationPatchVersionRequirement {
-		reason := fmt.Errorf("host %s is on ESXI version %s-%s, which is below minimum required version %s-%d for csi migration", hostName, hostAPIVersion, esxiBuildNumber, minPatchedVersion, minBuildNumber)
+		reason := fmt.Errorf("host %s is on ESXI version %s-%s, which is below minimum required version %s-%d for csi migration", hostName, hostAPIVersion, esxiBuildNumber, minPatchedVersion7Series, minBuildNumber7Series)
 		return makeBuggyEnvironmentError(CheckStatusBuggyMigrationPlatform, reason)
 	}
 
