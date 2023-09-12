@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	iniv1 "gopkg.in/ini.v1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/component-base/metrics/testutil"
 )
@@ -29,12 +30,15 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
+	managedConfigMapInformer := kubeInformers.InformersFor(managedConfigNamespace).Core().V1().ConfigMaps()
 
 	infraInformer := ocpConfigInformer.Config().V1().Infrastructures()
 	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
 	nodeLister := apiClients.NodeInformer.Lister()
+	storageLister := apiClients.OCPOperatorInformers.Operator().V1().Storages().Lister()
+	pvLister := kubeInformers.InformersFor("").Core().V1().PersistentVolumes().Lister()
 	rc := events.NewInMemoryRecorder(testControllerName)
 
 	cloudConfigBytes, _ := assets.ReadFile("vsphere_cloud_config.yaml")
@@ -53,9 +57,11 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 		csiDriverLister:        csiDriverLister,
 		nodeLister:             nodeLister,
 		manifest:               cloudConfigBytes,
+		pvLister:               pvLister,
 		csiConfigManifest:      csiConfigBytes,
 		apiClients:             *apiClients,
 		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
+		managedConfigMapLister: managedConfigMapInformer.Lister(),
 		eventRecorder:          rc,
 		vSphereChecker:         newVSphereEnvironmentChecker(),
 		infraLister:            infraInformer.Lister(),
@@ -90,11 +96,13 @@ func TestSync(t *testing.T) {
 		configObjects                runtime.Object
 		vcenterVersion               string
 		hostVersion                  string
+		build                        string
 		startingNodeHardwareVersions []string
 		finalNodeHardwareVersions    []string
 		expectedConditions           []opv1.OperatorCondition
 		expectedMetrics              string
 		expectError                  error
+		expectedAdminGateConfigKey   string
 		failVCenterConnection        bool
 		operandStarted               bool
 		storageClassCreated          bool
@@ -228,7 +236,7 @@ func TestSync(t *testing.T) {
 				},
 			},
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
-vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
+		vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
 			operandStarted:      false,
 			storageClassCreated: false,
 		},
@@ -251,7 +259,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 				},
 			},
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
-vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
+		vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
 			operandStarted:      false,
 			storageClassCreated: false,
 		},
@@ -333,6 +341,75 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			operandStarted:      true,
 			storageClassCreated: true,
 		},
+		{
+			name:                         "when upgrade is blocked because CSI migration is disabled",
+			storageCR:                    testlib.GetStorageOperator(opv1.LegacyDeprecatedInTreeDriver),
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="csi_migration_disabled"} 1`,
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when upgrade is blocked via admin-ack gate",
+			storageCR:                    testlib.GetStorageOperator(""),
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetIntreePV("test-123"), testlib.GetAdminGateConfigMap(false)},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+			},
+			expectedAdminGateConfigKey: migrationAck413,
+			operandStarted:             true,
+			storageClassCreated:        true,
+		},
+		{
+			name:                         "should remove admin-ack key if cluster meets requirement",
+			storageCR:                    testlib.GetStorageOperator(""),
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.3",
+			hostVersion:                  "7.0.3",
+			build:                        "21424296",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetAdminGateConfigMap(true)},
+			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
 	}
 
 	for i := range tests {
@@ -373,7 +450,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			var connError error
 			conn, cleanUpFunc, connError = setupSimulator(defaultModel)
 			if test.vcenterVersion != "" {
-				CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, "", conn)
+				CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, test.build, conn)
 			}
 			ctrl.vsphereConnectionFunc = makeVsphereConnectionFunc(conn, test.failVCenterConnection, connError)
 			defer func() {
@@ -438,6 +515,23 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 
 			if test.operandStarted != ctrl.operandControllerStarted {
 				t.Fatalf("expected operandStarted to be %v, got %v", test.operandStarted, ctrl.operandControllerStarted)
+			}
+
+			cmap, err := ctrl.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					t.Errorf("error getting admin-gate configmap: %v", err)
+				}
+			}
+
+			if test.expectedAdminGateConfigKey != "" {
+				if _, ok := cmap.Data[test.expectedAdminGateConfigKey]; !ok {
+					t.Errorf("expected key %s, found none", test.expectedAdminGateConfigKey)
+				}
+			} else if cmap != nil {
+				if _, ok := cmap.Data[migrationAck413]; ok {
+					t.Errorf("unexpected key %s", migrationAck413)
+				}
 			}
 
 			if test.expectedMetrics != "" {
