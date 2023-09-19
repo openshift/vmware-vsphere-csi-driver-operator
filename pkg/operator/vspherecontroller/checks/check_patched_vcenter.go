@@ -13,9 +13,8 @@ const (
 	minPatchedVersion7Series = "7.0.3"
 	minBuildNumber7Series    = 21424296
 
-	// TODO: Fix with real version information
-	minPatchedVersion8Series = "8.0.2"
-	minBuildNumber8Series    = 999
+	minPatchedVersion8Series = "8.0.1"
+	minBuildNumber8Series    = 22088125
 )
 
 type PatchedVcenterChecker struct{}
@@ -65,7 +64,7 @@ func checkForMinimumPatchedVersion(vSphereVersion string, build string) (bool, e
 			return true, fmt.Errorf("error converting build number %s to integer", build)
 		}
 
-		if buildNumber >= minBuildNumber8Series {
+		if buildNumber > minBuildNumber8Series {
 			return true, nil
 		}
 
