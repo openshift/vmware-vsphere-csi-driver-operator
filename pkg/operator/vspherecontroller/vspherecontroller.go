@@ -298,7 +298,7 @@ func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext fa
 	// might be false even though cluster overall is not upgradeable. In which we should not remove adminAck change
 	// which might have been installed previously.
 	if !blockUpgradeViaAdminAck && !blockUpgrade {
-		err := c.removeAdminAck(ctx, c.name)
+		err := c.removeAdminAck(ctx)
 		if err != nil {
 			return blockCSIDriverInstall, err
 		}
@@ -360,7 +360,7 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 		rt := string(result.CheckStatus)
 		klog.Infof("check status is: %s", rt)
 		utils.InstallErrorMetric.WithLabelValues(rt, clusterCondition).Set(1)
-		updateError := c.addRequiresAdminAck(ctx, result, c.name)
+		updateError := c.addRequiresAdminAck(ctx, result)
 		return updateError, false, false, true
 	}
 	return nil, false, false, false
@@ -508,7 +508,7 @@ func (c *VSphereController) updateConditions(
 	return nil
 }
 
-func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckResult checks.ClusterCheckResult, name string) error {
+func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckResult checks.ClusterCheckResult) error {
 	adminGate, err := c.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
 	if err != nil {
 		return fmt.Errorf("failed to get admin-gate configmap: %v", err)
@@ -525,7 +525,7 @@ func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckRe
 	return err
 }
 
-func (c *VSphereController) removeAdminAck(ctx context.Context, name string) error {
+func (c *VSphereController) removeAdminAck(ctx context.Context) error {
 	adminGate, err := c.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -534,13 +534,12 @@ func (c *VSphereController) removeAdminAck(ctx context.Context, name string) err
 		return fmt.Errorf("failed to get admin-gate configmap: %v", err)
 	}
 
-	klog.V(2).Infof("removing admin-gates that is required for CSI migration")
-
 	_, ok := adminGate.Data[migrationAck413]
 	// nothing needs to be done if key doesn't exist
 	if !ok {
 		return nil
 	}
+	klog.V(2).Infof("removing admin-gates that is required for CSI migration")
 
 	delete(adminGate.Data, migrationAck413)
 	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), c.eventRecorder, adminGate)
