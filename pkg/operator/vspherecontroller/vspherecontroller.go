@@ -397,7 +397,6 @@ func (c *VSphereController) getCheckAPIDependency(infra *ocpv1.Infrastructure) c
 		CSINodeLister:   c.csiNodeLister,
 		CSIDriverLister: c.csiDriverLister,
 		NodeLister:      c.nodeLister,
-		StorageLister:   c.storageLister,
 		PvLister:        c.pvLister,
 	}
 	return checkerApiClient

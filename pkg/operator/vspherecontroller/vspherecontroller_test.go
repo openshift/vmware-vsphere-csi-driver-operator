@@ -37,7 +37,6 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
 	nodeLister := apiClients.NodeInformer.Lister()
-	storageLister := apiClients.OCPOperatorInformers.Operator().V1().Storages().Lister()
 	pvLister := kubeInformers.InformersFor("").Core().V1().PersistentVolumes().Lister()
 	rc := events.NewInMemoryRecorder(testControllerName)
 
@@ -342,31 +341,7 @@ func TestSync(t *testing.T) {
 			storageClassCreated: true,
 		},
 		{
-			name:                         "when upgrade is blocked because CSI migration is disabled",
-			storageCR:                    testlib.GetStorageOperator(opv1.LegacyDeprecatedInTreeDriver),
-			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
-			vcenterVersion:               "7.0.2",
-			hostVersion:                  "7.0.2",
-			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
-			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
-			expectedConditions: []opv1.OperatorCondition{
-				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionFalse,
-				},
-			},
-			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="csi_migration_disabled"} 1`,
-			operandStarted:      true,
-			storageClassCreated: true,
-		},
-		{
 			name:                         "when upgrade is blocked via admin-ack gate",
-			storageCR:                    testlib.GetStorageOperator(""),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.2",
@@ -389,7 +364,6 @@ func TestSync(t *testing.T) {
 		},
 		{
 			name:                         "should remove admin-ack key if cluster meets requirement",
-			storageCR:                    testlib.GetStorageOperator(""),
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.3",
 			hostVersion:                  "7.0.3",

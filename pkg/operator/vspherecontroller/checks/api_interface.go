@@ -26,7 +26,6 @@ type KubeAPIInterfaceImpl struct {
 	CSIDriverLister    storagelister.CSIDriverLister
 	StorageClassLister storagelister.StorageClassLister
 	PvLister           corelister.PersistentVolumeLister
-	StorageLister      oplister.StorageLister
 }
 
 func (k *KubeAPIInterfaceImpl) ListNodes() ([]*v1.Node, error) {
@@ -47,10 +46,6 @@ func (k *KubeAPIInterfaceImpl) GetStorageClass(name string) (*storagev1.StorageC
 
 func (k *KubeAPIInterfaceImpl) GetInfrastructure() *ocpv1.Infrastructure {
 	return k.Infrastructure
-}
-
-func (k *KubeAPIInterfaceImpl) GetStorage(name string) (*operatorv1.Storage, error) {
-	return k.StorageLister.Get(name)
 }
 
 func (k *KubeAPIInterfaceImpl) ListPersistentVolumes() ([]*v1.PersistentVolume, error) {

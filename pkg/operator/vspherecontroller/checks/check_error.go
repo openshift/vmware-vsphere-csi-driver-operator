@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	v1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -203,21 +202,7 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 // returns true if migration is not enabled in the cluster and cluster is using
 // in-tree vSphere volumes.
 func checkForIntreePluginUse(result ClusterCheckResult, apiDependencies KubeAPIInterface) (ClusterCheckStatus, ClusterCheckResult) {
-	storageCR, err := apiDependencies.GetStorage(storageOperatorName)
-	if err != nil {
-		reason := fmt.Errorf("vsphere csi driver installed failed with %s, unable to verify storage status: %v", result.Reason, err)
-		return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
-	}
-
-	klog.V(2).Infof("Checking for intree plugin use")
-
 	allGoodCheckResult := MakeClusterCheckResultPass()
-
-	// migration is enabled and hence we should be fine
-	driverName := storageCR.Spec.VSphereStorageDriver
-	if driverName == v1.CSIWithMigrationDriver {
-		return ClusterCheckAllGood, allGoodCheckResult
-	}
 
 	pvs, err := apiDependencies.ListPersistentVolumes()
 	if err != nil {
