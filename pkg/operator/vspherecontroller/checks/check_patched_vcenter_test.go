@@ -50,7 +50,7 @@ func TestCheckForMinimumPatchedVersion(t *testing.T) {
 	for i := range tests {
 		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
-			checkFlag, err := checkForMinimumPatchedVersion(test.vSphereVersion, test.buildNumber)
+			checkFlag, _, err := checkForMinimumPatchedVersion(test.vSphereVersion, test.buildNumber)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
