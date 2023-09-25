@@ -393,8 +393,10 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionTrue,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionTrue,
+					Type:    testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status:  opv1.ConditionTrue,
+					Reason:  "AsExpected",
+					Message: "All is well",
 				},
 			},
 			expectedAdminGateConfigKey: migrationAck413,
@@ -525,6 +527,14 @@ func TestSync(t *testing.T) {
 				}
 				if matchingCondition.Status != expectedCondition.Status {
 					t.Fatalf("for condition %s: expected status: %v, got: %v", expectedCondition.Type, expectedCondition.Status, matchingCondition.Status)
+				}
+
+				if expectedCondition.Message != "" && expectedCondition.Message != matchingCondition.Message {
+					t.Fatalf("for condition %s: expected message: %v, got: %v", expectedCondition.Type, expectedCondition.Message, matchingCondition.Message)
+				}
+
+				if expectedCondition.Reason != "" && expectedCondition.Reason != matchingCondition.Reason {
+					t.Fatalf("for condition %s: expected reason: %v, got: %v", expectedCondition.Type, expectedCondition.Reason, matchingCondition.Reason)
 				}
 			}
 

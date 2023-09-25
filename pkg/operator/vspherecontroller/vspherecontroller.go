@@ -585,6 +585,12 @@ func (c *VSphereController) addUpgradeableBlockCondition(
 		Reason:  string(lastCheckResult.CheckStatus),
 	}
 
+	// we do not record admin acks in clustercsidriver objects
+	if lastCheckResult.Action == checks.CheckActionRequiresAdminAck {
+		blockUpgradeCondition.Message = "All is well"
+		blockUpgradeCondition.Reason = "AsExpected"
+	}
+
 	oldConditions := status.Conditions
 	for _, condition := range oldConditions {
 		if condition.Type == conditionType {
