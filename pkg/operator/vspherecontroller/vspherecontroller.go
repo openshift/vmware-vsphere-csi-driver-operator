@@ -79,7 +79,7 @@ const (
 
 	managedConfigNamespace = "openshift-config-managed"
 	adminGateConfigMap     = "admin-gates"
-	migrationAck413        = "ack-4.13-kube-127-vsphere-migration-in-4.14"
+	migrationAck413        = "ack-4.12-kube-126-vsphere-migration-in-4.14"
 )
 
 type conditionalControllerInterface interface {
