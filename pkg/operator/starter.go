@@ -34,12 +34,13 @@ const (
 	operandName                       = "vmware-vsphere-csi-driver"
 	secretName                        = "vmware-vsphere-cloud-credentials"
 	envVMWareVsphereDriverSyncerImage = "VMWARE_VSPHERE_SYNCER_IMAGE"
+	managedConfigNamespace            = "openshift-config-managed"
 )
 
 func RunOperator(ctx context.Context, controllerConfig *controllercmd.ControllerContext) error {
 	// Create core clientset and informers
 	kubeClient := kubeclient.NewForConfigOrDie(rest.AddUserAgent(controllerConfig.KubeConfig, operatorName))
-	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, utils.DefaultNamespace, cloudConfigNamespace, "")
+	kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, utils.DefaultNamespace, cloudConfigNamespace, managedConfigNamespace, "")
 	secretInformer := kubeInformersForNamespaces.InformersFor(utils.DefaultNamespace).Core().V1().Secrets()
 	configMapInformer := kubeInformersForNamespaces.InformersFor(utils.DefaultNamespace).Core().V1().ConfigMaps()
 	nodeInformer := kubeInformersForNamespaces.InformersFor("").Core().V1().Nodes()
