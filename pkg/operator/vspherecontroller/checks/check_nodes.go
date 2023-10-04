@@ -169,6 +169,20 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 		return MakeClusterUnupgradeableError(CheckStatusDeprecatedESXIVersion, reason)
 	}
 
+	esxiBuildNumber := hostSystem.Config.Product.Build
+
+	klog.V(2).Infof("checking for patched version of ESXi for CSI migration: %s-%s", hostAPIVersion, esxiBuildNumber)
+
+	meetsMigrationPatchVersionRequirement, minVersionString, err := checkForMinimumPatchedVersion(hostAPIVersion, esxiBuildNumber)
+	if err != nil {
+		klog.Errorf("error parsing host version for node %s and host %s: %v", node.Name, hostName, err)
+	}
+
+	if !meetsMigrationPatchVersionRequirement {
+		reason := fmt.Errorf("host %s is on ESXI version %s-%s, minimum required for CSI migration: %s", hostName, hostAPIVersion, esxiBuildNumber, minVersionString)
+		return makeBuggyEnvironmentError(CheckStatusBuggyMigrationPlatform, reason)
+	}
+
 	return MakeClusterCheckResultPass()
 }
 

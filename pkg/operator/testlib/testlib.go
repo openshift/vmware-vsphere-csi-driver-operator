@@ -12,7 +12,6 @@ import (
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -27,10 +26,12 @@ import (
 var f embed.FS
 
 const (
-	cloudConfigNamespace = "openshift-config"
-	infraGlobalName      = "cluster"
-	secretName           = "vmware-vsphere-cloud-credentials"
-	defaultNamespace     = "openshift-cluster-csi-drivers"
+	cloudConfigNamespace   = "openshift-config"
+	infraGlobalName        = "cluster"
+	storageOperatorName    = "cluster"
+	secretName             = "vmware-vsphere-cloud-credentials"
+	defaultNamespace       = "openshift-cluster-csi-drivers"
+	managedConfigNamespace = "openshift-config-managed"
 )
 
 // fakeInstance is a fake CSI driver instance that also fullfils the OperatorClient interface
@@ -72,7 +73,7 @@ func StartFakeInformer(clients *utils.APIClient, stopCh <-chan struct{}) {
 func NewFakeClients(coreObjects []runtime.Object, operatorObject *FakeDriverInstance, configObject runtime.Object) *utils.APIClient {
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
 	kubeClient := fakecore.NewSimpleClientset(coreObjects...)
-	kubeInformers := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, cloudConfigNamespace, "")
+	kubeInformers := v1helpers.NewKubeInformersForNamespaces(kubeClient, defaultNamespace, cloudConfigNamespace, managedConfigNamespace, "")
 	nodeInformer := kubeInformers.InformersFor("").Core().V1().Nodes()
 	secretInformer := kubeInformers.InformersFor(defaultNamespace).Core().V1().Secrets()
 
@@ -132,8 +133,9 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 	for _, obj := range objects {
 		switch obj.(type) {
 		case *v1.ConfigMap:
-			configMapInformer := clients.KubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps().Informer()
-			configMapInformer.GetStore().Add(obj)
+			configMap := obj.(*v1.ConfigMap)
+			configMapInformer := clients.KubeInformers.InformersFor(configMap.Namespace).Core().V1().ConfigMaps().Informer()
+			configMapInformer.GetStore().Add(configMap)
 		case *v1.Secret:
 			secretInformer := clients.SecretInformer.Informer()
 			secretInformer.GetStore().Add(obj)
@@ -149,6 +151,12 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 		case *opv1.ClusterCSIDriver:
 			clusterCSIDriverInformer := clients.ClusterCSIDriverInformer.Informer()
 			clusterCSIDriverInformer.GetStore().Add(obj)
+		case *opv1.Storage:
+			storageInformer := clients.OCPOperatorInformers.Operator().V1().Storages().Informer()
+			storageInformer.GetStore().Add(obj)
+		case *v1.PersistentVolume:
+			pvInformer := clients.KubeInformers.InformersFor("").Core().V1().PersistentVolumes().Informer()
+			pvInformer.GetStore().Add(obj)
 		default:
 			return fmt.Errorf("Unknown initalObject type: %+v", obj)
 		}
@@ -219,6 +227,38 @@ func GetCSIDriver(withOCPAnnotation bool) *storagev1.CSIDriver {
 	return driver
 }
 
+func GetIntreePV(pvName string) *v1.PersistentVolume {
+	return &v1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pvName,
+		},
+		Spec: v1.PersistentVolumeSpec{
+			PersistentVolumeSource: v1.PersistentVolumeSource{
+				VsphereVolume: &v1.VsphereVirtualDiskVolumeSource{
+					VolumePath: "foobar/baz.vmdk",
+				},
+			},
+		},
+	}
+}
+
+func GetNodeWithInlinePV(nodeName string, hasIntreePV bool) *v1.Node {
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+		Spec:   v1.NodeSpec{},
+		Status: v1.NodeStatus{},
+	}
+
+	if hasIntreePV {
+		node.Status.VolumesInUse = []v1.UniqueVolumeName{
+			"kubernetes.io/vsphere-volume/foobar",
+		}
+	}
+	return node
+}
+
 func GetCSINode() *storagev1.CSINode {
 	return &storagev1.CSINode{
 		ObjectMeta: metav1.ObjectMeta{
@@ -283,6 +323,26 @@ datacenters = "DC0"
 	}
 }
 
+func GetAdminGateConfigMap(withAckKey bool) *v1.ConfigMap {
+	cMap := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "admin-gates",
+			Namespace: managedConfigNamespace,
+		},
+		Data: map[string]string{},
+	}
+
+	if withAckKey {
+		cMap.Data["ack-4.12-kube-1.26-api-removals-in-4.13"] = `
+			Kubernetes 1.26 and therefore OpenShift
+			4.13 remove several APIs which require admin consideration. Please see the knowledge
+			article https://access.redhat.com/articles/6958394 for details and instructions.`
+		cMap.Data["ack-4.13-kube-127-vsphere-migration-in-4.14"] = "remove this to upgrade"
+	}
+
+	return cMap
+}
+
 func GetSecret() *v1.Secret {
 	return &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -293,12 +353,5 @@ func GetSecret() *v1.Secret {
 			"localhost.password": []byte("vsphere-user"),
 			"localhost.username": []byte("vsphere-password"),
 		},
-	}
-}
-
-func GetTestClusterResult(statusType checks.CheckStatusType) checks.ClusterCheckResult {
-	return checks.ClusterCheckResult{
-		CheckError:  fmt.Errorf("some error"),
-		CheckStatus: statusType,
 	}
 }

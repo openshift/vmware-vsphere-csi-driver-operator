@@ -121,9 +121,12 @@ datacenters = "DC0"
 	return &cfg
 }
 
-func customizeVCenterVersion(version string, apiVersion string, conn *vclib.VSphereConnection) {
+func CustomizeVCenterVersion(version, apiVersion, build string, conn *vclib.VSphereConnection) {
 	conn.Client.Client.ServiceContent.About.Version = version
 	conn.Client.Client.ServiceContent.About.ApiVersion = apiVersion
+	if build != "" {
+		conn.Client.Client.ServiceContent.About.Build = build
+	}
 	fmt.Printf("customize vcenter version")
 }
 

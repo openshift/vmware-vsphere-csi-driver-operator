@@ -2,12 +2,15 @@ package checks
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/klog/v2"
 )
 
+// CheckStatusType stores exact error that was observed during performing various checks
 type CheckStatusType string
 
 const (
@@ -18,27 +21,20 @@ const (
 	CheckStatusDeprecatedVCenter       CheckStatusType = "check_deprecated_vcenter"
 	CheckStatusDeprecatedHWVersion     CheckStatusType = "check_deprecated_hw_version"
 	CheckStatusDeprecatedESXIVersion   CheckStatusType = "check_deprecated_esxi_version"
+	CheckStatusBuggyMigrationPlatform  CheckStatusType = "buggy_vsphere_migration_version"
 	CheckStatusVcenterAPIError         CheckStatusType = "vcenter_api_error"
 	CheckStatusGenericError            CheckStatusType = "generic_error"
 )
 
-type ClusterCheckStatus string
-
-const (
-	ClusterCheckAllGood                   ClusterCheckStatus = "pass"
-	ClusterCheckBlockUpgradeDriverInstall ClusterCheckStatus = "installation_blocked"
-	ClusterCheckBlockUpgrade              ClusterCheckStatus = "upgrades_blocked"
-	ClusterCheckUpgradeStateUnknown       ClusterCheckStatus = "upgrades_unknown"
-	ClusterCheckDegrade                   ClusterCheckStatus = "degraded"
-)
-
+// CheckAction stores what a single failing check would do.
 type CheckAction int
 
 // Ordered by severity, Pass must be 0 (for struct initialization).
 const (
 	CheckActionPass                      = iota
+	CheckActionRequiresAdminAck          // blocks upgrades via admin-ack
 	CheckActionBlockUpgrade              // Only block upgrade
-	CheckActionBlockUpgradeDriverInstall // Block voth upgrade and driver install
+	CheckActionBlockUpgradeDriverInstall // Block both upgrade and driver install
 	CheckActionBlockUpgradeOrDegrade     // Degrade if the driver is installed, block upgrade otherwise
 	CheckActionDegrade
 )
@@ -55,10 +51,29 @@ func ActionToString(a CheckAction) string {
 		return "BlockUpgradeOrDegrade"
 	case CheckActionDegrade:
 		return "Degrade"
+	case CheckActionRequiresAdminAck:
+		return "UpgradeRequiresAdminAck"
 	default:
 		return "Unknown"
 	}
 }
+
+// ClusterCheckStatus stores what is the status of overall cluster after checking everything and then applying
+// additional logic which may not be included in checks themselves.
+type ClusterCheckStatus string
+
+const (
+	ClusterCheckAllGood                    ClusterCheckStatus = "pass"
+	ClusterCheckBlockUpgradeDriverInstall  ClusterCheckStatus = "installation_blocked"
+	ClusterCheckBlockUpgrade               ClusterCheckStatus = "upgrades_blocked"
+	ClusterCheckUpgradeStateUnknown        ClusterCheckStatus = "upgrades_unknown"
+	ClusterCheckUpgradesBlockedViaAdminAck ClusterCheckStatus = "upgrades_blocked_via_admin_ack"
+	ClusterCheckDegrade                    ClusterCheckStatus = "degraded"
+)
+
+const (
+	inTreePluginName = "kubernetes.io/vsphere-volume"
+)
 
 type ClusterCheckResult struct {
 	CheckError  error
@@ -98,6 +113,16 @@ func makeDeprecatedEnvironmentError(statusType CheckStatusType, reason error) Cl
 	return checkResult
 }
 
+func makeBuggyEnvironmentError(statusType CheckStatusType, reason error) ClusterCheckResult {
+	checkResult := ClusterCheckResult{
+		CheckStatus: statusType,
+		CheckError:  reason,
+		Action:      CheckActionRequiresAdminAck,
+		Reason:      reason.Error(),
+	}
+	return checkResult
+}
+
 func MakeGenericVCenterAPIError(reason error) ClusterCheckResult {
 	return ClusterCheckResult{
 		CheckStatus: CheckStatusVcenterAPIError,
@@ -125,6 +150,8 @@ func MakeClusterUnupgradeableError(checkStatus CheckStatusType, reason error) Cl
 	}
 }
 
+// CheckClusterStatus uses results from all the checks we ran and applies additional logic to determine
+// overall CheckClusterStatus
 func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterface) (ClusterCheckStatus, ClusterCheckResult) {
 	switch result.Action {
 	case CheckActionDegrade:
@@ -162,11 +189,62 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 
 	case CheckActionBlockUpgrade:
 		return ClusterCheckBlockUpgrade, result
-
+	case CheckActionRequiresAdminAck:
+		return checkForIntreePluginUse(result, apiDependencies)
 	case CheckActionBlockUpgradeDriverInstall:
 		return ClusterCheckBlockUpgradeDriverInstall, result
-
 	default:
 		return ClusterCheckAllGood, result
 	}
+}
+
+// returns false is migration is enabled in the cluster.
+// returns true if migration is not enabled in the cluster and cluster is using
+// in-tree vSphere volumes.
+func checkForIntreePluginUse(result ClusterCheckResult, apiDependencies KubeAPIInterface) (ClusterCheckStatus, ClusterCheckResult) {
+	allGoodCheckResult := MakeClusterCheckResultPass()
+
+	pvs, err := apiDependencies.ListPersistentVolumes()
+	if err != nil {
+		reason := fmt.Errorf("vsphere csi driver installed failed with %s, unable to list pvs: %v", result.Reason, err)
+		return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
+	}
+
+	usingvSphereVolumes := false
+
+	for _, pv := range pvs {
+		if pv.Spec.VsphereVolume != nil {
+			klog.V(2).Infof("found vSphere in-tree persistent volumes in the cluster")
+			usingvSphereVolumes = true
+			break
+		}
+	}
+
+	if usingvSphereVolumes {
+		return ClusterCheckUpgradesBlockedViaAdminAck, allGoodCheckResult
+	}
+
+	nodes, err := apiDependencies.ListNodes()
+	if err != nil {
+		reason := fmt.Errorf("csi driver installed failed with %s, unable to list nodes: %v", result.Reason, err)
+		return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
+	}
+
+	if checkInlineIntreeVolumeUse(nodes) {
+		klog.V(2).Infof("found vSphere in-line persistent volumes in the cluster")
+		return ClusterCheckUpgradesBlockedViaAdminAck, allGoodCheckResult
+	}
+	return ClusterCheckAllGood, allGoodCheckResult
+}
+
+func checkInlineIntreeVolumeUse(nodes []*corev1.Node) bool {
+	for _, node := range nodes {
+		volumesInUse := node.Status.VolumesInUse
+		for _, volume := range volumesInUse {
+			if strings.HasPrefix(string(volume), inTreePluginName) {
+				return true
+			}
+		}
+	}
+	return false
 }

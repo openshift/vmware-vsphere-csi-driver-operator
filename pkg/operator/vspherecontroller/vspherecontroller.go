@@ -45,11 +45,13 @@ type VSphereController struct {
 	kubeClient               kubernetes.Interface
 	operatorClient           v1helpers.OperatorClientWithFinalizers
 	configMapLister          corelister.ConfigMapLister
+	managedConfigMapLister   corelister.ConfigMapLister
 	secretLister             corelister.SecretLister
 	scLister                 storagelister.StorageClassLister
 	clusterCSIDriverLister   clustercsidriverlister.ClusterCSIDriverLister
 	infraLister              infralister.InfrastructureLister
 	nodeLister               corelister.NodeLister
+	pvLister                 corelister.PersistentVolumeLister
 	csiDriverLister          storagelister.CSIDriverLister
 	csiNodeLister            storagelister.CSINodeLister
 	apiClients               utils.APIClient
@@ -74,6 +76,10 @@ const (
 	envVMWareVsphereDriverSyncerImage = "VMWARE_VSPHERE_SYNCER_IMAGE"
 	storageClassControllerName        = "VMwareVSphereDriverStorageClassController"
 	storageClassName                  = "thin-csi"
+
+	managedConfigNamespace = "openshift-config-managed"
+	adminGateConfigMap     = "admin-gates"
+	migrationAck413        = "ack-4.12-kube-126-vsphere-migration-in-4.14"
 )
 
 type conditionalControllerInterface interface {
@@ -95,11 +101,17 @@ func NewVSphereController(
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
+
 	infraInformer := ocpConfigInformer.Config().V1().Infrastructures()
 	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
+	// we need pvLister for checking if cluster is using intree pvs
+	pvLister := kubeInformers.InformersFor("").Core().V1().PersistentVolumes().Lister()
 	nodeLister := apiClients.NodeInformer.Lister()
+
+	// managedConfigMapInformer for applying admin-gates
+	managedConfigMapInformer := kubeInformers.InformersFor(managedConfigNamespace).Core().V1().ConfigMaps()
 
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 
@@ -114,6 +126,8 @@ func NewVSphereController(
 		scLister:               scInformer.Lister(),
 		csiDriverLister:        csiDriverLister,
 		nodeLister:             nodeLister,
+		pvLister:               pvLister,
+		managedConfigMapLister: managedConfigMapInformer.Lister(),
 		apiClients:             apiClients,
 		eventRecorder:          rc,
 		vSphereChecker:         newVSphereEnvironmentChecker(),
@@ -131,6 +145,7 @@ func NewVSphereController(
 		apiClients.OperatorClient.Informer(),
 		configMapInformer.Informer(),
 		apiClients.SecretInformer.Informer(),
+		managedConfigMapInformer.Informer(),
 		infraInformer.Informer(),
 		scInformer.Informer(),
 	).WithSync(c.sync).
@@ -218,7 +233,9 @@ func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext fa
 	// if there was an OCP error we should degrade the cluster or if we previously created CSIDriver
 	// but we can't connect to vcenter now, we should also degrade the cluster
 	var connectionBlockUpgrade bool
-	err, blockCSIDriverInstall, connectionBlockUpgrade = c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra, opStatus)
+	var blockUpgradeViaAdminAck bool
+
+	err, blockCSIDriverInstall, connectionBlockUpgrade, _ = c.blockUpgradeOrDegradeCluster(ctx, connectionResult, infra, opStatus)
 	if err != nil {
 		return blockCSIDriverInstall, err
 	}
@@ -247,7 +264,7 @@ func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext fa
 	})
 
 	var clusterCheckBlockUpgrade bool
-	err, blockCSIDriverInstall, clusterCheckBlockUpgrade = c.blockUpgradeOrDegradeCluster(ctx, result, infra, opStatus)
+	err, blockCSIDriverInstall, clusterCheckBlockUpgrade, blockUpgradeViaAdminAck = c.blockUpgradeOrDegradeCluster(ctx, result, infra, opStatus)
 	if err != nil {
 		return blockCSIDriverInstall, err
 	}
@@ -273,6 +290,20 @@ func (c *VSphereController) installCSIDriver(ctx context.Context, syncContext fa
 	if blockUpgrade {
 		upgradeableStatus = operatorapi.ConditionFalse
 	}
+
+	// if we are not blocking upgrade via admin-ack nor we are blocking upgrades otherwise, we should
+	// remove admin-gate checks.
+	// The reason we are also checking for blockUpgrade variable is because when cluster upgrade is blocked because of
+	// other error conditions, then those checks take precedence over blockUpgradeViaAdminAck and hence blockUpgradeViaAdminAck
+	// might be false even though cluster overall is not upgradeable. In which we should not remove adminAck change
+	// which might have been installed previously.
+	if !blockUpgradeViaAdminAck && !blockUpgrade {
+		err := c.removeAdminAck(ctx)
+		if err != nil {
+			return blockCSIDriverInstall, err
+		}
+	}
+
 	return blockCSIDriverInstall, c.updateConditions(ctx, c.name, result, opStatus, upgradeableStatus)
 }
 
@@ -297,7 +328,7 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	ctx context.Context,
 	result checks.ClusterCheckResult,
 	infra *ocpv1.Infrastructure,
-	status *operatorapi.OperatorStatus) (err error, blockInstall, blockUpgrade bool) {
+	status *operatorapi.OperatorStatus) (err error, blockInstall, blockUpgrade, blockUpgradeViaAdminAck bool) {
 
 	var clusterCondition string
 	clusterStatus, result := checks.CheckClusterStatus(result, c.getCheckAPIDependency(infra))
@@ -305,17 +336,17 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	case checks.ClusterCheckDegrade:
 		clusterCondition = "degraded"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		return result.CheckError, true, false
+		return result.CheckError, true, false, false
 	case checks.ClusterCheckUpgradeStateUnknown:
 		clusterCondition = "upgrade_unknown"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionUnknown)
-		return updateError, true, false
+		return updateError, true, false, false
 	case checks.ClusterCheckBlockUpgrade:
 		clusterCondition = "upgrade_blocked"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
-		return updateError, false, true
+		return updateError, false, true, false
 	case checks.ClusterCheckBlockUpgradeDriverInstall:
 		clusterCondition = "install_blocked"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
@@ -323,9 +354,16 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		// Set Upgradeable: true with an extra message
 		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
-		return updateError, true, true
+		return updateError, true, true, false
+	case checks.ClusterCheckUpgradesBlockedViaAdminAck:
+		clusterCondition = "upgrade_blocked_admin_ack"
+		rt := string(result.CheckStatus)
+		klog.Infof("check status is: %s", rt)
+		utils.InstallErrorMetric.WithLabelValues(rt, clusterCondition).Set(1)
+		updateError := c.addRequiresAdminAck(ctx, result)
+		return updateError, false, false, true
 	}
-	return nil, false, false
+	return nil, false, false, false
 }
 
 func (c *VSphereController) runConditionalController(ctx context.Context) {
@@ -359,6 +397,7 @@ func (c *VSphereController) getCheckAPIDependency(infra *ocpv1.Infrastructure) c
 		CSINodeLister:   c.csiNodeLister,
 		CSIDriverLister: c.csiDriverLister,
 		NodeLister:      c.nodeLister,
+		PvLister:        c.pvLister,
 	}
 	return checkerApiClient
 }
@@ -468,6 +507,44 @@ func (c *VSphereController) updateConditions(
 	return nil
 }
 
+func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckResult checks.ClusterCheckResult) error {
+	adminGate, err := c.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
+	if err != nil {
+		return fmt.Errorf("failed to get admin-gate configmap: %v", err)
+	}
+
+	klog.V(2).Infof("Updating admin-gates to require admin-ack for vSphere CSI migration")
+
+	_, ok := adminGate.Data[migrationAck413]
+	if !ok {
+		adminGate.Data[migrationAck413] = "vSphere CSI migration will be enabled in Openshift-4.14. Your cluster appears to be using in-tree vSphere volumes and is on a vSphere version that has CSI migration related bugs. See - https://access.redhat.com/node/7011683 for more information, before upgrading to 4.14."
+
+	}
+	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), c.eventRecorder, adminGate)
+	return err
+}
+
+func (c *VSphereController) removeAdminAck(ctx context.Context) error {
+	adminGate, err := c.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get admin-gate configmap: %v", err)
+	}
+
+	_, ok := adminGate.Data[migrationAck413]
+	// nothing needs to be done if key doesn't exist
+	if !ok {
+		return nil
+	}
+	klog.V(2).Infof("removing admin-gates that is required for CSI migration")
+
+	delete(adminGate.Data, migrationAck413)
+	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), c.eventRecorder, adminGate)
+	return err
+}
+
 func (c *VSphereController) addUpgradeableBlockCondition(
 	lastCheckResult checks.ClusterCheckResult,
 	name string,
@@ -480,6 +557,12 @@ func (c *VSphereController) addUpgradeableBlockCondition(
 		Status:  upgradeStatus,
 		Message: lastCheckResult.Reason,
 		Reason:  string(lastCheckResult.CheckStatus),
+	}
+
+	// we do not record admin acks in clustercsidriver objects
+	if lastCheckResult.Action == checks.CheckActionRequiresAdminAck {
+		blockUpgradeCondition.Message = "All is well"
+		blockUpgradeCondition.Reason = "AsExpected"
 	}
 
 	oldConditions := status.Conditions
