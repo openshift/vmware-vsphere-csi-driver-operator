@@ -149,7 +149,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	}
 
 	if opSpec.ManagementState != operatorapi.Managed {
-		klog.V(4).Infof("%s: ManagementState is %s, skipping", c.name, opSpec.ManagementState)
+		klog.Warningf("%s: ManagementState is %s, skipping", c.name, opSpec.ManagementState)
 		return nil
 	}
 
