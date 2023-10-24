@@ -49,6 +49,8 @@ spec:
           env:
             - name: WEBHOOK_CONFIG_PATH
               value: "/etc/webhook/config/webhook.conf"
+            - name: GODEBUG
+              value: "http2server=0" # disable HTTP/2 server support
             - name: CSI_NAMESPACE
               valueFrom:
                 fieldRef:
