@@ -322,7 +322,8 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	case checks.ClusterCheckDegrade:
 		clusterCondition = "degraded"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		return result.CheckError, true, false
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
+		return updateError, true, false
 	case checks.ClusterCheckUpgradeStateUnknown:
 		clusterCondition = "upgrade_unknown"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
@@ -449,7 +450,26 @@ func (c *VSphereController) updateConditions(
 	}
 
 	updateFuncs := []v1helpers.UpdateStatusFunc{}
+
+	degradeCond := operatorapi.OperatorCondition{
+		Type:   "VMwareVSphereOperatorController" + operatorapi.OperatorStatusTypeDegraded,
+		Status: operatorapi.ConditionFalse,
+	}
+
+	if lastCheckResult.Action == checks.CheckActionDegrade {
+		klog.Warningf("Marking cluster as degraded: %s %s", lastCheckResult.CheckStatus, lastCheckResult.Reason)
+		availableCnd.Status = operatorapi.ConditionFalse
+		availableCnd.Reason = string(lastCheckResult.CheckStatus)
+		availableCnd.Message = lastCheckResult.Reason
+
+		degradeCond.Status = operatorapi.ConditionTrue
+		degradeCond.Reason = string(lastCheckResult.CheckStatus)
+		degradeCond.Message = lastCheckResult.Reason
+	}
+
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(availableCnd))
+	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(degradeCond))
+
 	allowUpgradeCond := operatorapi.OperatorCondition{
 		Type:   name + operatorapi.OperatorStatusTypeUpgradeable,
 		Status: operatorapi.ConditionTrue,

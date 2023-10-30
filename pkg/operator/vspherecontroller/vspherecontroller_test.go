@@ -152,9 +152,18 @@ func TestSync(t *testing.T) {
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true /*withOCPAnnotation*/)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			failVCenterConnection:        true,
-			expectError:                  fmt.Errorf("can't talk to vcenter"),
-			operandStarted:               true,
-			storageClassCreated:          false,
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorController" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionTrue,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when vcenter version is older, block upgrades",
@@ -205,9 +214,18 @@ func TestSync(t *testing.T) {
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
-			expectError:                  fmt.Errorf("found older vcenter version, expected is 6.7.3"),
-			operandStarted:               true,
-			storageClassCreated:          false,
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorController" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionTrue,
+				},
+			},
+			storageClassCreated: false,
+			operandStarted:      true,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI driver exists",
