@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"strings"
 
+	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 
@@ -109,7 +109,7 @@ func (c *VSphereController) createCSIDriver() {
 			c.apiClients.ConfigMapInformer.Informer(),
 			c.apiClients.NodeInformer.Informer(),
 		},
-		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.apiClients.SecretInformer),
+		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.infraLister, c.apiClients.SecretInformer),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
 		c.topologyHook,
@@ -185,6 +185,7 @@ func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deplo
 func WithVSphereCredentials(
 	namespace string,
 	secretName string,
+	infraLister infralister.InfrastructureLister,
 	secretInformer corev1informers.SecretInformer,
 ) deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
@@ -192,6 +193,14 @@ func WithVSphereCredentials(
 		if err != nil {
 			return err
 		}
+
+		infra, err := infraLister.Get(infraGlobalName)
+		if err != nil {
+			return err
+		}
+
+		// This change can only be used in >=4.13 versions of OCP
+		vCenterName := infra.Spec.PlatformSpec.VSphere.VCenters[0].Server
 
 		// CCO generates a secret that contains dynamic keys, for example:
 		// oc get secret/vmware-vsphere-cloud-credentials -o json | jq .data
@@ -206,13 +215,9 @@ func WithVSphereCredentials(
 			klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
 		}
 
-		for k := range secret.Data {
-			if strings.HasSuffix(k, ".username") {
-				usernameKey = k
-			} else if strings.HasSuffix(k, ".password") {
-				passwordKey = k
-			}
-		}
+		usernameKey = vCenterName + ".username"
+		passwordKey = vCenterName + ".password"
+
 		if usernameKey == "" || passwordKey == "" {
 			return fmt.Errorf("could not find vSphere credentials in secret %s/%s", secret.Namespace, secret.Name)
 		}
