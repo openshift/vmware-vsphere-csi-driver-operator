@@ -158,7 +158,7 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   "VMwareVSphereOperatorController" + opv1.OperatorStatusTypeDegraded,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionTrue,
 				},
 			},
@@ -220,7 +220,7 @@ func TestSync(t *testing.T) {
 					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   "VMwareVSphereOperatorController" + opv1.OperatorStatusTypeDegraded,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionTrue,
 				},
 			},
