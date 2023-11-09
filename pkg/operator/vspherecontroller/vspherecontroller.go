@@ -451,8 +451,12 @@ func (c *VSphereController) updateConditions(
 
 	updateFuncs := []v1helpers.UpdateStatusFunc{}
 
+	// we are degrading using a custom name here because, if we use name + Degraded
+	// library-go will override the condition and mark cluster un-degraded.
+	// Degrading here with custom name here ensures that - our degrade condition is sticky
+	// and only this operator can remove the degraded condition.
 	degradeCond := operatorapi.OperatorCondition{
-		Type:   "VMwareVSphereOperatorController" + operatorapi.OperatorStatusTypeDegraded,
+		Type:   "VMwareVSphereOperatorCheck" + operatorapi.OperatorStatusTypeDegraded,
 		Status: operatorapi.ConditionFalse,
 	}
 
