@@ -443,12 +443,36 @@ func (c *VSphereController) updateConditions(
 	lastCheckResult checks.ClusterCheckResult,
 	status *operatorapi.OperatorStatus,
 	upgradeStatus operatorapi.ConditionStatus) error {
+
+	updateFuncs := []v1helpers.UpdateStatusFunc{}
+
+	progressingConditionName := name + operatorapi.OperatorStatusTypeProgressing
+	if lastCheckResult.Action == checks.CheckActionBlockUpgradeDriverInstall {
+		// Add a dummy Progressing condition. cluster-storage-operator needs at least one *Progressing
+		// condition to be present in ClusterCSIDriver to compute overall Progressing condition of the driver,
+		// otherwise it sets Progressing=True forever.
+		// In case of CheckActionBlockUpgradeDriverInstall, this dummy condition will be the only Progressing
+		// condition that makes the whole ClusterCSIDriver Progressing=false.
+		klog.V(4).Infof("Adding %s to mark the whole ClusterCSIDriver as Progressing=False", progressingConditionName)
+		progressingCond := operatorapi.OperatorCondition{
+			Type:   progressingConditionName,
+			Status: operatorapi.ConditionFalse,
+		}
+		updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(progressingCond))
+	} else {
+		// Remove the dummy condition, CSIControllerSet will report its own set of progressing conditions.
+		klog.V(4).Infof("Removing %s", progressingConditionName)
+		updateFuncs = append(updateFuncs, func(status *operatorapi.OperatorStatus) error {
+			v1helpers.RemoveOperatorCondition(&status.Conditions, progressingConditionName)
+			return nil
+		})
+	}
+
 	availableCnd := operatorapi.OperatorCondition{
 		Type:   name + operatorapi.OperatorStatusTypeAvailable,
 		Status: operatorapi.ConditionTrue,
 	}
 
-	updateFuncs := []v1helpers.UpdateStatusFunc{}
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(availableCnd))
 	allowUpgradeCond := operatorapi.OperatorCondition{
 		Type:   name + operatorapi.OperatorStatusTypeUpgradeable,
@@ -482,6 +506,7 @@ func (c *VSphereController) updateConditions(
 	if _, _, updateErr := v1helpers.UpdateStatus(ctx, c.operatorClient, updateFuncs...); updateErr != nil {
 		return updateErr
 	}
+
 	return nil
 }
 

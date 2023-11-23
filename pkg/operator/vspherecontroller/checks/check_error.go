@@ -38,7 +38,7 @@ type CheckAction int
 const (
 	CheckActionPass                      = iota
 	CheckActionBlockUpgrade              // Only block upgrade
-	CheckActionBlockUpgradeDriverInstall // Block voth upgrade and driver install
+	CheckActionBlockUpgradeDriverInstall // Block both upgrade and driver install
 	CheckActionBlockUpgradeOrDegrade     // Degrade if the driver is installed, block upgrade otherwise
 	CheckActionDegrade
 )
