@@ -281,6 +281,13 @@ func GetSingleFailureDomainInfra() *ocpv1.Infrastructure {
 							},
 						},
 					},
+					VCenters: []ocpv1.VSpherePlatformVCenterSpec{
+						{
+							Server:      "vcenter.home.lan",
+							Port:        443,
+							Datacenters: []string{"dc0"},
+						},
+					},
 				},
 			},
 		},

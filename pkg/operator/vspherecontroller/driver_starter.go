@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"strings"
 
+	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	"gopkg.in/gcfg.v1"
 
+	ocpv1 "github.com/openshift/api/config/v1"
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/csi/csicontrollerset"
@@ -22,7 +24,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1informers "k8s.io/client-go/informers/core/v1"
+	corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
 func (c *VSphereController) createCSIDriver() {
@@ -109,7 +113,7 @@ func (c *VSphereController) createCSIDriver() {
 			c.apiClients.ConfigMapInformer.Informer(),
 			c.apiClients.NodeInformer.Informer(),
 		},
-		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.apiClients.SecretInformer),
+		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.infraLister, c.configMapLister, c.apiClients.SecretInformer),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
 		c.topologyHook,
@@ -185,10 +189,22 @@ func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deplo
 func WithVSphereCredentials(
 	namespace string,
 	secretName string,
+	infraLister infralister.InfrastructureLister,
+	configMapLister corelister.ConfigMapLister,
 	secretInformer corev1informers.SecretInformer,
 ) deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
 		secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
+		if err != nil {
+			return err
+		}
+
+		infra, err := infraLister.Get(infraGlobalName)
+		if err != nil {
+			return err
+		}
+
+		vCenterName, err := getvCenterName(infra, configMapLister)
 		if err != nil {
 			return err
 		}
@@ -206,13 +222,9 @@ func WithVSphereCredentials(
 			klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
 		}
 
-		for k := range secret.Data {
-			if strings.HasSuffix(k, ".username") {
-				usernameKey = k
-			} else if strings.HasSuffix(k, ".password") {
-				passwordKey = k
-			}
-		}
+		usernameKey = vCenterName + ".username"
+		passwordKey = vCenterName + ".password"
+
 		if usernameKey == "" || passwordKey == "" {
 			return fmt.Errorf("could not find vSphere credentials in secret %s/%s", secret.Namespace, secret.Name)
 		}
@@ -232,6 +244,31 @@ func WithVSphereCredentials(
 		deployment.Spec.Template.Spec.Containers = containers
 		return nil
 	}
+}
+
+func getvCenterName(infra *ocpv1.Infrastructure, configmapLister corelister.ConfigMapLister) (string, error) {
+	// This change can only be used in >=4.13 versions of OCP
+	vSphereInfraConfig := infra.Spec.PlatformSpec.VSphere
+	if vSphereInfraConfig != nil && len(vSphereInfraConfig.VCenters) > 0 {
+		return vSphereInfraConfig.VCenters[0].Server, nil
+	}
+
+	cloudConfig := infra.Spec.CloudConfig
+	cloudConfigMap, err := configmapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
+	if err != nil {
+		return "", fmt.Errorf("failed to get cloud config: %v", err)
+	}
+
+	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
+	if !ok {
+		return "", fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
+	}
+	cfg := new(vsphere.VSphereConfig)
+	err = gcfg.ReadStringInto(cfg, cfgString)
+	if err != nil {
+		return "", err
+	}
+	return cfg.Workspace.VCenterIP, nil
 }
 
 func WithSyncerImageHook(containerName string) deploymentcontroller.DeploymentHookFunc {
