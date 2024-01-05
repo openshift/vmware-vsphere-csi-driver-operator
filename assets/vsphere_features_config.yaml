@@ -3,20 +3,15 @@ data:
   "csi-migration": "true" # csi-migration feature is only available for vSphere 7.0U1
   "csi-auth-check": "true"
   "online-volume-extend": "true"
-  "trigger-csi-fullsync": "false"
-  "async-query-volume": "true"
   "block-volume-snapshot": "true"
-  "csi-windows-support": "true"
-  "use-csinode-id": "true" # causes driver to read node-id from CSINode object rather than Node object
-  "list-volumes": "true"
-  "pv-to-backingdiskobjectid-mapping": "false"
+  "improved-volume-topology": "false" # operator will set this value to true if cluster supports CSI topology
+  "improved-csi-idempotency": "true" # Causes operator to create CRs for volume operations for sync them with k8s server
   "cnsmgr-suspend-create-volume": "true" # causes volume provisioning to be suspended on datastores suspended
+  "use-csinode-id": "true" # causes driver to read node-id from CSINode object rather than Node object
   # Although our storgeclass does not support this, it will allow something like
   # https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/2.0/vmware-vsphere-csp-getting-started/GUID-2FB52A3C-76F1-4AA6-8868-318D4E939872.html
   "topology-preferential-datastores": "true"
-  "improved-volume-topology": "false" # operator will set this value to true if cluster supports CSI topology
-  "improved-csi-idempotency": "true" # Causes operator to create CRs for volume operations for sync them with k8s server
-  "multi-vcenter-csi-topology": "true" # add support multiple vcenters. Although we don't support this feature, having it disabled causes driver to crash loop.
+  "csi-windows-support": "true"
 kind: ConfigMap
 metadata:
   name: internal-feature-states.csi.vsphere.vmware.com
