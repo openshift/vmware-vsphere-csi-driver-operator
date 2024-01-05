@@ -2,7 +2,6 @@ package operator
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
@@ -137,5 +136,5 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 
 	<-ctx.Done()
 
-	return fmt.Errorf("stopped")
+	return nil
 }
