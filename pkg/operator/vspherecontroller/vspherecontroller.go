@@ -447,20 +447,24 @@ func (c *VSphereController) updateConditions(
 
 	updateFuncs := []v1helpers.UpdateStatusFunc{}
 
+	klog.Infof("JSAF: action: %v", lastCheckResult.Action)
+	klog.Infof("JSAF: lastCheckResult: %+v", lastCheckResult)
 	progressingConditionName := name + operatorapi.OperatorStatusTypeProgressing
-	if lastCheckResult.Action == checks.CheckActionBlockUpgradeDriverInstall {
+	switch lastCheckResult.Action {
+	case checks.CheckActionBlockUpgradeDriverInstall, checks.CheckActionBlockUpgradeOrDegrade:
 		// Add a dummy Progressing condition. cluster-storage-operator needs at least one *Progressing
 		// condition to be present in ClusterCSIDriver to compute overall Progressing condition of the driver,
 		// otherwise it sets Progressing=True forever.
-		// In case of CheckActionBlockUpgradeDriverInstall, this dummy condition will be the only Progressing
-		// condition that makes the whole ClusterCSIDriver Progressing=false.
+		// In case of CheckActionBlockUpgradeDriverInstall or CheckActionBlockUpgradeOrDegrade, this dummy condition
+		// will be the only Progressing condition that makes the whole ClusterCSIDriver Progressing=false.
 		klog.V(4).Infof("Adding %s to mark the whole ClusterCSIDriver as Progressing=False", progressingConditionName)
 		progressingCond := operatorapi.OperatorCondition{
 			Type:   progressingConditionName,
 			Status: operatorapi.ConditionFalse,
 		}
 		updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(progressingCond))
-	} else {
+
+	default:
 		// Remove the dummy condition, CSIControllerSet will report its own set of progressing conditions.
 		klog.V(4).Infof("Removing %s", progressingConditionName)
 		updateFuncs = append(updateFuncs, func(status *operatorapi.OperatorStatus) error {
