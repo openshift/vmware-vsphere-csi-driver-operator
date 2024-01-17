@@ -730,6 +730,9 @@ func (*skippingChecker) Check(ctx context.Context, connection checks.CheckArgs) 
 	return 0, checks.ClusterCheckResult{}, false
 }
 
+func (*skippingChecker) ResetExpBackoff() {
+}
+
 func newSkippingChecker() *skippingChecker {
 	return &skippingChecker{}
 }
