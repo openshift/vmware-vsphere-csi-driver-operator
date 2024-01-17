@@ -24,6 +24,7 @@ var (
 
 type vSphereEnvironmentCheckInterface interface {
 	Check(ctx context.Context, connection checks.CheckArgs) (time.Duration, checks.ClusterCheckResult, bool)
+	ResetExpBackoff()
 }
 
 type vSphereEnvironmentCheckerComposite struct {
@@ -92,4 +93,9 @@ func (v *vSphereEnvironmentCheckerComposite) Check(
 	v.backoff = defaultBackoff
 	v.nextCheck = v.lastCheck.Add(defaultBackoff.Cap)
 	return defaultBackoff.Cap, checks.MakeClusterCheckResultPass(), true
+}
+
+func (v *vSphereEnvironmentCheckerComposite) ResetExpBackoff() {
+	v.nextCheck = time.Now()
+	v.backoff = defaultBackoff
 }
