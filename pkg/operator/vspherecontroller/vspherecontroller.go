@@ -322,7 +322,8 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	case checks.ClusterCheckDegrade:
 		clusterCondition = "degraded"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		return result.CheckError, true, false
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
+		return updateError, true, false
 	case checks.ClusterCheckUpgradeStateUnknown:
 		clusterCondition = "upgrade_unknown"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
@@ -449,7 +450,30 @@ func (c *VSphereController) updateConditions(
 	}
 
 	updateFuncs := []v1helpers.UpdateStatusFunc{}
+
+	// we are degrading using a custom name here because, if we use name + Degraded
+	// library-go will override the condition and mark cluster un-degraded.
+	// Degrading here with custom name here ensures that - our degrade condition is sticky
+	// and only this operator can remove the degraded condition.
+	degradeCond := operatorapi.OperatorCondition{
+		Type:   "VMwareVSphereOperatorCheck" + operatorapi.OperatorStatusTypeDegraded,
+		Status: operatorapi.ConditionFalse,
+	}
+
+	if lastCheckResult.Action == checks.CheckActionDegrade {
+		klog.Warningf("Marking cluster as degraded: %s %s", lastCheckResult.CheckStatus, lastCheckResult.Reason)
+		availableCnd.Status = operatorapi.ConditionFalse
+		availableCnd.Reason = string(lastCheckResult.CheckStatus)
+		availableCnd.Message = lastCheckResult.Reason
+
+		degradeCond.Status = operatorapi.ConditionTrue
+		degradeCond.Reason = string(lastCheckResult.CheckStatus)
+		degradeCond.Message = lastCheckResult.Reason
+	}
+
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(availableCnd))
+	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(degradeCond))
+
 	allowUpgradeCond := operatorapi.OperatorCondition{
 		Type:   name + operatorapi.OperatorStatusTypeUpgradeable,
 		Status: operatorapi.ConditionTrue,

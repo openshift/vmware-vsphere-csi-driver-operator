@@ -150,8 +150,9 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 		}
 
 		if driverFound {
-			return ClusterCheckDegrade, result
+			return ClusterCheckDegrade, MakeClusterDegradedError(result.CheckStatus, result.CheckError)
 		}
+
 		// if we can't connect to vcenter, we can't really block upgrades but
 		// we should mark upgradeable to be unknown
 		if result.CheckStatus == CheckStatusVSphereConnectionFailed {
