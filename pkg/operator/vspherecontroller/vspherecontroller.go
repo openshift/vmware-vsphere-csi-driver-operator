@@ -209,12 +209,16 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 
 	// if we successfully connected to vCenter and previously we couldn't and operator has one or more
 	// error conditions, then lets reset exp. backoff so as we can run the full cluster checks
-	if connectionResult.CheckError == nil && c.hasErrorConditions(*opStatus) && !c.vCenterConnectionStatus {
+	if connectionResult.CheckError == nil && hasErrorConditions(*opStatus) && !c.vCenterConnectionStatus {
+		klog.Infof("resetting exp. backoff after connection established")
 		c.vSphereChecker.ResetExpBackoff()
 	}
 
 	if connectionResult.CheckError == nil {
 		c.vCenterConnectionStatus = true
+	} else {
+		klog.V(2).Infof("Marking vCenter connection status as false")
+		c.vCenterConnectionStatus = false
 	}
 
 	blockCSIDriverInstall, err := c.installCSIDriver(ctx, syncContext, infra, clusterCSIDriver, connectionResult, opStatus)
@@ -412,7 +416,7 @@ func (c *VSphereController) loginToVCenter(ctx context.Context, infra *ocpv1.Inf
 	return checks.MakeClusterCheckResultPass()
 }
 
-func (c *VSphereController) hasErrorConditions(opStats operatorapi.OperatorStatus) bool {
+func hasErrorConditions(opStats operatorapi.OperatorStatus) bool {
 	conditions := opStats.Conditions
 	hasDegradedOrBlockUpgradeConditions := false
 	for _, condition := range conditions {
