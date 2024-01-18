@@ -585,7 +585,70 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 
 		})
 	}
+}
 
+func TestHasErrorCondition(t *testing.T) {
+	controllerName := "VMwareVSphereController"
+	tests := []struct {
+		name     string
+		opStatus opv1.OperatorStatus
+		expected bool
+	}{
+		{
+			name:     "when no conditions are present",
+			opStatus: opv1.OperatorStatus{},
+			expected: false,
+		},
+		{
+			name: "when no error conditions are present",
+			opStatus: opv1.OperatorStatus{
+				Conditions: []opv1.OperatorCondition{
+					{
+						Type:   controllerName + opv1.OperatorStatusTypeAvailable,
+						Status: opv1.ConditionTrue,
+					},
+				},
+			},
+		},
+		{
+			name: "when operator status is degraded",
+			opStatus: opv1.OperatorStatus{
+				Conditions: []opv1.OperatorCondition{
+					{
+						Type:   controllerName + opv1.OperatorStatusTypeAvailable,
+						Status: opv1.ConditionTrue,
+					},
+					{
+						Type:   controllerName + opv1.OperatorStatusTypeDegraded,
+						Status: opv1.ConditionTrue,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "when operator status is un-upgradeable",
+			opStatus: opv1.OperatorStatus{
+				Conditions: []opv1.OperatorCondition{
+					{
+						Type:   controllerName + opv1.OperatorStatusTypeUpgradeable,
+						Status: opv1.ConditionFalse,
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for i := range tests {
+		test := tests[i]
+		t.Run(test.name, func(t *testing.T) {
+			hasError := hasErrorConditions(test.opStatus)
+			if hasError != test.expected {
+				t.Fatalf("expected hasError to be %v, got %v", test.expected, hasError)
+			}
+		})
+	}
 }
 
 func setHardwareVersionsFunc(nodes []*v1.Node, conn *vclib.VSphereConnection, hardwareVersions []string) func() error {
@@ -728,6 +791,9 @@ type skippingChecker struct{}
 
 func (*skippingChecker) Check(ctx context.Context, connection checks.CheckArgs) (time.Duration, checks.ClusterCheckResult, bool) {
 	return 0, checks.ClusterCheckResult{}, false
+}
+
+func (*skippingChecker) ResetExpBackoff() {
 }
 
 func newSkippingChecker() *skippingChecker {

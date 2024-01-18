@@ -58,6 +58,7 @@ type VSphereController struct {
 	vSphereConnection        *vclib.VSphereConnection
 	csiConfigManifest        []byte
 	vSphereChecker           vSphereEnvironmentCheckInterface
+	vCenterConnectionStatus  bool
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() (*vclib.VSphereConnection, checks.ClusterCheckResult, bool)
 }
@@ -105,23 +106,24 @@ func NewVSphereController(
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 
 	c := &VSphereController{
-		name:                   name,
-		targetNamespace:        targetNamespace,
-		kubeClient:             apiClients.KubeClient,
-		operatorClient:         apiClients.OperatorClient,
-		configMapLister:        configMapInformer.Lister(),
-		secretLister:           apiClients.SecretInformer.Lister(),
-		csiNodeLister:          csiNodeLister,
-		scLister:               scInformer.Lister(),
-		csiDriverLister:        csiDriverLister,
-		nodeLister:             nodeLister,
-		apiClients:             apiClients,
-		eventRecorder:          rc,
-		vSphereChecker:         newVSphereEnvironmentChecker(),
-		manifest:               cloudConfigManifest,
-		csiConfigManifest:      csiConfigManifest,
-		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
-		infraLister:            infraInformer.Lister(),
+		name:                    name,
+		targetNamespace:         targetNamespace,
+		kubeClient:              apiClients.KubeClient,
+		operatorClient:          apiClients.OperatorClient,
+		configMapLister:         configMapInformer.Lister(),
+		secretLister:            apiClients.SecretInformer.Lister(),
+		csiNodeLister:           csiNodeLister,
+		scLister:                scInformer.Lister(),
+		csiDriverLister:         csiDriverLister,
+		nodeLister:              nodeLister,
+		apiClients:              apiClients,
+		eventRecorder:           rc,
+		vSphereChecker:          newVSphereEnvironmentChecker(),
+		manifest:                cloudConfigManifest,
+		csiConfigManifest:       csiConfigManifest,
+		clusterCSIDriverLister:  apiClients.ClusterCSIDriverInformer.Lister(),
+		infraLister:             infraInformer.Lister(),
+		vCenterConnectionStatus: false,
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -204,6 +206,20 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 			c.vSphereConnection = nil
 		}
 	}()
+
+	// if we successfully connected to vCenter and previously we couldn't and operator has one or more
+	// error conditions, then lets reset exp. backoff so as we can run the full cluster checks
+	if connectionResult.CheckError == nil && hasErrorConditions(*opStatus) && !c.vCenterConnectionStatus {
+		klog.Infof("resetting exp. backoff after connection established")
+		c.vSphereChecker.ResetExpBackoff()
+	}
+
+	if connectionResult.CheckError == nil {
+		c.vCenterConnectionStatus = true
+	} else {
+		klog.V(2).Infof("Marking vCenter connection status as false")
+		c.vCenterConnectionStatus = false
+	}
 
 	blockCSIDriverInstall, err := c.installCSIDriver(ctx, syncContext, infra, clusterCSIDriver, connectionResult, opStatus)
 	if err != nil {
@@ -398,6 +414,29 @@ func (c *VSphereController) loginToVCenter(ctx context.Context, infra *ocpv1.Inf
 		return result
 	}
 	return checks.MakeClusterCheckResultPass()
+}
+
+func hasErrorConditions(opStats operatorapi.OperatorStatus) bool {
+	conditions := opStats.Conditions
+	hasDegradedOrBlockUpgradeConditions := false
+	for _, condition := range conditions {
+		if strings.HasSuffix(condition.Type, operatorapi.OperatorStatusTypeDegraded) {
+			if condition.Status == operatorapi.ConditionTrue {
+				hasDegradedOrBlockUpgradeConditions = true
+			}
+		}
+
+		if strings.HasSuffix(condition.Type, operatorapi.OperatorStatusTypeUpgradeable) {
+			if condition.Status == operatorapi.ConditionFalse {
+				hasDegradedOrBlockUpgradeConditions = true
+			}
+		}
+
+		if hasDegradedOrBlockUpgradeConditions {
+			break
+		}
+	}
+	return hasDegradedOrBlockUpgradeConditions
 }
 
 func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *ocpv1.Infrastructure) error {
