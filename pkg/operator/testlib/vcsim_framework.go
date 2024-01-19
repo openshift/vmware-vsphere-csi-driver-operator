@@ -72,7 +72,7 @@ func SetupSimulator(modelDir string) (*vclib.VSphereConnection, func(), error) {
 	}
 
 	// setup VAPI handlers to provide APIs for tags and categories
-	patterns, handlers := vapisimulator.New(client.URL(), []types.BaseOptionValue{})
+	patterns, handlers := vapisimulator.New(client.URL(), simulator.Map)
 	for _, p := range patterns {
 		model.Service.Handle(p, handlers)
 	}
