@@ -7,12 +7,11 @@ import (
 	"sync"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"gopkg.in/gcfg.v1"
 	iniv1 "gopkg.in/ini.v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/legacy-cloud-providers/vsphere"
 
@@ -306,7 +305,7 @@ func (c *VSphereController) installCSIDriver(
 	if blockUpgrade {
 		upgradeableStatus = operatorapi.ConditionFalse
 	}
-	return blockCSIDriverInstall, c.updateConditions(ctx, c.name, result, opStatus, upgradeableStatus)
+	return blockCSIDriverInstall, c.updateConditions(ctx, c.name, result, opStatus, upgradeableStatus, blockCSIDriverInstall)
 }
 
 func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, error) {
@@ -338,17 +337,17 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 	case checks.ClusterCheckDegrade:
 		clusterCondition = "degraded"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse, true)
 		return updateError, true, false
 	case checks.ClusterCheckUpgradeStateUnknown:
 		clusterCondition = "upgrade_unknown"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionUnknown)
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionUnknown, true)
 		return updateError, true, false
 	case checks.ClusterCheckBlockUpgrade:
 		clusterCondition = "upgrade_blocked"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
-		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse, false)
 		return updateError, false, true
 	case checks.ClusterCheckBlockUpgradeDriverInstall:
 		clusterCondition = "install_blocked"
@@ -356,7 +355,7 @@ func (c *VSphereController) blockUpgradeOrDegradeCluster(
 		clusterCondition = "upgrade_blocked"
 		utils.InstallErrorMetric.WithLabelValues(string(result.CheckStatus), clusterCondition).Set(1)
 		// Set Upgradeable: true with an extra message
-		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse)
+		updateError := c.updateConditions(ctx, c.name, result, status, operatorapi.ConditionFalse, true)
 		return updateError, true, true
 	}
 	return nil, false, false
@@ -482,36 +481,10 @@ func (c *VSphereController) updateConditions(
 	name string,
 	lastCheckResult checks.ClusterCheckResult,
 	status *operatorapi.OperatorStatus,
-	upgradeStatus operatorapi.ConditionStatus) error {
+	upgradeStatus operatorapi.ConditionStatus,
+	blockCSIDriverInstall bool) error {
 
 	updateFuncs := []v1helpers.UpdateStatusFunc{}
-
-	progressingConditionName := name + operatorapi.OperatorStatusTypeProgressing
-	if lastCheckResult.Action == checks.CheckActionBlockUpgradeDriverInstall {
-		// Add a dummy Progressing condition. cluster-storage-operator needs at least one *Progressing
-		// condition to be present in ClusterCSIDriver to compute overall Progressing condition of the driver,
-		// otherwise it sets Progressing=True forever.
-		// In case of CheckActionBlockUpgradeDriverInstall, this dummy condition will be the only Progressing
-		// condition that makes the whole ClusterCSIDriver Progressing=false.
-		klog.V(4).Infof("Adding %s to mark the whole ClusterCSIDriver as Progressing=False", progressingConditionName)
-		progressingCond := operatorapi.OperatorCondition{
-			Type:   progressingConditionName,
-			Status: operatorapi.ConditionFalse,
-		}
-		updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(progressingCond))
-	} else {
-		// Remove the dummy condition, CSIControllerSet will report its own set of progressing conditions.
-		klog.V(4).Infof("Removing %s", progressingConditionName)
-		updateFuncs = append(updateFuncs, func(status *operatorapi.OperatorStatus) error {
-			v1helpers.RemoveOperatorCondition(&status.Conditions, progressingConditionName)
-			return nil
-		})
-	}
-
-	availableCnd := operatorapi.OperatorCondition{
-		Type:   name + operatorapi.OperatorStatusTypeAvailable,
-		Status: operatorapi.ConditionTrue,
-	}
 
 	// we are degrading using a custom name here because, if we use name + Degraded
 	// library-go will override the condition and mark cluster un-degraded.
@@ -524,16 +497,11 @@ func (c *VSphereController) updateConditions(
 
 	if lastCheckResult.Action == checks.CheckActionDegrade {
 		klog.Warningf("Marking cluster as degraded: %s %s", lastCheckResult.CheckStatus, lastCheckResult.Reason)
-		availableCnd.Status = operatorapi.ConditionFalse
-		availableCnd.Reason = string(lastCheckResult.CheckStatus)
-		availableCnd.Message = lastCheckResult.Reason
-
 		degradeCond.Status = operatorapi.ConditionTrue
 		degradeCond.Reason = string(lastCheckResult.CheckStatus)
 		degradeCond.Message = lastCheckResult.Reason
 	}
 
-	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(availableCnd))
 	updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(degradeCond))
 
 	allowUpgradeCond := operatorapi.OperatorCondition{
@@ -555,6 +523,34 @@ func (c *VSphereController) updateConditions(
 		blockUpgradeMessage = lastCheckResult.Reason
 		allowUpgradeCond, conditionChanged = c.addUpgradeableBlockCondition(lastCheckResult, name, status, operatorapi.ConditionTrue)
 	}
+
+	// Mark operator as disabled if the CSI driver is not running. CSO will then set Progressing=False and Available=True,
+	// with proper messages.
+	disabledConditionName := c.name + "Disabled"
+	if !c.operandControllerStarted && blockCSIDriverInstall {
+		klog.V(4).Infof("Adding %s: True", disabledConditionName)
+		disabledCond := operatorapi.OperatorCondition{
+			Type:    disabledConditionName,
+			Status:  operatorapi.ConditionTrue,
+			Message: lastCheckResult.Reason,
+		}
+		updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(disabledCond))
+	} else {
+		// Remove the disabled condition
+		klog.V(4).Infof("Removing %s", disabledConditionName)
+		updateFuncs = append(updateFuncs, func(status *operatorapi.OperatorStatus) error {
+			v1helpers.RemoveOperatorCondition(&status.Conditions, disabledConditionName)
+			return nil
+		})
+	}
+
+	// VMwareVSphereControllerAvailable handling was removed in 4.16. Remove the stale condition, if it exists.
+	// TODO: remove in 4.17
+	obsoleteConditionName := c.name + operatorapi.OperatorStatusTypeAvailable
+	updateFuncs = append(updateFuncs, func(status *operatorapi.OperatorStatus) error {
+		v1helpers.RemoveOperatorCondition(&status.Conditions, obsoleteConditionName)
+		return nil
+	})
 
 	if len(blockUpgradeMessage) > 0 {
 		klog.Warningf(blockUpgradeMessage)
