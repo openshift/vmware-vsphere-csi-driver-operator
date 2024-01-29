@@ -19,6 +19,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/metrics/testutil"
 )
 
@@ -120,10 +121,6 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionTrue,
 				},
@@ -143,12 +140,12 @@ func TestSync(t *testing.T) {
 			failVCenterConnection:        true,
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionUnknown,
+				},
+				{
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
 				},
 			},
 			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_unknown",failure_reason="vsphere_connection_failed"} 1`,
@@ -166,8 +163,14 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			failVCenterConnection:        true,
 			expectError:                  fmt.Errorf("can't talk to vcenter"),
-			operandStarted:               true,
-			storageClassCreated:          false,
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when vcenter version is older, block upgrades",
@@ -178,10 +181,6 @@ func TestSync(t *testing.T) {
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
-				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
@@ -201,10 +200,6 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
 				},
@@ -222,8 +217,14 @@ func TestSync(t *testing.T) {
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectError:                  fmt.Errorf("found older vcenter version, expected is 6.7.3"),
-			operandStarted:               true,
-			storageClassCreated:          false,
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: false,
 		},
 		{
 			name:                         "when all configuration is right, but an existing upstream CSI driver exists",
@@ -236,12 +237,12 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
 				},
 			},
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
@@ -260,12 +261,12 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
 				},
 			},
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
@@ -284,10 +285,6 @@ func TestSync(t *testing.T) {
 			finalNodeHardwareVersions:    []string{"vmx-15", "vmx-15"},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
-				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionTrue,
@@ -322,10 +319,6 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
 				},
@@ -343,10 +336,6 @@ func TestSync(t *testing.T) {
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
-				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
@@ -366,10 +355,6 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
 				},
@@ -388,10 +373,6 @@ func TestSync(t *testing.T) {
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetIntreePV("test-123"), testlib.GetAdminGateConfigMap(false)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
-				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
 				{
 					Type:    testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status:  opv1.ConditionTrue,
@@ -414,10 +395,6 @@ func TestSync(t *testing.T) {
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetAdminGateConfigMap(true)},
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
-				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionTrue,
@@ -519,6 +496,10 @@ func TestSync(t *testing.T) {
 			if err != nil {
 				t.Errorf("failed to get operator state: %+v", err)
 			}
+			extraConditions := sets.New[string]()
+			for i := range status.Conditions {
+				extraConditions.Insert(status.Conditions[i].Type)
+			}
 			for i := range test.expectedConditions {
 				expectedCondition := test.expectedConditions[i]
 				matchingCondition := testlib.GetMatchingCondition(status.Conditions, expectedCondition.Type)
@@ -528,7 +509,6 @@ func TestSync(t *testing.T) {
 				if matchingCondition.Status != expectedCondition.Status {
 					t.Fatalf("for condition %s: expected status: %v, got: %v", expectedCondition.Type, expectedCondition.Status, matchingCondition.Status)
 				}
-
 				if expectedCondition.Message != "" && expectedCondition.Message != matchingCondition.Message {
 					t.Fatalf("for condition %s: expected message: %v, got: %v", expectedCondition.Type, expectedCondition.Message, matchingCondition.Message)
 				}
@@ -536,6 +516,10 @@ func TestSync(t *testing.T) {
 				if expectedCondition.Reason != "" && expectedCondition.Reason != matchingCondition.Reason {
 					t.Fatalf("for condition %s: expected reason: %v, got: %v", expectedCondition.Type, expectedCondition.Reason, matchingCondition.Reason)
 				}
+				extraConditions.Delete(expectedCondition.Type)
+			}
+			if len(extraConditions) > 0 {
+				t.Fatalf("found unexpected conditions: %+v", extraConditions.UnsortedList())
 			}
 
 			if test.operandStarted != ctrl.operandControllerStarted {
