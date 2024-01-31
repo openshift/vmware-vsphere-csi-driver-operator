@@ -18,6 +18,7 @@ import (
 	iniv1 "gopkg.in/ini.v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/metrics/testutil"
 )
 
@@ -109,12 +110,12 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionTrue,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionTrue,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
 				},
 			},
 			operandStarted:      true,
@@ -131,12 +132,16 @@ func TestSync(t *testing.T) {
 			failVCenterConnection:        true,
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionUnknown,
+				},
+				{
+					Type:   testControllerName + "Disabled",
 					Status: opv1.ConditionTrue,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionUnknown,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
 				},
 			},
 			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_unknown",failure_reason="vsphere_connection_failed"} 1`,
@@ -154,12 +159,12 @@ func TestSync(t *testing.T) {
 			failVCenterConnection:        true,
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionFalse,
-				},
-				{
 					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
 				},
 			},
 			operandStarted:      true,
@@ -174,11 +179,11 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionFalse,
 				},
 			},
@@ -195,11 +200,11 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionFalse,
 				},
 			},
@@ -216,12 +221,12 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionFalse,
-				},
-				{
 					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
 				},
 			},
 			storageClassCreated: false,
@@ -237,15 +242,15 @@ func TestSync(t *testing.T) {
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeProgressing,
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionFalse,
 				},
 			},
@@ -264,15 +269,15 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
-				},
-				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeProgressing,
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionFalse,
 				},
 			},
@@ -292,12 +297,12 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
 					Status: opv1.ConditionTrue,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
-					Status: opv1.ConditionTrue,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
 				},
 			},
 			operandStarted:      true,
@@ -327,11 +332,11 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionFalse,
 				},
 			},
@@ -348,11 +353,11 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			configObjects:                runtime.Object(testlib.GetInfraObject()),
 			expectedConditions: []opv1.OperatorCondition{
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
 				},
 				{
-					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
 					Status: opv1.ConditionFalse,
 				},
 			},
@@ -451,6 +456,10 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			if err != nil {
 				t.Errorf("failed to get operator state: %+v", err)
 			}
+			extraConditions := sets.New[string]()
+			for i := range status.Conditions {
+				extraConditions.Insert(status.Conditions[i].Type)
+			}
 			for i := range test.expectedConditions {
 				expectedCondition := test.expectedConditions[i]
 				matchingCondition := testlib.GetMatchingCondition(status.Conditions, expectedCondition.Type)
@@ -460,6 +469,10 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 				if matchingCondition.Status != expectedCondition.Status {
 					t.Fatalf("for condition %s: expected status: %v, got: %v", expectedCondition.Type, expectedCondition.Status, matchingCondition.Status)
 				}
+				extraConditions.Delete(expectedCondition.Type)
+			}
+			if len(extraConditions) > 0 {
+				t.Fatalf("found unexpected conditions: %+v", extraConditions.UnsortedList())
 			}
 
 			if test.operandStarted != ctrl.operandControllerStarted {
@@ -614,10 +627,6 @@ func TestHasErrorCondition(t *testing.T) {
 			name: "when operator status is degraded",
 			opStatus: opv1.OperatorStatus{
 				Conditions: []opv1.OperatorCondition{
-					{
-						Type:   controllerName + opv1.OperatorStatusTypeAvailable,
-						Status: opv1.ConditionTrue,
-					},
 					{
 						Type:   controllerName + opv1.OperatorStatusTypeDegraded,
 						Status: opv1.ConditionTrue,
