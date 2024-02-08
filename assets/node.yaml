@@ -20,6 +20,8 @@ spec:
         app: vmware-vsphere-csi-driver-node
       annotations:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+        # This annotation prevents eviction from the cluster-autoscaler
+        cluster-autoscaler.kubernetes.io/enable-ds-eviction: "false"
     spec:
       hostNetwork: true
       serviceAccount: vmware-vsphere-csi-driver-node-sa
