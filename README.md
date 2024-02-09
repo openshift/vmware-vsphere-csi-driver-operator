@@ -41,3 +41,6 @@ export VMWARE_VSPHERE_SYNCER_IMAGE=quay.io/openshift/origin-vsphere-csi-driver-s
 ./vmware-vsphere-csi-driver-operator start --kubeconfig $MY_KUBECONFIG --namespace openshift-cluster-csi-drivers
 ```
 
+
+
+
