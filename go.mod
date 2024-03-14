@@ -123,3 +123,5 @@ require (
 )
 
 replace github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible
+
+replace github.com/openshift/api v0.0.0-20240202140003-8b34b9854c7f => github.com/RomanBednar/api v0.0.0-20240315105154-fe2e9f28b3ad
