@@ -29,6 +29,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
+	corev1informers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
 	storagelister "k8s.io/client-go/listers/storage/v1"
@@ -38,7 +39,7 @@ import (
 type VSphereController struct {
 	name                     string
 	targetNamespace          string
-	manifest                 []byte
+	secretManifest           []byte
 	eventRecorder            events.Recorder
 	kubeClient               kubernetes.Interface
 	operatorClient           v1helpers.OperatorClientWithFinalizers
@@ -90,7 +91,7 @@ func NewVSphereController(
 	name, targetNamespace string,
 	apiClients utils.APIClient,
 	csiConfigManifest []byte,
-	cloudConfigManifest []byte,
+	secretManifest []byte,
 	recorder events.Recorder,
 ) factory.Controller {
 	kubeInformers := apiClients.KubeInformers
@@ -118,7 +119,7 @@ func NewVSphereController(
 		apiClients:              apiClients,
 		eventRecorder:           rc,
 		vSphereChecker:          newVSphereEnvironmentChecker(),
-		manifest:                cloudConfigManifest,
+		secretManifest:          secretManifest,
 		csiConfigManifest:       csiConfigManifest,
 		clusterCSIDriverLister:  apiClients.ClusterCSIDriverInformer.Lister(),
 		infraLister:             infraInformer.Lister(),
@@ -633,13 +634,13 @@ func (c *VSphereController) createCSIConfigMap(
 
 	datastoreURL := defaultDatastore.Summary.Url
 
-	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, datastoreURL)
+	requiredSecret, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, datastoreURL)
 	if err != nil {
 		return err
 	}
 
 	// TODO: check if configMap has been deployed and set appropriate conditions
-	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
+	_, _, err = resourceapply.ApplySecret(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredSecret)
 	if err != nil {
 		return fmt.Errorf("error applying vsphere csi driver config: %v", err)
 	}
@@ -651,7 +652,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	infra *ocpv1.Infrastructure,
 	sourceCFG vsphere.VSphereConfig,
 	clusterCSIDriver *operatorapi.ClusterCSIDriver,
-	datastoreURL string) (*corev1.ConfigMap, error) {
+	datastoreURL string) (*corev1.Secret, error) {
 
 	csiConfigString := string(c.csiConfigManifest)
 
@@ -662,12 +663,18 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	}
 
 	datacenters := strings.Join(dataCenterNames, ",")
+	user, password, err := getUserPass(defaultNamespace, cloudCredSecretName, infra, c.configMapLister, c.apiClients.SecretInformer)
+	if err != nil {
+		return nil, err
+	}
 
 	for pattern, value := range map[string]string{
 		"${CLUSTER_ID}":              infra.Status.InfrastructureName,
 		"${VCENTER}":                 sourceCFG.Workspace.VCenterIP,
 		"${DATACENTERS}":             datacenters,
 		"${MIGRATION_DATASTORE_URL}": datastoreURL,
+		"${USER}":                    user,
+		"${PASSWORD}":                password,
 	} {
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
 	}
@@ -687,9 +694,9 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	var finalConfigString strings.Builder
 	csiConfig.WriteTo(&finalConfigString)
 
-	requiredCM := resourceread.ReadConfigMapV1OrDie(c.manifest)
-	requiredCM.Data["cloud.conf"] = finalConfigString.String()
-	return requiredCM, nil
+	requiredSecret := resourceread.ReadSecretV1OrDie(c.secretManifest)
+	requiredSecret.Data["cloud.conf"] = []byte(finalConfigString.String())
+	return requiredSecret, nil
 
 }
 
@@ -709,4 +716,65 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 		c.eventRecorder,
 	)
 	return storageClassController
+}
+
+func getUserPass(namespace string, secretName string, infra *ocpv1.Infrastructure, configMapLister corelister.ConfigMapLister, secretInformer corev1informers.SecretInformer,
+) (string, string, error) {
+	secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
+	if err != nil {
+		return "", "", err
+	}
+
+	vCenterName, err := getvCenterName(infra, configMapLister)
+	if err != nil {
+		return "", "", err
+	}
+
+	// CCO generates a secret that contains dynamic keys, for example:
+	// oc get secret/vmware-vsphere-cloud-credentials -o json | jq .data
+	// {
+	//   "vcenter.xyz.vmwarevmc.com.password": "***",
+	//   "vcenter.xyz.vmwarevmc.com.username": "***"
+	// }
+	// So we need to figure those keys out
+	var usernameKey, passwordKey string
+
+	if len(secret.Data) > 2 {
+		klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
+	}
+
+	usernameKey = vCenterName + ".username"
+	passwordKey = vCenterName + ".password"
+
+	if usernameKey == "" || passwordKey == "" {
+		return "", "", fmt.Errorf("could not find vSphere credentials in secret %s/%s", secret.Namespace, secret.Name)
+	}
+
+	// Get user and pass from CCO secret
+	return string(secret.Data[usernameKey]), string(secret.Data[passwordKey]), nil
+}
+
+func getvCenterName(infra *ocpv1.Infrastructure, configmapLister corelister.ConfigMapLister) (string, error) {
+	// This change can only be used in >=4.13 versions of OCP
+	vSphereInfraConfig := infra.Spec.PlatformSpec.VSphere
+	if vSphereInfraConfig != nil && len(vSphereInfraConfig.VCenters) > 0 {
+		return vSphereInfraConfig.VCenters[0].Server, nil
+	}
+
+	cloudConfig := infra.Spec.CloudConfig
+	cloudConfigMap, err := configmapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
+	if err != nil {
+		return "", fmt.Errorf("failed to get cloud config: %v", err)
+	}
+
+	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
+	if !ok {
+		return "", fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
+	}
+	cfg := new(vsphere.VSphereConfig)
+	err = gcfg.ReadStringInto(cfg, cfgString)
+	if err != nil {
+		return "", err
+	}
+	return cfg.Workspace.VCenterIP, nil
 }

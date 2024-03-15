@@ -38,7 +38,7 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	nodeLister := apiClients.NodeInformer.Lister()
 	rc := events.NewInMemoryRecorder(testControllerName)
 
-	cloudConfigBytes, _ := assets.ReadFile("vsphere_cloud_config.yaml")
+	secretBytes, _ := assets.ReadFile("vsphere_cloud_config_secret.yaml")
 
 	csiConfigBytes, _ := assets.ReadFile("csi_cloud_config.ini")
 
@@ -53,7 +53,7 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 		scLister:               scInformer.Lister(),
 		csiDriverLister:        csiDriverLister,
 		nodeLister:             nodeLister,
-		manifest:               cloudConfigBytes,
+		secretManifest:         secretBytes,
 		csiConfigManifest:      csiConfigBytes,
 		apiClients:             *apiClients,
 		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
