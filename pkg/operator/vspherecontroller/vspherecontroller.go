@@ -683,6 +683,13 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
 	}
 
+	snapshotOptions := utils.GetSnapshotOptions(clusterCSIDriver)
+	if len(snapshotOptions) > 0 {
+		for k, v := range snapshotOptions {
+			csiConfig.Section("Snapshot").Key(k).SetValue(v)
+		}
+	}
+
 	// lets dump the ini file to a string
 	var finalConfigString strings.Builder
 	csiConfig.WriteTo(&finalConfigString)
