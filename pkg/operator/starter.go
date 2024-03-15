@@ -87,7 +87,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ClusterCSIDriverInformer: clusterCSIDriverInformer,
 	}
 
-	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config.yaml")
+	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config_secret.yaml")
 	if err != nil {
 		return err
 	}

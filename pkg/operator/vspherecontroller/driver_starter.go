@@ -141,7 +141,7 @@ func (c *VSphereController) createCSIDriver() {
 			trustedCAConfigMap,
 			c.apiClients.ConfigMapInformer,
 		),
-		WithConfigMapDaemonSetAnnotationHook("vsphere-csi-config", defaultNamespace, c.apiClients.ConfigMapInformer),
+		WithSecretDaemonSetAnnotationHook("vsphere-csi-config-secret", defaultNamespace, c.apiClients.SecretInformer),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
@@ -210,12 +210,12 @@ func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFun
 	}
 }
 
-func WithConfigMapDaemonSetAnnotationHook(configMapName, namespace string, configMapInformer corev1informers.ConfigMapInformer) csidrivernodeservicecontroller.DaemonSetHookFunc {
+func WithSecretDaemonSetAnnotationHook(secretName, namespace string, secretInformer corev1informers.SecretInformer) csidrivernodeservicecontroller.DaemonSetHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
 		inputHashes, err := resourcehash.MultipleObjectHashStringMapForObjectReferenceFromLister(
-			configMapInformer.Lister(),
 			nil,
-			resourcehash.NewObjectRef().ForConfigMap().InNamespace(namespace).Named(configMapName),
+			secretInformer.Lister(),
+			resourcehash.NewObjectRef().ForSecret().InNamespace(namespace).Named(secretName),
 		)
 		if err != nil {
 			return fmt.Errorf("invalid dependency reference: %w", err)

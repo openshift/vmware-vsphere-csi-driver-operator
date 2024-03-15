@@ -383,8 +383,8 @@ spec:
         - name: socket-dir
           emptyDir: {}
         - name: vsphere-csi-config-volume
-          configMap:
-            name: vsphere-csi-config
+          secret:
+            secretName: vsphere-csi-config-secret
         - name: metrics-serving-cert
           secret:
             secretName: vmware-vsphere-csi-driver-controller-metrics-serving-cert

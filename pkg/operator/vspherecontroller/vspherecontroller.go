@@ -39,7 +39,7 @@ import (
 type VSphereController struct {
 	name                     string
 	targetNamespace          string
-	manifest                 []byte
+	secretManifest           []byte
 	eventRecorder            events.Recorder
 	kubeClient               kubernetes.Interface
 	operatorClient           v1helpers.OperatorClientWithFinalizers
@@ -91,7 +91,7 @@ func NewVSphereController(
 	name, targetNamespace string,
 	apiClients utils.APIClient,
 	csiConfigManifest []byte,
-	cloudConfigManifest []byte,
+	secretManifest []byte,
 	recorder events.Recorder,
 ) factory.Controller {
 	kubeInformers := apiClients.KubeInformers
@@ -119,7 +119,7 @@ func NewVSphereController(
 		apiClients:              apiClients,
 		eventRecorder:           rc,
 		vSphereChecker:          newVSphereEnvironmentChecker(),
-		manifest:                cloudConfigManifest,
+		secretManifest:          secretManifest,
 		csiConfigManifest:       csiConfigManifest,
 		clusterCSIDriverLister:  apiClients.ClusterCSIDriverInformer.Lister(),
 		infraLister:             infraInformer.Lister(),
@@ -260,7 +260,7 @@ func (c *VSphereController) installCSIDriver(
 		return blockCSIDriverInstall, nil
 	}
 
-	err = c.createCSIConfigMap(ctx, syncContext, infra, clusterCSIDriver)
+	err = c.createCSISecret(ctx, syncContext, infra, clusterCSIDriver)
 
 	if err != nil {
 		return blockCSIDriverInstall, err
@@ -598,7 +598,7 @@ func (c *VSphereController) addUpgradeableBlockCondition(
 	return blockUpgradeCondition, true
 }
 
-func (c *VSphereController) createCSIConfigMap(
+func (c *VSphereController) createCSISecret(
 	ctx context.Context,
 	syncContext factory.SyncContext,
 	infra *ocpv1.Infrastructure,
@@ -634,13 +634,13 @@ func (c *VSphereController) createCSIConfigMap(
 
 	datastoreURL := defaultDatastore.Summary.Url
 
-	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, datastoreURL)
+	requiredSecret, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, datastoreURL)
 	if err != nil {
 		return err
 	}
 
 	// TODO: check if configMap has been deployed and set appropriate conditions
-	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredCM)
+	_, _, err = resourceapply.ApplySecret(ctx, c.kubeClient.CoreV1(), syncContext.Recorder(), requiredSecret)
 	if err != nil {
 		return fmt.Errorf("error applying vsphere csi driver config: %v", err)
 	}
@@ -652,7 +652,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	infra *ocpv1.Infrastructure,
 	sourceCFG vsphere.VSphereConfig,
 	clusterCSIDriver *operatorapi.ClusterCSIDriver,
-	datastoreURL string) (*corev1.ConfigMap, error) {
+	datastoreURL string) (*corev1.Secret, error) {
 
 	csiConfigString := string(c.csiConfigManifest)
 
@@ -701,9 +701,9 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	var finalConfigString strings.Builder
 	csiConfig.WriteTo(&finalConfigString)
 
-	requiredCM := resourceread.ReadConfigMapV1OrDie(c.manifest)
-	requiredCM.Data["cloud.conf"] = finalConfigString.String()
-	return requiredCM, nil
+	requiredSecret := resourceread.ReadSecretV1OrDie(c.secretManifest)
+	requiredSecret.Data["cloud.conf"] = []byte(finalConfigString.String())
+	return requiredSecret, nil
 
 }
 

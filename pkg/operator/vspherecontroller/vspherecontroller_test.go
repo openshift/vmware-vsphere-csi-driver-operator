@@ -38,7 +38,7 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	nodeLister := apiClients.NodeInformer.Lister()
 	rc := events.NewInMemoryRecorder(testControllerName)
 
-	cloudConfigBytes, _ := assets.ReadFile("vsphere_cloud_config.yaml")
+	secretBytes, _ := assets.ReadFile("vsphere_cloud_config_secret.yaml")
 
 	csiConfigBytes, _ := assets.ReadFile("csi_cloud_config.ini")
 
@@ -53,7 +53,7 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 		scLister:               scInformer.Lister(),
 		csiDriverLister:        csiDriverLister,
 		nodeLister:             nodeLister,
-		manifest:               cloudConfigBytes,
+		secretManifest:         secretBytes,
 		csiConfigManifest:      csiConfigBytes,
 		apiClients:             *apiClients,
 		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
@@ -533,13 +533,14 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 		tc := tests[i]
 		t.Run(tc.name, func(t *testing.T) {
 			infra := testlib.GetInfraObject()
-			commonApiClient := testlib.NewFakeClients([]runtime.Object{}, tc.operatorObj, infra)
+			initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+			commonApiClient := testlib.NewFakeClients(initialObjects, tc.operatorObj, infra)
 			testlib.AddClusterCSIDriverClient(commonApiClient, tc.clusterCSIDriver)
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
 			go testlib.StartFakeInformer(commonApiClient, stopCh)
-			if err := testlib.AddInitialObjects([]runtime.Object{tc.clusterCSIDriver}, commonApiClient); err != nil {
+			if err := testlib.AddInitialObjects(initialObjects, commonApiClient); err != nil {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
 
