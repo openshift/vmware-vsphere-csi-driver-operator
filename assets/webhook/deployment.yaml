@@ -62,6 +62,7 @@ spec:
             - mountPath: /etc/webhook/config
               name: config
               readOnly: true
+          terminationMessagePolicy: FallbackToLogsOnError
       volumes:
         - name: socket-dir
           emptyDir: {}
