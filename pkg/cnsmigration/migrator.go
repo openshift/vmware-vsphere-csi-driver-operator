@@ -15,13 +15,11 @@ import (
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/soap"
 	vim "github.com/vmware/govmomi/vim25/types"
-	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
 const (
@@ -263,6 +261,8 @@ func (c *CNSVolumeMigrator) loginToVCenter(ctx context.Context) error {
 	}
 
 	klog.V(3).Infof("Creating vSphere connection")
+
+	// TODO: Here we need to change to new style config w/ INI and YAML support.
 	cloudConfig := infra.Spec.CloudConfig
 	cloudConfigMap, err := c.clientSet.CoreV1().ConfigMaps(cloudConfigNamespace).Get(ctx, cloudConfig.Name, metav1.GetOptions{})
 	if err != nil {
@@ -273,27 +273,44 @@ func (c *CNSVolumeMigrator) loginToVCenter(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
-	cfg := new(vsphere.VSphereConfig)
-	err = gcfg.ReadStringInto(cfg, cfgString)
+
+	config := new(vclib.VSphereConfig)
+	err = config.LoadConfig(cfgString)
 	if err != nil {
 		return err
+	}
+
+	// For multi vCenter, this tool only handles 1 vCenter.  Until parameter specifying which vCenter, we'll just assume
+	// INI config is in use and just grab from workspace default vCenter for now.
+	if len(config.Config.VirtualCenter) > 1 {
+		return fmt.Errorf("multiple vCenters detected in cloud config")
+	}
+
+	var vCenter string
+	if config.LegacyConfig != nil {
+		vCenter = config.LegacyConfig.Workspace.VCenterIP
+	} else {
+		// If we are here, its YAML cloud config with one vCenter.  We can grab from map.
+		for vCenterName := range config.Config.VirtualCenter {
+			vCenter = vCenterName
+		}
 	}
 
 	secret, err := c.clientSet.CoreV1().Secrets(secretNamespace).Get(ctx, cloudCredSecretName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	userKey := cfg.Workspace.VCenterIP + "." + "username"
+	userKey := vCenter + "." + "username"
 	username, ok := secret.Data[userKey]
 	if !ok {
 		return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, userKey)
 	}
-	passwordKey := cfg.Workspace.VCenterIP + "." + "password"
+	passwordKey := vCenter + "." + "password"
 	password, ok := secret.Data[passwordKey]
 	if !ok {
 		return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
 	}
-	vs := vclib.NewVSphereConnection(string(username), string(password), cfg)
+	vs := vclib.NewVSphereConnection(string(username), string(password), vCenter, config)
 	c.vSphereConnection = vs
 
 	if err = c.vSphereConnection.Connect(ctx); err != nil {

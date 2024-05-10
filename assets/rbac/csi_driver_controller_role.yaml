@@ -40,7 +40,7 @@ rules:
     resources: ["triggercsifullsyncs"]
     verbs: ["create", "get", "update", "watch", "list"]
   - apiGroups: ["cns.vmware.com"]
-    resources: ["cnsvspherevolumemigrations"]
+    resources: ["cnsvolumeinfoes"]
     verbs: ["create", "get", "list", "watch", "update", "delete"]
   - apiGroups: ["cns.vmware.com"]
     resources: ["cnsvolumeoperationrequests"]

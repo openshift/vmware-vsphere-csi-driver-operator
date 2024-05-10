@@ -13,6 +13,7 @@ import (
 
 	goruntime "runtime"
 
+	ocpv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -20,10 +21,8 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	vapisimulator "github.com/vmware/govmomi/vapi/simulator"
 	"github.com/vmware/govmomi/vim25/types"
-	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
 const (
@@ -54,11 +53,53 @@ func init() {
 	}
 }
 
-func SetupSimulator(modelDir string) (*vclib.VSphereConnection, func(), error) {
+func SetupSimulator(modelDir string, infra *ocpv1.Infrastructure) ([]*vclib.VSphereConnection, func(), error) {
+	var connections []*vclib.VSphereConnection
+	var servers []*simulator.Server
+	var models []*simulator.Model
+
+	createdVCs := make(map[string]*vclib.VSphereConnection)
+	if len(infra.Spec.PlatformSpec.VSphere.FailureDomains) > 0 {
+		fmt.Printf("Adding connections via FD\n")
+		for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+			if createdVCs[fd.Server] == nil {
+				conn, server, model, err := createConnection(modelDir, fd.Server)
+				if err != nil {
+					return nil, nil, err
+				}
+				connections = append(connections, conn)
+				servers = append(servers, server)
+				models = append(models, model)
+			}
+		}
+	} else {
+		// This is testcase for when no FDs are defined.  Default back to old behavior.
+		fmt.Printf("Adding connections via NON FD\n")
+		conn, server, model, err := createConnection(modelDir, "foobar.lan")
+		if err != nil {
+			return nil, nil, err
+		}
+		connections = append(connections, conn)
+		servers = append(servers, server)
+		models = append(models, model)
+	}
+
+	cleanup := func() {
+		for _, s := range servers {
+			s.Close()
+		}
+		for _, model := range models {
+			model.Remove()
+		}
+	}
+	return connections, cleanup, nil
+}
+
+func createConnection(modelDir, server string) (*vclib.VSphereConnection, *simulator.Server, *simulator.Model, error) {
 	model := simulator.VPX()
 	err := model.Load(modelDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	model.Service.TLS = new(tls.Config)
 
@@ -68,7 +109,7 @@ func SetupSimulator(modelDir string) (*vclib.VSphereConnection, func(), error) {
 
 	client, err := ConnectToSimulator(s)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to the similator: %s", err)
+		return nil, nil, nil, fmt.Errorf("failed to connect to the similator: %s", err)
 	}
 
 	// setup VAPI handlers to provide APIs for tags and categories
@@ -82,6 +123,8 @@ func SetupSimulator(modelDir string) (*vclib.VSphereConnection, func(), error) {
 		Client:   client,
 		Username: "admin@vsphere.local",
 		Password: "foobar",
+		Hostname: server,
+		Insecure: true,
 	}
 
 	userInfo := url.UserPassword(conn.Username, conn.Password)
@@ -93,11 +136,7 @@ func SetupSimulator(modelDir string) (*vclib.VSphereConnection, func(), error) {
 	}
 	conn.RestClient = restClient
 
-	cleanup := func() {
-		s.Close()
-		model.Remove()
-	}
-	return conn, cleanup, nil
+	return conn, s, model, nil
 }
 
 func ConnectToSimulator(s *simulator.Server) (*govmomi.Client, error) {
@@ -138,10 +177,19 @@ func DefaultNodes() []*v1.Node {
 	return nodes
 }
 
-func simulatorConfig() *vsphere.VSphereConfig {
-	var cfg vsphere.VSphereConfig
+func simulatorConfig() *vclib.VSphereConfig {
+	var cfg vclib.VSphereConfig
+	data := cloudProviderConfig()
+	err := cfg.LoadConfig(data)
+	if err != nil {
+		panic(err)
+	}
+	return &cfg
+}
+
+func cloudProviderConfig() string {
 	// Configuration that corresponds to the simulated vSphere
-	data := `[Global]
+	return `[Global]
 secret-name = "vsphere-creds"
 secret-namespace = "kube-system"
 insecure-flag = "1"
@@ -155,11 +203,6 @@ folder = "/DC0/vm"
 [VirtualCenter "dc0"]
 datacenters = "DC0"
 `
-	err := gcfg.ReadStringInto(&cfg, data)
-	if err != nil {
-		panic(err)
-	}
-	return &cfg
 }
 
 func CustomizeVCenterVersion(version string, apiVersion string, conn *vclib.VSphereConnection) {

@@ -42,7 +42,7 @@ const (
 var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine", "Folder"}
 
 type vCenterInterface interface {
-	GetDefaultDatastore(ctx context.Context) (*mo.Datastore, error)
+	GetDefaultDatastore(ctx context.Context, infra *v1.Infrastructure) (*mo.Datastore, error)
 	createStoragePolicy(ctx context.Context) (string, error)
 	checkForExistingPolicy(ctx context.Context) (bool, error)
 	createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error
@@ -65,6 +65,7 @@ type storagePolicyAPI struct {
 var _ vCenterInterface = &storagePolicyAPI{}
 
 func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
+	// TODO: Need to evaluate how to handle new storage policy in multi vcenter env
 	storagePolicyAPIClient := &storagePolicyAPI{
 		vcenterApiConnection: connection,
 		infra:                infra,
@@ -76,12 +77,31 @@ func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnectio
 	return storagePolicyAPIClient
 }
 
-func (v *storagePolicyAPI) GetDefaultDatastore(ctx context.Context) (*mo.Datastore, error) {
+func (v *storagePolicyAPI) GetDefaultDatastore(ctx context.Context, infra *v1.Infrastructure) (*mo.Datastore, error) {
 	vmClient := v.vcenterApiConnection.Client
 	config := v.vcenterApiConnection.Config
 	finder := find.NewFinder(vmClient.Client, false)
-	dcName := config.Workspace.Datacenter
-	dsName := config.Workspace.DefaultDatastore
+
+	// Following pattern of older generated ini config, default datastore is from FD[0], else if no FDs are define, we'll
+	// grab from deprecated fields
+	var dcName, dsName string
+	if infra.Spec.PlatformSpec.VSphere != nil && len(infra.Spec.PlatformSpec.VSphere.FailureDomains) > 0 {
+		// Due to first FD potentially not matching first vCenter in infra section, lets find correct one.
+		for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+			if fd.Server == v.vcenterApiConnection.Hostname {
+				dcName = fd.Topology.Datacenter
+				dsName = fd.Topology.Datastore
+				break
+			}
+		}
+	} else {
+		if config != nil {
+			dcName = config.GetWorkspaceDatacenter()
+			dsName = config.GetDefaultDatastore()
+		} else {
+			return nil, fmt.Errorf("unable to determine default datastore from current config")
+		}
+	}
 	dc, err := finder.Datacenter(ctx, dcName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to access datacenter %s: %s", dcName, err)
@@ -135,12 +155,18 @@ func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string
 
 	var aggregatedErrors []error
 
+	// Failure domains go across vCenters.  So really we want to only do failure domains that are for this connection's
+	// vCenter.
 	for _, failureDomain := range failureDomains {
-		dataCenter := failureDomain.Topology.Datacenter
-		dataStore := failureDomain.Topology.Datastore
-		err := v.attachTags(ctx, dataCenter, dataStore)
-		if err != nil {
-			aggregatedErrors = append(aggregatedErrors, err)
+		klog.V(4).Infof("Is failure domain %v part of this connection (%v): %v", failureDomain.Name, v.vcenterApiConnection.Hostname, failureDomain.Server == v.vcenterApiConnection.Hostname)
+		if failureDomain.Server == v.vcenterApiConnection.Hostname {
+			klog.V(4).Infof("Attempting to attach tag for failure domain %v", failureDomain.Name)
+			dataCenter := failureDomain.Topology.Datacenter
+			dataStore := failureDomain.Topology.Datastore
+			err := v.attachTags(ctx, dataCenter, dataStore)
+			if err != nil {
+				aggregatedErrors = append(aggregatedErrors, err)
+			}
 		}
 	}
 
@@ -180,22 +206,27 @@ func (v *storagePolicyAPI) attachTags(ctx context.Context, dcName, dsName string
 }
 
 func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, error) {
+	klog.V(1).Info("Checking for policy")
 	found, err := v.checkForExistingPolicy(ctx)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error finding existing policy: %v", err)
 	}
 
 	if found {
+		klog.V(1).Info("Found policy")
 		v.policyCreated = true
 	}
 
 	vSphereInfraConfig := v.infra.Spec.PlatformSpec.VSphere
 	if vSphereInfraConfig != nil && len(vSphereInfraConfig.FailureDomains) > 0 {
+		klog.V(4).Info("Creating zonal policy")
 		return v.createZonalStoragePolicy(ctx)
 	}
 
-	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
-	dcName := v.vcenterApiConnection.Config.Workspace.Datacenter
+	// Since we create zonal storage policy when in multi vcenter or single vcenter w/ zones, the below is
+	// only for case where cluster is upgrade from a version that used a non FailureDomain config.
+	dsName := v.vcenterApiConnection.Config.LegacyConfig.Workspace.DefaultDatastore
+	dcName := v.vcenterApiConnection.Config.LegacyConfig.Workspace.Datacenter
 
 	err = v.attachTags(ctx, dcName, dsName)
 	if err != nil {
