@@ -6,14 +6,17 @@ import (
 )
 
 type CheckArgs struct {
-	vmConnection *check.VSphereConnection
-	apiClient    KubeAPIInterface
+	vmConnection        []*check.VSphereConnection
+	apiClient           KubeAPIInterface
+	multiVCenterEnabled bool
 }
 
-func NewCheckArgs(connection *check.VSphereConnection, apiClient KubeAPIInterface) CheckArgs {
+func NewCheckArgs(connection []*check.VSphereConnection, apiClient KubeAPIInterface, multiVCenterEnabled bool) CheckArgs {
+	// TODO: May need to update this w/ multiple vcenter connections.
 	return CheckArgs{
-		vmConnection: connection,
-		apiClient:    apiClient,
+		vmConnection:        connection,
+		apiClient:           apiClient,
+		multiVCenterEnabled: multiVCenterEnabled,
 	}
 }
 

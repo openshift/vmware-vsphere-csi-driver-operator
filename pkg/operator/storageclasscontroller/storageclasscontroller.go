@@ -44,7 +44,7 @@ var (
 )
 
 type StorageClassSyncInterface interface {
-	Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+	Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
 }
 
 type StorageClassController struct {
@@ -55,7 +55,7 @@ type StorageClassController struct {
 	operatorClient       v1helpers.OperatorClient
 	storageClassLister   storagev1.StorageClassLister
 	recorder             events.Recorder
-	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
+	makeStoragePolicyAPI func(ctx context.Context, connection []*vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 	scStateEvaluator     *csiscc.StorageClassStateEvaluator
 
 	policyName string
@@ -96,7 +96,7 @@ func NewStorageClassController(
 	return c
 }
 
-func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+func (c *StorageClassController) Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
 	checkResultFunc := func() (checks.ClusterCheckResult, checks.ClusterCheckStatus) {
 		sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
 		scState := c.scStateEvaluator.GetStorageClassState(sc.Provisioner)
@@ -122,7 +122,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 	return c.updateConditions(ctx, checkResult, overallClusterStatus)
 }
 
-func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
+func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
 	// if the SC is not managed, there is no need to sync the storage policy
 	if !c.scStateEvaluator.IsManaged(scState) {
 		return "", checks.MakeClusterCheckResultPass()

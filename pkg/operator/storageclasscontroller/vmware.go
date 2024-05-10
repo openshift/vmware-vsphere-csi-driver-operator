@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 
 	v1 "github.com/openshift/api/config/v1"
+	"github.com/sirupsen/logrus"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/pbm"
 	"github.com/vmware/govmomi/pbm/types"
@@ -42,7 +43,7 @@ const (
 var associatedTypesRaw = []string{"StoragePod", "Datastore", "ResourcePool", "VirtualMachine", "Folder"}
 
 type vCenterInterface interface {
-	GetDefaultDatastore(ctx context.Context) (*mo.Datastore, error)
+	GetDefaultDatastore(ctx context.Context, infra *v1.Infrastructure) (*mo.Datastore, error)
 	createStoragePolicy(ctx context.Context) (string, error)
 	checkForExistingPolicy(ctx context.Context) (bool, error)
 	createOrUpdateTag(ctx context.Context, ds *mo.Datastore) error
@@ -64,9 +65,10 @@ type storagePolicyAPI struct {
 
 var _ vCenterInterface = &storagePolicyAPI{}
 
-func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
+func NewStoragePolicyAPI(ctx context.Context, connection []*vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
+	// TODO: Need to evaluate how to handle new storage policy in multi vcenter env
 	storagePolicyAPIClient := &storagePolicyAPI{
-		vcenterApiConnection: connection,
+		vcenterApiConnection: connection[0], // Hack until multi vcenter support is implemented
 		infra:                infra,
 		categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
 		policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
@@ -76,12 +78,21 @@ func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnectio
 	return storagePolicyAPIClient
 }
 
-func (v *storagePolicyAPI) GetDefaultDatastore(ctx context.Context) (*mo.Datastore, error) {
+func (v *storagePolicyAPI) GetDefaultDatastore(ctx context.Context, infra *v1.Infrastructure) (*mo.Datastore, error) {
 	vmClient := v.vcenterApiConnection.Client
-	config := v.vcenterApiConnection.Config
+	//config := v.vcenterApiConnection.Config
 	finder := find.NewFinder(vmClient.Client, false)
-	dcName := config.Workspace.Datacenter
-	dsName := config.Workspace.DefaultDatastore
+
+	// Following pattern of older generated ini config, default datastore is from FD[0], else if no FDs are define, we'll
+	// grab from deprecated fields
+	var dcName, dsName string
+	if infra.Spec.PlatformSpec.VSphere != nil && len(infra.Spec.PlatformSpec.VSphere.FailureDomains) > 0 {
+		fd := infra.Spec.PlatformSpec.VSphere.FailureDomains[0]
+		dcName = fd.Topology.Datacenter
+		dsName = fd.Topology.Datastore
+	} else {
+		return nil, fmt.Errorf("unable to determine default datastore from current config")
+	}
 	dc, err := finder.Datacenter(ctx, dcName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to access datacenter %s: %s", dcName, err)
@@ -109,6 +120,7 @@ func (v *storagePolicyAPI) getDatastore(ctx context.Context, dcName string, dsNa
 	finder := find.NewFinder(vmClient.Client, false)
 
 	dc, err := finder.Datacenter(ctx, dcName)
+	logrus.Infof("getDatastore: dc = %v", dc.Name())
 	if err != nil {
 		return nil, fmt.Errorf("failed to access datacenter %s: %s", dcName, err)
 	}
@@ -194,7 +206,11 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 		return v.createZonalStoragePolicy(ctx)
 	}
 
-	dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
+	// Since we create zonal storage policy when in multi vcenter or single vcenter w/ zones, the below is
+	// only for case where cluster is upgrade from a version that used a non FailureDomain config.  For now, let's
+	// just return an error.
+	return v.policyName, fmt.Errorf("current cluster config is not supported and needs to be migrated to zonal.")
+	/*dsName := v.vcenterApiConnection.Config.Workspace.DefaultDatastore
 	dcName := v.vcenterApiConnection.Config.Workspace.Datacenter
 
 	err = v.attachTags(ctx, dcName, dsName)
@@ -209,7 +225,7 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 		}
 	}
 
-	return v.policyName, nil
+	return v.policyName, nil*/
 }
 
 func (v *storagePolicyAPI) checkForTagOnDatastore(ctx context.Context, dsMo *mo.Datastore) bool {

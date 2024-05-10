@@ -6,7 +6,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25/soap"
-	"k8s.io/legacy-cloud-providers/vsphere"
+	vsphere "k8s.io/cloud-provider-vsphere/pkg/common/config"
 	"net/url"
 	"sync"
 	"time"
@@ -24,7 +24,7 @@ type VSphereConnection struct {
 	Hostname   string
 	Port       string
 	Insecure   bool
-	Config     *vsphere.VSphereConfig
+	Config     *vsphere.Config
 }
 
 const apiTimeout = 10 * time.Minute
@@ -33,13 +33,13 @@ var (
 	clientLock sync.Mutex
 )
 
-func NewVSphereConnection(username, password string, cfg *vsphere.VSphereConfig) *VSphereConnection {
+func NewVSphereConnection(username, password, vcenter string, cfg *vsphere.Config) *VSphereConnection {
 	return &VSphereConnection{
 		Username: username,
 		Password: password,
 		Config:   cfg,
-		Hostname: cfg.Workspace.VCenterIP,
-		Insecure: cfg.Global.InsecureFlag,
+		Hostname: cfg.VirtualCenter[vcenter].VCenterIP,
+		Insecure: cfg.VirtualCenter[vcenter].InsecureFlag,
 	}
 }
 

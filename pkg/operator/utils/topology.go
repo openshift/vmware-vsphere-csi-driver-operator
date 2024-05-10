@@ -6,8 +6,9 @@ import (
 
 	cfgv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/legacy-cloud-providers/vsphere"
+	vsphere "k8s.io/cloud-provider-vsphere/pkg/common/config"
 )
 
 const (
@@ -45,19 +46,24 @@ func GetTopologyCategories(clusterCSIDriver *opv1.ClusterCSIDriver, infra *cfgv1
 	return GetCSIDriverTopologyCategories(clusterCSIDriver)
 }
 
-func GetDatacenters(config *vsphere.VSphereConfig) ([]string, error) {
-	datacenters := []string{config.Workspace.Datacenter}
-
-	virtualCenterIPs := sets.StringKeySet(config.VirtualCenter)
-
-	if len(virtualCenterIPs) != 1 {
-		return nil, fmt.Errorf("cloud config must define a single VirtualCenter")
+func GetVCenters(config *vsphere.Config, multiVCenterEnabled bool) ([]string, error) {
+	if len(config.VirtualCenter) > 1 && !multiVCenterEnabled {
+		return nil, fmt.Errorf("the multi vcenter cloud config must define a single VirtualCenter")
+	} else if len(config.VirtualCenter) == 0 {
+		return nil, fmt.Errorf("cloud config must define at lease a single VirtualCenter")
 	}
 
-	virtualCenterIP := virtualCenterIPs.List()[0]
-	if virtualCenterConfig, ok := config.VirtualCenter[virtualCenterIP]; ok {
-		datacenters = strings.Split(virtualCenterConfig.Datacenters, ",")
+	var vCenters []string
+	for _, vcenter := range config.VirtualCenter {
+		vCenters = append(vCenters, vcenter.VCenterIP)
 	}
+
+	return vCenters, nil
+}
+
+func GetDatacenters(config *vsphere.Config, vcenter string, multiVCenterEnabled bool) ([]string, error) {
+	datacenters := strings.Split(config.VirtualCenter[vcenter].Datacenters, ",")
+	logrus.Infof("Gathered the following data centers: %v", datacenters)
 	return datacenters, nil
 }
 

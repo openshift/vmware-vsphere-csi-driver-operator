@@ -230,6 +230,7 @@ func WithVSphereCredentials(
 		}
 
 		// Add to csi-driver and vsphere-syncer containers the vSphere credentials, as env vars.
+		// TODO: NAG - With multi vCenter, this is unacceptable.  We can either set in ini, or find new way.
 		containers := deployment.Spec.Template.Spec.Containers
 		for i := range containers {
 			if containers[i].Name != "csi-driver" && containers[i].Name != "vsphere-syncer" {
