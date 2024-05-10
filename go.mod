@@ -6,10 +6,10 @@ toolchain go1.21.3
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/openshift/api v0.0.0-20240415215749-1ddd5804ab3a
+	github.com/openshift/api v0.0.0-20240424142232-29a704bf5aa2
 	github.com/openshift/build-machinery-go v0.0.0-20231128094528-1e9b1b0595c8
-	github.com/openshift/client-go v0.0.0-20240125160436-aa5df63097c4
-	github.com/openshift/library-go v0.0.0-20240130085015-2ad786549f07
+	github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
+	github.com/openshift/library-go v0.0.0-20240509114237-dc3020f4b513
 	github.com/prometheus/client_golang v1.18.0
 	github.com/spf13/cobra v1.8.0
 	github.com/vmware/govmomi v0.34.2
