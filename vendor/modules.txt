@@ -1,7 +1,7 @@
 # github.com/NYTimes/gziphandler v1.1.1
 ## explicit; go 1.11
 github.com/NYTimes/gziphandler
-# github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230305170008-8188dc5388df
+# github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230321174746-8dcc6526cfb1
 ## explicit; go 1.18
 github.com/antlr/antlr4/runtime/Go/antlr/v4
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
@@ -166,7 +166,7 @@ github.com/modern-go/reflect2
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
-# github.com/openshift/api v0.0.0-20240424142232-29a704bf5aa2
+# github.com/openshift/api v0.0.0-20240508125607-95e22923d553
 ## explicit; go 1.21
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -186,6 +186,7 @@ github.com/openshift/api/config/v1alpha1
 github.com/openshift/api/console
 github.com/openshift/api/console/v1
 github.com/openshift/api/console/v1alpha1
+github.com/openshift/api/features
 github.com/openshift/api/helm
 github.com/openshift/api/helm/v1beta1
 github.com/openshift/api/image
@@ -302,6 +303,7 @@ github.com/openshift/library-go/pkg/operator/certrotation
 github.com/openshift/library-go/pkg/operator/condition
 github.com/openshift/library-go/pkg/operator/configobserver
 github.com/openshift/library-go/pkg/operator/configobserver/apiserver
+github.com/openshift/library-go/pkg/operator/configobserver/featuregates
 github.com/openshift/library-go/pkg/operator/configobserver/proxy
 github.com/openshift/library-go/pkg/operator/csi/credentialsrequestcontroller
 github.com/openshift/library-go/pkg/operator/csi/csiconfigobservercontroller
@@ -1310,6 +1312,9 @@ k8s.io/cloud-provider/node/helpers
 k8s.io/cloud-provider/volume
 k8s.io/cloud-provider/volume/errors
 k8s.io/cloud-provider/volume/helpers
+# k8s.io/cloud-provider-vsphere v1.28.0
+## explicit; go 1.20
+k8s.io/cloud-provider-vsphere/pkg/common/config
 # k8s.io/component-base v0.29.1
 ## explicit; go 1.21
 k8s.io/component-base/cli
