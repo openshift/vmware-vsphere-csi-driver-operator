@@ -65,10 +65,10 @@ type storagePolicyAPI struct {
 
 var _ vCenterInterface = &storagePolicyAPI{}
 
-func NewStoragePolicyAPI(ctx context.Context, connection []*vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
+func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
 	// TODO: Need to evaluate how to handle new storage policy in multi vcenter env
 	storagePolicyAPIClient := &storagePolicyAPI{
-		vcenterApiConnection: connection[0], // Hack until multi vcenter support is implemented
+		vcenterApiConnection: connection,
 		infra:                infra,
 		categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
 		policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
@@ -147,12 +147,18 @@ func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string
 
 	var aggregatedErrors []error
 
+	// Failure domains go across vCenters.  So really we want to only do failure domains that are for this connection's
+	// vCenter.
 	for _, failureDomain := range failureDomains {
-		dataCenter := failureDomain.Topology.Datacenter
-		dataStore := failureDomain.Topology.Datastore
-		err := v.attachTags(ctx, dataCenter, dataStore)
-		if err != nil {
-			aggregatedErrors = append(aggregatedErrors, err)
+		klog.V(1).Infof("Is failure domain %v part of this connection (%v): %v", failureDomain.Name, v.vcenterApiConnection.Hostname, failureDomain.Server == v.vcenterApiConnection.Hostname)
+		if failureDomain.Server == v.vcenterApiConnection.Hostname {
+			klog.V(1).Infof("Attempting to attach tag for failure domain %v", failureDomain.Name)
+			dataCenter := failureDomain.Topology.Datacenter
+			dataStore := failureDomain.Topology.Datastore
+			err := v.attachTags(ctx, dataCenter, dataStore)
+			if err != nil {
+				aggregatedErrors = append(aggregatedErrors, err)
+			}
 		}
 	}
 
@@ -184,6 +190,7 @@ func (v *storagePolicyAPI) attachTags(ctx context.Context, dcName, dsName string
 		return nil
 	}
 
+	klog.V(1).Info("Calling createOrUpdateTag")
 	err = v.createOrUpdateTag(ctx, ds)
 	if err != nil {
 		return fmt.Errorf("error tagging datastore %s with %s: %v", dsName, v.tagName, err)
@@ -192,17 +199,20 @@ func (v *storagePolicyAPI) attachTags(ctx context.Context, dcName, dsName string
 }
 
 func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, error) {
+	klog.V(1).Info("Checking for policy")
 	found, err := v.checkForExistingPolicy(ctx)
 	if err != nil {
 		return v.policyName, fmt.Errorf("error finding existing policy: %v", err)
 	}
 
 	if found {
+		klog.V(1).Info("Found policy")
 		v.policyCreated = true
 	}
 
 	vSphereInfraConfig := v.infra.Spec.PlatformSpec.VSphere
 	if vSphereInfraConfig != nil && len(vSphereInfraConfig.FailureDomains) > 0 {
+		klog.V(1).Info("Creating zonal policy")
 		return v.createZonalStoragePolicy(ctx)
 	}
 

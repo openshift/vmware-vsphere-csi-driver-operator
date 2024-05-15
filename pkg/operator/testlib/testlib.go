@@ -3,6 +3,7 @@ package testlib
 import (
 	"embed"
 	"fmt"
+	"k8s.io/cloud-provider-vsphere/pkg/common/config"
 
 	ocpv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
@@ -152,6 +153,15 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 		}
 	}
 	return nil
+}
+
+func GetUniversalVSphereConfig(fileName string) (config.Config, error) {
+	var cfg config.Config
+	err := gcfg.ReadStringInto(&cfg, getVSphereConfigString(fileName))
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }
 
 func GetLegacyVSphereConfig(fileName string) (vsphere.VSphereConfig, error) {

@@ -444,10 +444,6 @@ func hasErrorConditions(opStats operatorapi.OperatorStatus) bool {
 }
 
 func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *ocpv1.Infrastructure) error {
-	// TODO: Update this to create connection for each vcenter
-	// The current cloud.conf we are using is the old deprecated one and does not work w/ multi vcenter.
-	// Eventually cluster needs to migrate to the new version.  For now, lets just use infrastructure object
-	// as the source of truth.
 	klog.V(3).Infof("Creating vSphere connection")
 	cloudConfig := infra.Spec.CloudConfig
 	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
@@ -459,8 +455,6 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 	if !ok {
 		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
-	//cfg := new(vsphere.VSphereConfig)
-	//err = gcfg.ReadStringInto(cfg, cfgString)
 
 	// If we use infra to iterate through vcenters, do we need to load config?
 	cfg, err := vsphere.ReadConfig([]byte(cfgString))
@@ -483,13 +477,6 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 		if !ok {
 			return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
 		}
-
-		// just a hack for other function compatibility.
-		/*cfg := new(legacy.VSphereConfig)
-		cfg.Workspace.VCenterIP = vcenter.Server
-		cfg.Workspace.Datacenter = vcenter.Datacenters[0]
-		cfg.Workspace.DefaultDatastore = infra.Spec.PlatformSpec.VSphere.FailureDomains[0].Topology.Datastore
-		cfg.Global.InsecureFlag = true*/
 
 		vs := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, cfg)
 		c.vSphereConnections = append(c.vSphereConnections, vs)
@@ -638,18 +625,15 @@ func (c *VSphereController) createCSIConfigMap(
 		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
 
-	// Update this to also support YAML.
-	//var cfg vsphere.VSphereConfig
-	//err = gcfg.ReadStringInto(&cfg, cfgString)
-
 	cfg, err := vsphere.ReadConfig([]byte(cfgString))
 
 	if err != nil {
 		return err
 	}
 
-	// TODO: NAG - For multi vcenter, what is our approach here?
-	storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, c.vSphereConnections, infra)
+	// Pass in first vcenter for now.  I think this logic is no longer valid, but need to confirm if we are wanting
+	// multi vcenter to support storage migration.
+	storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, c.vSphereConnections[0], infra)
 
 	defaultDatastore, err := storageApiClient.GetDefaultDatastore(ctx, infra)
 
@@ -687,9 +671,9 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		return nil, err
 	}
 
-	// TODO: NAG - May need to look into new format here for multi vcenter support.
 	// Generate cluster id and append all vcenters.  Also need to inject user/pass for vcenters since driver does
-	// not support loading from secret.  It expect either in the ini file or as an ENV variable.
+	// not support loading from secret.  It expects user/pass either in the ini file or as an ENV variable.  ENV
+	// variable was used in older, single vcenter way where passed into container from operator.
 
 	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
 

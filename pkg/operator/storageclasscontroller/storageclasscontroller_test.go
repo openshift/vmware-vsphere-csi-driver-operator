@@ -161,13 +161,14 @@ func TestSync(t *testing.T) {
 
 			apiDeps := getCheckAPIDependency(commonApiClient)
 			var conn *vclib.VSphereConnection
+			conns := []*vclib.VSphereConnection{conn}
 			scController := newStorageClassController(commonApiClient, test.storageClass, test.StoragePolicyAPIfails)
 
 			if test.shouldPanic {
 				defer assertPanic(t)
 			}
 			// err will be nil on even on failure, need to check conditions instead
-			err := scController.Sync(context.TODO(), conn, apiDeps)
+			err := scController.Sync(context.TODO(), conns, apiDeps)
 			if err != nil {
 				t.Errorf("failed to sync controller: %+v", err)
 			}

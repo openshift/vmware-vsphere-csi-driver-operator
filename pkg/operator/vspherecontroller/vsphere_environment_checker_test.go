@@ -3,6 +3,7 @@ package vspherecontroller
 import (
 	"context"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"os"
 	"testing"
 	"time"
@@ -94,7 +95,9 @@ func TestEnvironmentCheck(t *testing.T) {
 				CSIDriverLister: csiDriverLister,
 				NodeLister:      nodeLister,
 			}
-			checkOpts := checks.NewCheckArgs(conn, checkerApiClient)
+
+			connections := []*vclib.VSphereConnection{conn}
+			checkOpts := checks.NewCheckArgs(connections, checkerApiClient, false)
 			var result checks.ClusterCheckResult
 			var checkRan bool
 			for i := 0; i < test.runCount; i++ {

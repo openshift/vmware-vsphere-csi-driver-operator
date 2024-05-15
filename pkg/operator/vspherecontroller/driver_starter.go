@@ -113,7 +113,7 @@ func (c *VSphereController) createCSIDriver() {
 			c.apiClients.ConfigMapInformer.Informer(),
 			c.apiClients.NodeInformer.Informer(),
 		},
-		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.infraLister, c.configMapLister, c.apiClients.SecretInformer),
+		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.infraLister, c.configMapLister, c.apiClients.SecretInformer, c.multiVCenterEnabled),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
 		c.topologyHook,
@@ -192,6 +192,7 @@ func WithVSphereCredentials(
 	infraLister infralister.InfrastructureLister,
 	configMapLister corelister.ConfigMapLister,
 	secretInformer corev1informers.SecretInformer,
+	multiVCenterFeatureGateEnabled bool,
 ) deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
 		secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
@@ -218,7 +219,7 @@ func WithVSphereCredentials(
 		// So we need to figure those keys out
 		var usernameKey, passwordKey string
 
-		if len(secret.Data) > 2 {
+		if len(secret.Data) > 2 && !multiVCenterFeatureGateEnabled {
 			klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
 		}
 

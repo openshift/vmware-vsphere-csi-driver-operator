@@ -70,7 +70,7 @@ type dummyStorageClassController struct {
 	syncCalled int
 }
 
-func (c *dummyStorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+func (c *dummyStorageClassController) Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
 	c.syncCalled += 1
 	return nil
 }
@@ -546,12 +546,12 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			testlib.WaitForSync(commonApiClient, stopCh)
 			ctrl := newVsphereController(commonApiClient)
 
-			legacyVsphereConfig, err := testlib.GetLegacyVSphereConfig(tc.configFileName)
+			legacyVsphereConfig, err := testlib.GetUniversalVSphereConfig(tc.configFileName)
 			if err != nil {
 				t.Fatalf("error loading legacy vsphere config: %v", err)
 			}
 
-			configMap, err := ctrl.applyClusterCSIDriverChange(infra, legacyVsphereConfig, tc.clusterCSIDriver, "foobar")
+			configMap, err := ctrl.applyClusterCSIDriverChange(infra, &legacyVsphereConfig, tc.clusterCSIDriver, "foobar")
 
 			// if we expected error and we got some, we should stop running this test
 			if tc.expectError && err != nil {
@@ -682,8 +682,8 @@ func adjustConditionsAndResync(modifierFunc func() error, ctrl *VSphereControlle
 	return ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
 }
 
-func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection bool, connError error) func() (*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
-	return func() (*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
+func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection bool, connError error) func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
+	return func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
 		if failConnection {
 			err := fmt.Errorf("connection to vcenter failed")
 			result := checks.ClusterCheckResult{
@@ -697,7 +697,7 @@ func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection boo
 			if connError != nil {
 				return nil, checks.MakeGenericVCenterAPIError(connError), false
 			}
-			return conn, checks.MakeClusterCheckResultPass(), false
+			return []*vclib.VSphereConnection{conn}, checks.MakeClusterCheckResultPass(), false
 		}
 	}
 }

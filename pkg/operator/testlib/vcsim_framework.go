@@ -20,10 +20,10 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	vapisimulator "github.com/vmware/govmomi/vapi/simulator"
 	"github.com/vmware/govmomi/vim25/types"
-	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/legacy-cloud-providers/vsphere"
+	//	"k8s.io/legacy-cloud-providers/vsphere"
+	vsphere "k8s.io/cloud-provider-vsphere/pkg/common/config"
 )
 
 const (
@@ -83,6 +83,9 @@ func SetupSimulator(modelDir string) (*vclib.VSphereConnection, func(), error) {
 		Username: "admin@vsphere.local",
 		Password: "foobar",
 	}
+	/*connections := []*vclib.VSphereConnection{
+		conn,
+	}*/
 
 	userInfo := url.UserPassword(conn.Username, conn.Password)
 	restClient := rest.NewClient(client.Client)
@@ -138,8 +141,8 @@ func DefaultNodes() []*v1.Node {
 	return nodes
 }
 
-func simulatorConfig() *vsphere.VSphereConfig {
-	var cfg vsphere.VSphereConfig
+func simulatorConfig() *vsphere.Config {
+	var cfg vsphere.Config
 	// Configuration that corresponds to the simulated vSphere
 	data := `[Global]
 secret-name = "vsphere-creds"
@@ -155,7 +158,8 @@ folder = "/DC0/vm"
 [VirtualCenter "dc0"]
 datacenters = "DC0"
 `
-	err := gcfg.ReadStringInto(&cfg, data)
+	//err := gcfg.ReadStringInto(&cfg, data)
+	err := vsphere.Config
 	if err != nil {
 		panic(err)
 	}
