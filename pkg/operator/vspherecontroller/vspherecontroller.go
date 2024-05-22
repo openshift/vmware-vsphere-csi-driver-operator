@@ -3,6 +3,7 @@ package vspherecontroller
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,8 @@ const (
 	storageClassControllerName        = "VMwareVSphereDriverStorageClassController"
 	storageClassName                  = "thin-csi"
 )
+
+var reEscape = regexp.MustCompile(`["\\]`)
 
 type conditionalControllerInterface interface {
 	Run(ctx context.Context, workers int)
@@ -757,8 +760,18 @@ func getUserAndPassword(namespace string, secretName string, infra *ocpv1.Infras
 		return "", "", fmt.Errorf("could not find vSphere credentials in secret %s/%s", secret.Namespace, secret.Name)
 	}
 
-	// Get user and pass from CCO secret
-	return string(secret.Data[usernameKey]), string(secret.Data[passwordKey]), nil
+	// Get username and pass from secret created by CCO
+	username := string(secret.Data[usernameKey])
+	password := string(secret.Data[passwordKey])
+
+	// The CSI driver expects a password with any quotation marks and backslashes escaped.
+	// xref: https://github.com/kubernetes-sigs/vsphere-csi-driver/issues/121
+	return username, escapeQuotesAndBackslashes(password), nil
+}
+
+// escapeQuotesAndBackslashes escapes double quotes and backslashes in the input string.
+func escapeQuotesAndBackslashes(input string) string {
+	return reEscape.ReplaceAllString(input, `\$0`)
 }
 
 func getvCenterName(infra *ocpv1.Infrastructure, configmapLister corelister.ConfigMapLister) (string, error) {

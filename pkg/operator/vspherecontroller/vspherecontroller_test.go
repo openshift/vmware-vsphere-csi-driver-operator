@@ -809,3 +809,56 @@ func (*skippingChecker) ResetExpBackoff() {
 func newSkippingChecker() *skippingChecker {
 	return &skippingChecker{}
 }
+
+func TestEscapeQuotesAndBackslashes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "No special characteres",
+			input:    `Password1234`,
+			expected: `Password1234`,
+		},
+		{
+			name:     "Only a quote",
+			input:    `Password1234"`,
+			expected: `Password1234\"`,
+		},
+		{
+			name:     "Only a backslash",
+			input:    `Password\1234`,
+			expected: `Password\\1234`,
+		},
+		{
+			name:     "Quote and backslash",
+			input:    `Pass"word\1234"\`,
+			expected: `Pass\"word\\1234\"\\`,
+		},
+		{
+			name:     "Already escaped",
+			input:    `Pass\"word\\1234\"`,
+			expected: `Pass\\\"word\\\\1234\\\"`,
+		},
+		{
+			name:     "Only quotes",
+			input:    `"""""`,
+			expected: `\"\"\"\"\"`,
+		},
+		{
+			name:     "Only backslashes",
+			input:    `\\\\\`,
+			expected: `\\\\\\\\\\`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := escapeQuotesAndBackslashes(tc.input)
+			if actual != tc.expected {
+				t.Fatalf("escapeQuotesAndBackslashes(%q) = %q; expected %q", tc.input, actual, tc.expected)
+			}
+		})
+	}
+}
