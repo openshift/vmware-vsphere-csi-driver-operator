@@ -13,7 +13,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
-	"github.com/openshift/api/features"
 	opv1 "github.com/openshift/api/operator/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	configinformers "github.com/openshift/client-go/config/informers/externalversions"
@@ -102,8 +101,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	if err != nil {
 		klog.Fatalf("unable to retrieve current feature gates: %v", err)
 	}
-	// read featuregate read and usage to set a variable to pass to a controller
-	multiVCenterFeatureGateEnabled := featureGates.Enabled(features.FeatureGateVSphereStaticIPs)
 
 	commonAPIClient := utils.APIClient{
 		OperatorClient:           operatorClient,
@@ -136,7 +133,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		csiConfigBytes,
 		cloudConfigBytes,
 		controllerConfig.EventRecorder,
-		multiVCenterFeatureGateEnabled)
+		featureGates)
 
 	featureConfigBytes, err := assets.ReadFile("vsphere_features_config.yaml")
 	if err != nil {

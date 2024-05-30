@@ -7,23 +7,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 	iniv1 "gopkg.in/ini.v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	vsphere "k8s.io/cloud-provider-vsphere/pkg/common/config"
 
 	ocpv1 "github.com/openshift/api/config/v1"
 	operatorapi "github.com/openshift/api/operator/v1"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/storageclasscontroller"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
@@ -56,7 +56,7 @@ type VSphereController struct {
 	csiConfigManifest        []byte
 	vSphereChecker           vSphereEnvironmentCheckInterface
 	vCenterConnectionStatus  bool
-	multiVCenterEnabled      bool
+	featureGates             featuregates.FeatureGate
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool)
 }
@@ -91,7 +91,7 @@ func NewVSphereController(
 	csiConfigManifest []byte,
 	cloudConfigManifest []byte,
 	recorder events.Recorder,
-	multiVCenterFeatureGateEnabled bool,
+	gates featuregates.FeatureGate,
 ) factory.Controller {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
@@ -123,7 +123,7 @@ func NewVSphereController(
 		clusterCSIDriverLister:  apiClients.ClusterCSIDriverInformer.Lister(),
 		infraLister:             infraInformer.Lister(),
 		vCenterConnectionStatus: false,
-		multiVCenterEnabled:     multiVCenterFeatureGateEnabled,
+		featureGates:            gates,
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -385,7 +385,7 @@ func (c *VSphereController) runConditionalController(ctx context.Context) {
 func (c *VSphereController) runClusterCheck(ctx context.Context, infra *ocpv1.Infrastructure) (time.Duration, checks.ClusterCheckResult, bool) {
 	checkerApiClient := c.getCheckAPIDependency(infra)
 
-	checkOpts := checks.NewCheckArgs(c.vSphereConnections, checkerApiClient, c.multiVCenterEnabled)
+	checkOpts := checks.NewCheckArgs(c.vSphereConnections, checkerApiClient, c.featureGates)
 	return c.vSphereChecker.Check(ctx, checkOpts)
 }
 
@@ -456,8 +456,8 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
 
-	// If we use infra to iterate through vcenters, do we need to load config?
-	cfg, err := vsphere.ReadConfig([]byte(cfgString))
+	config := vclib.VSphereConfig{}
+	err = config.LoadConfig(cfgString)
 	if err != nil {
 		return err
 	}
@@ -478,7 +478,7 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 			return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
 		}
 
-		vs := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, cfg)
+		vs := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, &config)
 		c.vSphereConnections = append(c.vSphereConnections, vs)
 	}
 	return nil
@@ -625,10 +625,10 @@ func (c *VSphereController) createCSIConfigMap(
 		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
 
-	cfg, err := vsphere.ReadConfig([]byte(cfgString))
-
+	cfg := vclib.VSphereConfig{}
+	err = cfg.LoadConfig(cfgString)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to fetch cloud prvider config: %v", err)
 	}
 
 	// Pass in first vcenter for now.  I think this logic is no longer valid, but need to confirm if we are wanting
@@ -643,7 +643,7 @@ func (c *VSphereController) createCSIConfigMap(
 
 	datastoreURL := defaultDatastore.Summary.Url
 
-	requiredCM, err := c.applyClusterCSIDriverChange(infra, cfg, clusterCSIDriver, datastoreURL)
+	requiredCM, err := c.applyClusterCSIDriverChange(infra, &cfg, clusterCSIDriver, datastoreURL)
 	if err != nil {
 		return err
 	}
@@ -659,11 +659,17 @@ func (c *VSphereController) createCSIConfigMap(
 
 func (c *VSphereController) applyClusterCSIDriverChange(
 	infra *ocpv1.Infrastructure,
-	sourceCFG *vsphere.Config,
+	sourceCFG *vclib.VSphereConfig,
 	clusterCSIDriver *operatorapi.ClusterCSIDriver,
 	datastoreURL string) (*corev1.ConfigMap, error) {
 
 	csiConfigString := string(c.csiConfigManifest)
+
+	// Validate config.  We used to fail when calling utils.GetDataCenters, but now we will let config validate itself.
+	err := sourceCFG.ValidateConfig(c.featureGates)
+	if err != nil {
+		return nil, err
+	}
 
 	csiVCenterConfigBytes, err := assets.ReadFile("csi_cloud_config_vcenters.ini")
 
@@ -677,8 +683,9 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 
 	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
 
+	config := sourceCFG.Config
 	var vcenters string
-	for _, vcenter := range sourceCFG.VirtualCenter {
+	for _, vcenter := range config.VirtualCenter {
 		vcenterStr := string(csiVCenterConfigBytes)
 		user := string(secret.Data[vcenter.VCenterIP+".username"])
 		password := string(secret.Data[vcenter.VCenterIP+".password"])

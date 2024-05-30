@@ -103,9 +103,9 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 		sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
 		scState := c.scStateEvaluator.GetStorageClassState(sc.Provisioner)
 
-		// TODO: Iterate through each vcenter for storage policy.
+		// Iterate through each vcenter connection for storage policy.
 		for _, connection := range connections {
-			klog.V(1).Infof("Syncing %v", connection.Hostname)
+			klog.V(2).Infof("Syncing %v", connection.Hostname)
 			policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps, scState)
 			if syncResult.CheckError != nil {
 				klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
@@ -113,7 +113,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 				utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
 				return syncResult, checks.ClusterCheckAllGood
 			}
-			klog.V(1).Infof("Synced policy %v", policyName)
+			klog.V(2).Infof("Synced policy %v", policyName)
 			c.connPolicyNames[connection.Hostname] = policyName
 			c.policyName = policyName // This is the global name of policy.  may need to make it more logical to not set in loop.
 		}
@@ -133,14 +133,14 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
 	// if the SC is not managed, there is no need to sync the storage policy
 	if !c.scStateEvaluator.IsManaged(scState) {
-		klog.V(1).Info("sc is not managed")
+		klog.V(2).Info("sc is not managed")
 		return "", checks.MakeClusterCheckResultPass()
 	}
 
 	// if we are running the checks after creating the policy successfully
 	// then lets run checks less frequently.
 	if !time.Now().After(c.nextCheck) && len(c.connPolicyNames[connection.Hostname]) > 0 {
-		klog.V(1).Infof("Returning without running any checks")
+		klog.V(4).Infof("Returning without running any checks")
 		return c.connPolicyNames[connection.Hostname], checks.MakeClusterCheckResultPass()
 	}
 

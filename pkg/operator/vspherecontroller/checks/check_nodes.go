@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -250,7 +249,7 @@ func getVM(ctx context.Context, checkOpts CheckArgs, node *v1.Node) (*mo.Virtual
 
 		// When checking VMs, the VMs may be spread across vCenters.  So we'll need to get vCenters from config and
 		// check each for the vm.
-		dataCenterNames, err := utils.GetDatacenters(vmConfig, client.Hostname, checkOpts.multiVCenterEnabled)
+		dataCenterNames, err := vmConfig.GetDatacenters(client.Hostname)
 		if err != nil {
 			return nil, err
 		}

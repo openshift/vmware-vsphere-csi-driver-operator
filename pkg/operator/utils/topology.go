@@ -2,11 +2,9 @@ package utils
 
 import (
 	"fmt"
-	"strings"
 
 	cfgv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
-	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/sets"
 	vsphere "k8s.io/cloud-provider-vsphere/pkg/common/config"
 )
@@ -59,12 +57,6 @@ func GetVCenters(config *vsphere.Config, multiVCenterEnabled bool) ([]string, er
 	}
 
 	return vCenters, nil
-}
-
-func GetDatacenters(config *vsphere.Config, vcenter string, multiVCenterEnabled bool) ([]string, error) {
-	datacenters := strings.Split(config.VirtualCenter[vcenter].Datacenters, ",")
-	logrus.Infof("Gathered the following data centers: %v", datacenters)
-	return datacenters, nil
 }
 
 func UpdateMetrics(infra *cfgv1.Infrastructure, clusterCSIDriver *opv1.ClusterCSIDriver) {

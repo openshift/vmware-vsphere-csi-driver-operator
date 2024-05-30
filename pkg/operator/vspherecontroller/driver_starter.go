@@ -6,27 +6,27 @@ import (
 	"fmt"
 	"os"
 
-	infralister "github.com/openshift/client-go/config/listers/config/v1"
-	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
-	"gopkg.in/gcfg.v1"
-
 	ocpv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	operatorapi "github.com/openshift/api/operator/v1"
+	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/csi/csicontrollerset"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivercontrollerservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivernodeservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1informers "k8s.io/client-go/informers/core/v1"
 	corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
 func (c *VSphereController) createCSIDriver() {
@@ -113,7 +113,7 @@ func (c *VSphereController) createCSIDriver() {
 			c.apiClients.ConfigMapInformer.Informer(),
 			c.apiClients.NodeInformer.Informer(),
 		},
-		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.infraLister, c.configMapLister, c.apiClients.SecretInformer, c.multiVCenterEnabled),
+		WithVSphereCredentials(defaultNamespace, cloudCredSecretName, c.infraLister, c.configMapLister, c.apiClients.SecretInformer, c.featureGates),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
 		c.topologyHook,
@@ -192,7 +192,7 @@ func WithVSphereCredentials(
 	infraLister infralister.InfrastructureLister,
 	configMapLister corelister.ConfigMapLister,
 	secretInformer corev1informers.SecretInformer,
-	multiVCenterFeatureGateEnabled bool,
+	featureGates featuregates.FeatureGate,
 ) deploymentcontroller.DeploymentHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, deployment *appsv1.Deployment) error {
 		secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
@@ -219,7 +219,7 @@ func WithVSphereCredentials(
 		// So we need to figure those keys out
 		var usernameKey, passwordKey string
 
-		if len(secret.Data) > 2 && !multiVCenterFeatureGateEnabled {
+		if len(secret.Data) > 2 && !featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
 			klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
 		}
 
@@ -231,7 +231,7 @@ func WithVSphereCredentials(
 		}
 
 		// Add to csi-driver and vsphere-syncer containers the vSphere credentials, as env vars.
-		// TODO: NAG - With multi vCenter, this is unacceptable.  We can either set in ini, or find new way.
+		// TODO: With multi vCenter, this is unacceptable.  We can either set in ini, or find new way.
 		containers := deployment.Spec.Template.Spec.Containers
 		for i := range containers {
 			if containers[i].Name != "csi-driver" && containers[i].Name != "vsphere-syncer" {
@@ -265,12 +265,34 @@ func getvCenterName(infra *ocpv1.Infrastructure, configmapLister corelister.Conf
 	if !ok {
 		return "", fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
-	cfg := new(vsphere.VSphereConfig)
-	err = gcfg.ReadStringInto(cfg, cfgString)
+
+	// Load combo config.
+	cfg := vclib.VSphereConfig{}
+	err = cfg.LoadConfig(cfgString)
 	if err != nil {
+		fmt.Println("Returning error")
 		return "", err
 	}
-	return cfg.Workspace.VCenterIP, nil
+
+	// Due to how upstream config handles merging ini and yaml logic, we will check to see if the legacy ini cloud provider
+	// is in use first.  This way we can fall back to our old logic of just returning workspace logic.
+	if cfg.LegacyConfig != nil {
+		fmt.Printf("Returning legacy: %v\n", cfg.LegacyConfig.Workspace.VCenterIP)
+		return cfg.LegacyConfig.Workspace.VCenterIP, nil
+	}
+
+	// If YAML style config, but cluster has not configured FailureDomains, let's see if we can get first vCenter and
+	// return the hostname.  This should not happen, but just in case, we'll get the keys and just return one for now.
+	if len(cfg.Config.VirtualCenter) > 0 {
+		for k := range cfg.Config.VirtualCenter {
+			// just going to return on first key.
+			fmt.Printf("Returning a vcenter from map %v\n", cfg.Config.VirtualCenter[k].VCenterIP)
+			return cfg.Config.VirtualCenter[k].VCenterIP, nil
+		}
+	}
+
+	// All hope is lost.  Return an error.
+	return "", fmt.Errorf("unable to determine vCenter from config %s/%s", cloudConfigNamespace, cloudConfig.Name)
 }
 
 func WithSyncerImageHook(containerName string) deploymentcontroller.DeploymentHookFunc {
