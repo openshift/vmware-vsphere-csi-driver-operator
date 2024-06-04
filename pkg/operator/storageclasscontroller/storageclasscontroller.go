@@ -44,7 +44,7 @@ var (
 )
 
 type StorageClassSyncInterface interface {
-	Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+	Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
 }
 
 type StorageClassController struct {
@@ -58,10 +58,11 @@ type StorageClassController struct {
 	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 	scStateEvaluator     *csiscc.StorageClassStateEvaluator
 
-	policyName string
-	backoff    wait.Backoff
-	nextCheck  time.Time
-	lastCheck  time.Time
+	connPolicyNames map[string]string // Key is vcenter name, value is policy name
+	policyName      string
+	backoff         wait.Backoff
+	nextCheck       time.Time
+	lastCheck       time.Time
 }
 
 func NewStorageClassController(
@@ -91,24 +92,31 @@ func NewStorageClassController(
 		scStateEvaluator:     evaluator,
 		backoff:              defaultBackoff,
 		nextCheck:            time.Now(),
+		connPolicyNames:      make(map[string]string),
 	}
 
 	return c
 }
 
-func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
 	checkResultFunc := func() (checks.ClusterCheckResult, checks.ClusterCheckStatus) {
 		sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
 		scState := c.scStateEvaluator.GetStorageClassState(sc.Provisioner)
 
-		policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps, scState)
-		if syncResult.CheckError != nil {
-			klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
-			clusterCondition := "storage_class_sync_failed"
-			utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
-			return syncResult, checks.ClusterCheckAllGood
+		// Iterate through each vcenter connection for storage policy.
+		for _, connection := range connections {
+			klog.V(2).Infof("Syncing %v", connection.Hostname)
+			policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps, scState)
+			if syncResult.CheckError != nil {
+				klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
+				clusterCondition := "storage_class_sync_failed"
+				utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
+				return syncResult, checks.ClusterCheckAllGood
+			}
+			klog.V(2).Infof("Synced policy %v", policyName)
+			c.connPolicyNames[connection.Hostname] = policyName
+			c.policyName = policyName // This is the global name of policy.  may need to make it more logical to not set in loop.
 		}
-		c.policyName = policyName
 
 		err := c.syncStorageClass(ctx, scState)
 		if err != nil {
@@ -125,14 +133,15 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
 	// if the SC is not managed, there is no need to sync the storage policy
 	if !c.scStateEvaluator.IsManaged(scState) {
+		klog.V(2).Info("sc is not managed")
 		return "", checks.MakeClusterCheckResultPass()
 	}
 
 	// if we are running the checks after creating the policy successfully
 	// then lets run checks less frequently.
-	if !time.Now().After(c.nextCheck) && len(c.policyName) > 0 {
+	if !time.Now().After(c.nextCheck) && len(c.connPolicyNames[connection.Hostname]) > 0 {
 		klog.V(4).Infof("Returning without running any checks")
-		return c.policyName, checks.MakeClusterCheckResultPass()
+		return c.connPolicyNames[connection.Hostname], checks.MakeClusterCheckResultPass()
 	}
 
 	infra := apiDeps.GetInfrastructure()

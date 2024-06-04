@@ -2,13 +2,15 @@ package vspherecontroller
 
 import (
 	"context"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"os"
 	"testing"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 
+	v1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 )
 
@@ -19,7 +21,7 @@ func TestEnvironmentCheck(t *testing.T) {
 		checksRan              bool
 		result                 checks.CheckStatusType
 		initialObjects         []runtime.Object
-		configObjects          runtime.Object
+		infra                  *v1.Infrastructure
 		clusterCSIDriverObject *testlib.FakeDriverInstance
 		expectedBackOffSteps   int
 		expectedNextCheck      time.Time
@@ -28,7 +30,20 @@ func TestEnvironmentCheck(t *testing.T) {
 		{
 			name:                   "when tests are ran successfully, delay should be set to maximum delay",
 			initialObjects:         []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
-			configObjects:          runtime.Object(testlib.GetInfraObject()),
+			infra:                  testlib.GetInfraObject(),
+			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
+			vcenterVersion:         "7.0.2",
+			result:                 checks.CheckStatusPass,
+			checksRan:              true,
+			// should reset the steps back to maximum in defaultBackoff
+			expectedBackOffSteps: defaultBackoff.Steps,
+			expectedNextCheck:    time.Now().Add(defaultBackoff.Cap),
+			runCount:             1,
+		},
+		{
+			name:                   "when tests are ran successfully, delay should be set to maximum delay YAML",
+			initialObjects:         []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			infra:                  testlib.GetInfraObject(),
 			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
 			vcenterVersion:         "7.0.2",
 			result:                 checks.CheckStatusPass,
@@ -41,7 +56,19 @@ func TestEnvironmentCheck(t *testing.T) {
 		{
 			name:                   "when tests fail, delay should backoff exponentially",
 			initialObjects:         []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
-			configObjects:          runtime.Object(testlib.GetInfraObject()),
+			infra:                  testlib.GetInfraObject(),
+			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
+			vcenterVersion:         "6.5.0",
+			result:                 checks.CheckStatusDeprecatedVCenter,
+			checksRan:              true,
+			expectedBackOffSteps:   defaultBackoff.Steps - 1,
+			expectedNextCheck:      time.Now().Add(1 * time.Minute),
+			runCount:               1,
+		},
+		{
+			name:                   "when tests fail, delay should backoff exponentially YAML",
+			initialObjects:         []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			infra:                  testlib.GetInfraObject(),
 			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
 			vcenterVersion:         "6.5.0",
 			result:                 checks.CheckStatusDeprecatedVCenter,
@@ -55,7 +82,7 @@ func TestEnvironmentCheck(t *testing.T) {
 	for i := range tests {
 		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
-			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
+			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, runtime.Object(test.infra))
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
@@ -68,7 +95,7 @@ func TestEnvironmentCheck(t *testing.T) {
 			t.Logf("working directory is: %s", workingDir)
 
 			checker := newVSphereEnvironmentChecker()
-			conn, cleanUpFunc, connError := testlib.SetupSimulator(testlib.DefaultModel)
+			connections, cleanUpFunc, connError := testlib.SetupSimulator(testlib.DefaultModel, test.infra)
 			if connError != nil {
 				t.Fatalf("unexpected error while connecting to simulator: %v", connError)
 			}
@@ -78,11 +105,14 @@ func TestEnvironmentCheck(t *testing.T) {
 					cleanUpFunc()
 				}
 			}()
+
 			// add a sleep so as we can calculate nextCheck accurately
 			time.Sleep(5 * time.Second)
 
 			if test.vcenterVersion != "" {
-				testlib.CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
+				for _, conn := range connections {
+					testlib.CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
+				}
 			}
 			csiDriverLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 			csiNodeLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
@@ -94,7 +124,10 @@ func TestEnvironmentCheck(t *testing.T) {
 				CSIDriverLister: csiDriverLister,
 				NodeLister:      nodeLister,
 			}
-			checkOpts := checks.NewCheckArgs(conn, checkerApiClient)
+
+			fg := featuregates.NewFeatureGate([]v1.FeatureGateName{}, []v1.FeatureGateName{})
+
+			checkOpts := checks.NewCheckArgs(connections, checkerApiClient, fg)
 			var result checks.ClusterCheckResult
 			var checkRan bool
 			for i := 0; i < test.runCount; i++ {

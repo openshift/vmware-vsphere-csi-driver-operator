@@ -12,15 +12,14 @@ import (
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
-	"gopkg.in/gcfg.v1"
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	fakecore "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
 //go:embed *.yaml *.ini
@@ -154,13 +153,13 @@ func AddInitialObjects(objects []runtime.Object, clients *utils.APIClient) error
 	return nil
 }
 
-func GetLegacyVSphereConfig(fileName string) (vsphere.VSphereConfig, error) {
-	var cfg vsphere.VSphereConfig
-	err := gcfg.ReadStringInto(&cfg, getVSphereConfigString(fileName))
+func GetVSphereConfig(fileName string) (*vclib.VSphereConfig, error) {
+	var cfg vclib.VSphereConfig
+	err := cfg.LoadConfig(getVSphereConfigString(fileName))
 	if err != nil {
-		return cfg, err
+		return &cfg, err
 	}
-	return cfg, nil
+	return &cfg, nil
 }
 
 func getVSphereConfigString(fileName string) string {
@@ -243,7 +242,8 @@ func GetInfraObject() *ocpv1.Infrastructure {
 				Key:  "config",
 			},
 			PlatformSpec: ocpv1.PlatformSpec{
-				Type: ocpv1.VSpherePlatformType,
+				Type:    ocpv1.VSpherePlatformType,
+				VSphere: &ocpv1.VSpherePlatformSpec{},
 			},
 		},
 		Status: ocpv1.InfrastructureStatus{
@@ -349,6 +349,67 @@ func GetZonalInfra() *ocpv1.Infrastructure {
 	}
 }
 
+func GetZonalMultiVCenterInfra() *ocpv1.Infrastructure {
+	return &ocpv1.Infrastructure{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: infraGlobalName,
+		},
+		Spec: ocpv1.InfrastructureSpec{
+			CloudConfig: ocpv1.ConfigMapFileReference{
+				Name: "cloud-provider-config",
+				Key:  "config",
+			},
+			PlatformSpec: ocpv1.PlatformSpec{
+				Type: ocpv1.VSpherePlatformType,
+				VSphere: &ocpv1.VSpherePlatformSpec{
+					FailureDomains: []ocpv1.VSpherePlatformFailureDomainSpec{
+						{
+							Name:   "us-east-1",
+							Region: "us-east",
+							Server: "vcenter.lan",
+							Zone:   "us-east-1a",
+							Topology: ocpv1.VSpherePlatformTopology{
+								ComputeCluster: "/DC0/host/DC0_H0",
+								Datacenter:     "DC0",
+								Datastore:      "/DC0/datastore/LocalDS_0",
+							},
+						},
+						{
+							Name:   "us-west-1",
+							Region: "us-west",
+							Server: "vcenter2.lan",
+							Zone:   "us-west-1a",
+							Topology: ocpv1.VSpherePlatformTopology{
+								ComputeCluster: "/F0/DC1/host/F0/DC1_H0",
+								Datacenter:     "/F0/DC1",
+								Datastore:      "/F0/DC1/datastore/F0/LocalDS_0",
+							},
+						},
+					},
+					VCenters: []ocpv1.VSpherePlatformVCenterSpec{
+						{
+							Server:      "vcenter.lan",
+							Port:        443,
+							Datacenters: []string{"DC0"},
+						},
+						{
+							Server:      "vcenter2.lan",
+							Port:        443,
+							Datacenters: []string{"DC1"},
+						},
+					},
+				},
+			},
+		},
+		Status: ocpv1.InfrastructureStatus{
+			InfrastructureName: "vsphere",
+			PlatformStatus: &ocpv1.PlatformStatus{
+				Type: ocpv1.VSpherePlatformType,
+			},
+		},
+	}
+}
+
 func GetConfigMap() *v1.ConfigMap {
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -375,6 +436,34 @@ datacenters = "DC0"
 	}
 }
 
+// GetNewConfigMap this function generates a config map with the newer YAML provider config.
+func GetNewConfigMap() *v1.ConfigMap {
+	return &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cloud-provider-config",
+			Namespace: cloudConfigNamespace,
+		},
+		Data: map[string]string{
+			"config": `
+global:
+  insecureFlag: true
+  secretName: vsphere-creds
+  secretNamespace: kube-system
+vcenter:
+  localhost:
+    server: localhost
+    port: 443
+    insecureFlag: true
+    datacenters:
+    - DC0
+labels:
+  zone: openshift-zone
+  region: openshift-region
+`,
+		},
+	}
+}
+
 func GetSecret() *v1.Secret {
 	return &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -382,8 +471,38 @@ func GetSecret() *v1.Secret {
 			Namespace: defaultNamespace,
 		},
 		Data: map[string][]byte{
-			"localhost.password": []byte("vsphere-user"),
-			"localhost.username": []byte("vsphere-password"),
+			"localhost.password": []byte("vsphere-password"),
+			"localhost.username": []byte("vsphere-user"),
+		},
+	}
+}
+
+func GetDCSecret() *v1.Secret {
+	return &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: defaultNamespace,
+		},
+		Data: map[string][]byte{
+			"foobar.lan.password": []byte("vsphere-password"),
+			"foobar.lan.username": []byte("vsphere-user"),
+			"foobaz.lan.password": []byte("vsphere-password"),
+			"foobaz.lan.username": []byte("vsphere-user"),
+		},
+	}
+}
+
+func GetMultiVCSecret() *v1.Secret {
+	return &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: defaultNamespace,
+		},
+		Data: map[string][]byte{
+			"foobar.lan.password": []byte("vsphere-password"),
+			"foobar.lan.username": []byte("vsphere-user"),
+			"foobaz.lan.password": []byte("vsphere-password"),
+			"foobaz.lan.username": []byte("vsphere-user"),
 		},
 	}
 }

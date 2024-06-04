@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -220,10 +219,19 @@ func (n *NodeChecker) checkOrMarkHostForProcessing(hostName string) bool {
 
 func (n *NodeChecker) getHost(ctx context.Context, checkOpts CheckArgs, hostRef *types.ManagedObjectReference) (mo.HostSystem, error) {
 	var o mo.HostSystem
+	var err error
 	hostName := hostRef.Value
-	hostSystemObject := object.NewHostSystem(checkOpts.vmConnection.Client.Client, *hostRef)
 
-	err := hostSystemObject.Properties(ctx, hostSystemObject.Reference(), []string{"name", "config.product"}, &o)
+	// Since we need to iterate through connections again, lets not throw error prematurely.
+	for _, vConn := range checkOpts.vmConnection {
+		hostSystemObject := object.NewHostSystem(vConn.Client.Client, *hostRef)
+
+		err = hostSystemObject.Properties(ctx, hostSystemObject.Reference(), []string{"name", "config.product"}, &o)
+		if err == nil {
+			// Object found
+			break
+		}
+	}
 	if err != nil {
 		return o, fmt.Errorf("failed to load ESXi host %s: %v", hostName, err)
 	}
@@ -234,43 +242,47 @@ func (n *NodeChecker) getHost(ctx context.Context, checkOpts CheckArgs, hostRef 
 }
 
 func getVM(ctx context.Context, checkOpts CheckArgs, node *v1.Node) (*mo.VirtualMachine, error) {
-	vmClient := checkOpts.vmConnection.Client.Client
-	vmConfig := checkOpts.vmConnection.Config
-
-	dataCenterNames, err := utils.GetDatacenters(vmConfig)
-	if err != nil {
-		return nil, err
-	}
-
 	vmUUID := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(node.Spec.ProviderID, "vsphere://")))
-	for _, dcName := range dataCenterNames {
-		// Find datastore
-		finder := find.NewFinder(vmClient, false)
-		dc, err := finder.Datacenter(ctx, dcName)
+	for _, client := range checkOpts.vmConnection {
+		vmClient := client.Client.Client
+		vmConfig := client.Config
+
+		// When checking VMs, the VMs may be spread across vCenters.  So we'll need to get vCenters from config and
+		// check each for the vm.
+		dataCenterNames, err := vmConfig.GetDatacenters(client.Hostname)
 		if err != nil {
-			return nil, fmt.Errorf("failed to access Datacenter %s: %s", dcName, err)
+			return nil, err
 		}
 
-		// Find VM reference in the datastore, by UUID
-		s := object.NewSearchIndex(dc.Client())
+		for _, dcName := range dataCenterNames {
+			// Find datastore
+			finder := find.NewFinder(vmClient, false)
+			dc, err := finder.Datacenter(ctx, dcName)
+			if err != nil {
+				return nil, fmt.Errorf("failed to access Datacenter %s: %s", dcName, err)
+			}
 
-		svm, err := s.FindByUuid(ctx, dc, vmUUID, true, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find VM %s by UUID %s: %s", node.Name, vmUUID, err)
-		}
-		if svm == nil {
-			continue
-		}
+			// Find VM reference in the datastore, by UUID
+			s := object.NewSearchIndex(dc.Client())
 
-		// Find VM properties
-		vm := object.NewVirtualMachine(vmClient, svm.Reference())
+			svm, err := s.FindByUuid(ctx, dc, vmUUID, true, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find VM %s by UUID %s: %s", node.Name, vmUUID, err)
+			}
+			if svm == nil {
+				continue
+			}
 
-		var o mo.VirtualMachine
-		err = vm.Properties(ctx, vm.Reference(), nodeProperties, &o)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load VM %s: %s", node.Name, err)
+			// Find VM properties
+			vm := object.NewVirtualMachine(vmClient, svm.Reference())
+
+			var o mo.VirtualMachine
+			err = vm.Properties(ctx, vm.Reference(), nodeProperties, &o)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load VM %s: %s", node.Name, err)
+			}
+			return &o, nil
 		}
-		return &o, nil
 	}
 	return nil, fmt.Errorf("unable to find VM %s by UUID %s", node.Name, vmUUID)
 }
