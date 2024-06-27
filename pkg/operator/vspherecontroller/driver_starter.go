@@ -37,7 +37,7 @@ func (c *VSphereController) createCSIDriver() {
 		c.eventRecorder,
 	).WithLogLevelController().WithManagementStateController(
 		driverOperandName,
-		false,
+		true,
 	).WithStaticResourcesController(
 		"VMwareVSphereDriverStaticResourcesController",
 		c.kubeClient,
