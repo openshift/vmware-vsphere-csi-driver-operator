@@ -12,7 +12,9 @@ import (
 	"gopkg.in/gcfg.v1"
 	iniv1 "gopkg.in/ini.v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/legacy-cloud-providers/vsphere"
 
@@ -67,6 +69,7 @@ type VSphereController struct {
 const (
 	cloudConfigNamespace              = "openshift-config"
 	infraGlobalName                   = "cluster"
+	legacyConfigMapName               = "vsphere-csi-config"
 	cloudCredSecretName               = "vmware-vsphere-cloud-credentials"
 	metricsCertSecretName             = "vmware-vsphere-csi-driver-controller-metrics-serving-cert"
 	webhookSecretName                 = "vmware-vsphere-csi-driver-webhook-secret"
@@ -460,6 +463,9 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 		return err
 	}
 
+	// We no longer use the ConfigMap to store the vSphere config, so make sure to delete it
+	c.deleteConfigMapIfExists(ctx, legacyConfigMapName, c.targetNamespace)
+
 	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
 	if err != nil {
 		return err
@@ -797,4 +803,24 @@ func getvCenterName(infra *ocpv1.Infrastructure, configmapLister corelister.Conf
 		return "", err
 	}
 	return cfg.Workspace.VCenterIP, nil
+}
+
+// Ensure the ConfigMap is deleted as it is no longer in use
+func (c *VSphereController) deleteConfigMapIfExists(ctx context.Context, name, namespace string) {
+	configMap, err := c.configMapLister.ConfigMaps(c.targetNamespace).Get(cloudCredSecretName)
+	switch {
+	case errors.IsNotFound(err):
+		// ConfigMap doesn't exist, no deletion necessary
+		return
+	case err != nil:
+		klog.Errorf("Failed to get ConfigMap %s/%s for deletion: %v", namespace, cloudCredSecretName, err)
+		return
+	case configMap != nil:
+		err := c.kubeClient.CoreV1().ConfigMaps(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		if err != nil {
+			klog.Errorf("Failed to delete ConfigMap %s/%s: %v", namespace, name, err)
+		} else {
+			klog.Infof("Successfully deleted ConfigMap %s/%s", namespace, name)
+		}
+	}
 }
