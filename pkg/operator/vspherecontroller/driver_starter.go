@@ -210,6 +210,8 @@ func WithLogLevelDaemonSetHook() csidrivernodeservicecontroller.DaemonSetHookFun
 	}
 }
 
+// WithSecretDaemonSetAnnotationHook adds an annotation to the DaemonSet to trigger a rollout of new drivers when the specified secret changes.
+// This is necessary because the drivers need to be restarted for new CSINode values to reflect updated topology information.
 func WithSecretDaemonSetAnnotationHook(secretName, namespace string, secretInformer corev1informers.SecretInformer) csidrivernodeservicecontroller.DaemonSetHookFunc {
 	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
 		inputHashes, err := resourcehash.MultipleObjectHashStringMapForObjectReferenceFromLister(
