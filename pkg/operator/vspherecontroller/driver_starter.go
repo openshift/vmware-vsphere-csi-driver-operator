@@ -16,11 +16,13 @@ import (
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivernodeservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1informers "k8s.io/client-go/informers/core/v1"
+	"k8s.io/klog/v2"
 )
 
 func (c *VSphereController) createCSIDriver() {
@@ -29,8 +31,8 @@ func (c *VSphereController) createCSIDriver() {
 		c.eventRecorder,
 	).WithLogLevelController().WithManagementStateController(
 		driverOperandName,
-		false,
-	).WithStaticResourcesController(
+		true,
+	).WithConditionalStaticResourcesController(
 		"VMwareVSphereDriverStaticResourcesController",
 		c.kubeClient,
 		c.apiClients.DynamicClient,
@@ -72,6 +74,12 @@ func (c *VSphereController) createCSIDriver() {
 			"webhook/rbac/role.yaml",
 			"webhook/rbac/rolebinding.yaml",
 			"webhook/pdb.yaml",
+		},
+		func() bool {
+			return getOperatorSyncState(c.operatorClient) == operatorapi.Managed
+		},
+		func() bool {
+			return getOperatorSyncState(c.operatorClient) == operatorapi.Removed
 		},
 	).WithConditionalStaticResourcesController(
 		"VMwareVSphereDriverConditionalStaticResourcesController",
@@ -284,4 +292,25 @@ func newSecretEnvVar(secretName, envVarName, key string) v1.EnvVar {
 			},
 		},
 	}
+}
+
+// getOperatorSyncState returns the management state of the operator to determine
+// how to sync conditional resources. It returns one of the following states:
+//
+//	Managed: resources should be synced
+//	Unmanaged: resources should NOT be synced
+//	Removed: resources should be deleted
+//
+// Errors fetching the operator state will log an error and return Unmanaged
+// to avoid syncing resources when the actual state is unknown.
+func getOperatorSyncState(operatorClient v1helpers.OperatorClientWithFinalizers) operatorapi.ManagementState {
+	opSpec, _, _, err := operatorClient.GetOperatorState()
+	if err != nil {
+		klog.Errorf("Failed to get operator state: %v", err)
+		return operatorapi.Unmanaged
+	}
+	if opSpec.ManagementState != operatorapi.Managed {
+		klog.Infof("Operator is not managed, the management state is %v", opSpec.ManagementState)
+	}
+	return opSpec.ManagementState
 }
