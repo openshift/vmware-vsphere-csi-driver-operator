@@ -688,7 +688,8 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
 	}
 
-	csiConfig, err := iniv1.Load([]byte(csiConfigString))
+	// We ignore inline comments when reading the INI file because passwords may contain comment symbos (# and ;)
+	csiConfig, err := iniv1.LoadSources(iniv1.LoadOptions{IgnoreInlineComment: true}, []byte(csiConfigString))
 	if err != nil {
 		return nil, fmt.Errorf("error loading ini file: %v", err)
 	}
