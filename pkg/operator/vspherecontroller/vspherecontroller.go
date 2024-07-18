@@ -10,7 +10,6 @@ import (
 
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"gopkg.in/gcfg.v1"
-	iniv1 "gopkg.in/ini.v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -688,31 +687,26 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
 	}
 
-	// We ignore inline comments when reading the INI file because passwords may contain comment symbos (# and ;)
-	csiConfig, err := iniv1.LoadSources(iniv1.LoadOptions{IgnoreInlineComment: true}, []byte(csiConfigString))
+	csiConfig, err := newINIConfig(csiConfigString)
 	if err != nil {
-		return nil, fmt.Errorf("error loading ini file: %v", err)
+		return nil, err
 	}
 
 	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
 	if len(topologyCategories) > 0 {
 		topologyCategoryString := strings.Join(topologyCategories, ",")
-		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
+		csiConfig.Set("Labels", "topology-categories", topologyCategoryString)
 	}
 
 	snapshotOptions := utils.GetSnapshotOptions(clusterCSIDriver)
 	if len(snapshotOptions) > 0 {
 		for k, v := range snapshotOptions {
-			csiConfig.Section("Snapshot").Key(k).SetValue(v)
+			csiConfig.Set("Snapshot", k, v)
 		}
 	}
 
-	// lets dump the ini file to a string
-	var finalConfigString strings.Builder
-	csiConfig.WriteTo(&finalConfigString)
-
 	requiredSecret := resourceread.ReadSecretV1OrDie(c.secretManifest)
-	requiredSecret.Data["cloud.conf"] = []byte(finalConfigString.String())
+	requiredSecret.Data["cloud.conf"] = []byte(csiConfig.String())
 	return requiredSecret, nil
 
 }
