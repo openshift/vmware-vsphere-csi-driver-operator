@@ -671,32 +671,26 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	}
 
 	datacenters := strings.Join(dataCenterNames, ",")
+	user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, infra, c.configMapLister, c.apiClients.SecretInformer)
+	if err != nil {
+		return nil, err
+	}
+
 	for pattern, value := range map[string]string{
 		"${CLUSTER_ID}":              infra.Status.InfrastructureName,
 		"${VCENTER}":                 sourceCFG.Workspace.VCenterIP,
 		"${DATACENTERS}":             datacenters,
 		"${MIGRATION_DATASTORE_URL}": datastoreURL,
+		"${USER}":                    user,
+		"${PASSWORD}":                password,
 	} {
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
-	}
-
-	// Get vSphere credentials from secret
-	user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, infra, c.configMapLister, c.apiClients.SecretInformer)
-	if err != nil {
-		return nil, err
 	}
 
 	csiConfig, err := newINIConfig(csiConfigString)
 	if err != nil {
 		return nil, err
 	}
-
-	// This is a workaround to account for the fact that passwords may have
-	// symbols considered inline comments by the INI format. Essentially,
-	// we make sure that the passowrd is wrapped in double quotes, and follow
-	// the same approach with username.
-	csiConfig.Set("Global", "user", fmt.Sprintf("%q", user))
-	csiConfig.Set("Global", "password", fmt.Sprintf("%q", password))
 
 	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
 	if len(topologyCategories) > 0 {

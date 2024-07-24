@@ -1,9 +1,6 @@
 package vspherecontroller
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
 func TestINIConfig(t *testing.T) {
 	tests := []struct {
@@ -74,36 +71,6 @@ password   = password123`,
 cluster-id = 1234
 user       = user1
 password   = newpassword`,
-		},
-		{
-			name: "Valid config preserving double quotes in user",
-			config: `[Global]
-cluster-id = 1234
-user       = user1
-password   = password123`,
-			section:       "Global",
-			key:           "user",
-			value:         fmt.Sprintf("%q", "user2"),
-			expectedError: false,
-			expectedString: `[Global]
-cluster-id = 1234
-user       = "user2"
-password   = password123`,
-		},
-		{
-			name: "Valid config preserving double quotes in password",
-			config: `[Global]
-cluster-id = 1234
-user       = user1
-password   = password123`,
-			section:       "Global",
-			key:           "password",
-			value:         fmt.Sprintf("%q", "newpassword"),
-			expectedError: false,
-			expectedString: `[Global]
-cluster-id = 1234
-user       = user1
-password   = "newpassword"`,
 		},
 		{
 			name: "Invalid config with unbalaced section",
