@@ -103,6 +103,7 @@ func (c *CNSVolumeMigrator) StartMigration(ctx context.Context, volumeFile strin
 	c.usedVolumeCache = NewInUseStore(pvList.Items)
 	c.usedVolumeCache.addAllPods(podList.Items)
 	err = c.findAndMigrateCSIVolumes(ctx, volumeFile)
+	c.printSummary()
 	return err
 }
 

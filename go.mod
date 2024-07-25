@@ -6,15 +6,15 @@ toolchain go1.22.1
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
-
 	github.com/openshift/api v0.0.0-20240724184751-84047ef4a2ce
+	github.com/fatih/color v1.7.0
+	github.com/openshift/api v0.0.0-20240527133614-ba11c1587003
 	github.com/openshift/build-machinery-go v0.0.0-20240419090851-af9c868bcf52
 	github.com/openshift/client-go v0.0.0-20240528061634-b054aa794d87
 
 	github.com/spf13/cobra v1.8.1
 	github.com/vmware/govmomi v0.39.0
 	github.com/openshift/library-go v0.0.0-20240715191351-e0aa70d55678
-	github.com/fatih/color v1.7.0
 	github.com/prometheus/client_golang v1.18.0
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/ini.v1 v1.67.0
@@ -114,6 +114,7 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+
 	k8s.io/apiserver v0.30.3 // indirect
 	k8s.io/cloud-provider v0.30.3 // indirect
 	k8s.io/component-helpers v0.30.3 // indirect
