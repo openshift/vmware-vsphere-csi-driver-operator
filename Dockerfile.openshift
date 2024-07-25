@@ -5,6 +5,7 @@ RUN make
 
 FROM registry.ci.openshift.org/ocp/4.17:base-rhel9
 COPY --from=builder /go/src/github.com/openshift/vmware-vsphere-csi-driver-operator/vmware-vsphere-csi-driver-operator /usr/bin/
+COPY --from=builder /go/src/github.com/openshift/vmware-vsphere-csi-driver-operator/cns-migration /usr/bin/
 ENTRYPOINT ["/usr/bin/vmware-vsphere-csi-driver-operator"]
 LABEL io.k8s.display-name="OpenShift VMware vSphere CSI Driver Operator" \
 	io.k8s.description="The VMware vSphere CSI Driver Operator installs and maintains the VMware vSphere CSI Driver on a cluster."

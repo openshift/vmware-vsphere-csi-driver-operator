@@ -6,13 +6,16 @@ toolchain go1.22.1
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
+
 	github.com/openshift/api v0.0.0-20240724184751-84047ef4a2ce
 	github.com/openshift/build-machinery-go v0.0.0-20240419090851-af9c868bcf52
 	github.com/openshift/client-go v0.0.0-20240528061634-b054aa794d87
-	github.com/openshift/library-go v0.0.0-20240723172506-8bb8fe6cc56d
-	github.com/prometheus/client_golang v1.16.0
+
 	github.com/spf13/cobra v1.8.1
 	github.com/vmware/govmomi v0.39.0
+	github.com/openshift/library-go v0.0.0-20240715191351-e0aa70d55678
+	github.com/fatih/color v1.7.0
+	github.com/prometheus/client_golang v1.18.0
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/ini.v1 v1.67.0
 	k8s.io/api v0.30.3
@@ -22,6 +25,7 @@ require (
 	k8s.io/component-base v0.30.3
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/legacy-cloud-providers v0.29.1
+	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 )
 
 require (
@@ -63,6 +67,8 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
+	github.com/mattn/go-colorable v0.1.2 // indirect
+	github.com/mattn/go-isatty v0.0.8 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
