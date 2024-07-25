@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2018-2024 VMware, Inc. All Rights Reserved.
+Copyright (c) 2018-2023 VMware, Inc. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,10 +20,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -31,7 +27,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"log"
 	"net/http"
@@ -80,7 +75,6 @@ type content struct {
 }
 
 type update struct {
-	*sync.WaitGroup
 	*library.Session
 	Library *library.Library
 	File    map[string]*library.UpdateFile
@@ -158,8 +152,6 @@ func New(u *url.URL, r *simulator.Registry) ([]string, http.Handler) {
 		{internal.Subscriptions + "/", s.subscriptionsID},
 		{internal.LibraryItemPath, s.libraryItem},
 		{internal.LibraryItemPath + "/", s.libraryItemID},
-		{internal.LibraryItemStoragePath, s.libraryItemStorage},
-		{internal.LibraryItemStoragePath + "/", s.libraryItemStorageID},
 		{internal.SubscribedLibraryItem + "/", s.libraryItemID},
 		{internal.LibraryItemUpdateSession, s.libraryItemUpdateSession},
 		{internal.LibraryItemUpdateSession + "/", s.libraryItemUpdateSessionID},
@@ -1290,93 +1282,6 @@ func (s *handler) libraryItemID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *handler) libraryItemByID(id string) (*content, *item) {
-	for _, l := range s.Library {
-		if item, ok := l.Item[id]; ok {
-			return l, item
-		}
-	}
-
-	log.Printf("library for item %q not found", id)
-
-	return nil, nil
-}
-
-func (s *handler) libraryItemStorageByID(id string) ([]library.Storage, bool) {
-	lib, item := s.libraryItemByID(id)
-	if item == nil {
-		return nil, false
-	}
-
-	storage := make([]library.Storage, len(item.File))
-
-	for i, file := range item.File {
-		storage[i] = library.Storage{
-			StorageBacking: lib.Storage[0],
-			StorageURIs: []string{
-				path.Join(libraryPath(lib.Library, id), file.Name),
-			},
-			Name:    file.Name,
-			Version: file.Version,
-		}
-		if file.Checksum != nil {
-			storage[i].Checksum = *file.Checksum
-		}
-		if file.Size != nil {
-			storage[i].Size = *file.Size
-		}
-		if file.Cached != nil {
-			storage[i].Cached = *file.Cached
-		}
-	}
-
-	return storage, true
-}
-
-func (s *handler) libraryItemStorage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	id := r.URL.Query().Get("library_item_id")
-	storage, ok := s.libraryItemStorageByID(id)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-
-	OK(w, storage)
-}
-
-func (s *handler) libraryItemStorageID(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	id := s.id(r)
-	storage, ok := s.libraryItemStorageByID(id)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-
-	var spec struct {
-		Name string `json:"file_name"`
-	}
-
-	if s.decode(r, w, &spec) {
-		for _, file := range storage {
-			if file.Name == spec.Name {
-				OK(w, []library.Storage{file})
-				return
-			}
-		}
-		http.NotFound(w, r)
-	}
-}
-
 func (s *handler) libraryItemUpdateSession(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1410,10 +1315,9 @@ func (s *handler) libraryItemUpdateSession(w http.ResponseWriter, r *http.Reques
 				ExpirationTime:            types.NewTime(time.Now().Add(time.Hour)),
 			}
 			s.Update[session.ID] = update{
-				WaitGroup: new(sync.WaitGroup),
-				Session:   session,
-				Library:   lib,
-				File:      make(map[string]*library.UpdateFile),
+				Session: session,
+				Library: lib,
+				File:    make(map[string]*library.UpdateFile),
 			}
 			OK(w, session.ID)
 		}
@@ -1431,9 +1335,7 @@ func (s *handler) libraryItemUpdateSessionID(w http.ResponseWriter, r *http.Requ
 
 	session := up.Session
 	done := func(state string) {
-		if up.State != "ERROR" {
-			up.State = state
-		}
+		up.State = state
 		go time.AfterFunc(session.ExpirationTime.Sub(time.Now()), func() {
 			s.Lock()
 			delete(s.Update, id)
@@ -1449,10 +1351,7 @@ func (s *handler) libraryItemUpdateSessionID(w http.ResponseWriter, r *http.Requ
 		case "cancel":
 			done("CANCELED")
 		case "complete":
-			go func() {
-				up.Wait() // wait for any PULL sources to complete
-				done("DONE")
-			}()
+			done("DONE")
 		case "fail":
 			done("ERROR")
 		case "keep-alive":
@@ -1567,16 +1466,14 @@ func (s *handler) libraryItemUpdateSessionFile(w http.ResponseWriter, r *http.Re
 }
 
 func (s *handler) pullSource(up update, info *library.UpdateFile) {
-	defer up.Done()
 	done := func(err error) {
 		s.Lock()
 		info.Status = "READY"
 		if err != nil {
 			log.Printf("PULL %s: %s", info.SourceEndpoint.URI, err)
 			info.Status = "ERROR"
-			info.ErrorMessage = &rest.LocalizableMessage{DefaultMessage: err.Error()}
-			up.State = info.Status
-			up.ErrorMessage = info.ErrorMessage
+			up.State = "ERROR"
+			up.ErrorMessage = &rest.LocalizableMessage{DefaultMessage: err.Error()}
 		}
 		s.Unlock()
 	}
@@ -1593,19 +1490,8 @@ func (s *handler) pullSource(up update, info *library.UpdateFile) {
 		return
 	}
 
-	err = s.libraryItemFileCreate(&up, info.Name, res.Body, info.Checksum)
+	err = s.libraryItemFileCreate(&up, info.Name, res.Body)
 	done(err)
-}
-
-func hasChecksum(c *library.Checksum) bool {
-	return c != nil && c.Checksum != ""
-}
-
-var checksum = map[string]func() hash.Hash{
-	"MD5":    md5.New,
-	"SHA1":   sha1.New,
-	"SHA256": sha256.New,
-	"SHA512": sha512.New,
 }
 
 func (s *handler) libraryItemUpdateSessionFileID(w http.ResponseWriter, r *http.Request) {
@@ -1631,7 +1517,6 @@ func (s *handler) libraryItemUpdateSessionFileID(w http.ResponseWriter, r *http.
 			id = uuid.New().String()
 			info := &library.UpdateFile{
 				Name:             spec.File.Name,
-				Checksum:         spec.File.Checksum,
 				SourceType:       spec.File.SourceType,
 				Status:           "WAITING_FOR_TRANSFER",
 				BytesTransferred: 0,
@@ -1645,30 +1530,20 @@ func (s *handler) libraryItemUpdateSessionFileID(w http.ResponseWriter, r *http.
 				}
 				info.UploadEndpoint = &library.TransferEndpoint{URI: u.String()}
 			case "PULL":
-				if hasChecksum(info.Checksum) && checksum[info.Checksum.Algorithm] == nil {
-					BadRequest(w, "com.vmware.vapi.std.errors.invalid_argument")
-					return
-				}
 				info.SourceEndpoint = spec.File.SourceEndpoint
-				info.Status = "TRANSFERRING"
-				up.Add(1)
 				go s.pullSource(up, info)
 			}
 			up.File[id] = info
 			OK(w, info)
 		}
 	case "get":
-		var spec struct {
-			File string `json:"file_name"`
+		OK(w, up.Session)
+	case "list":
+		var ids []string
+		for id := range up.File {
+			ids = append(ids, id)
 		}
-		if s.decode(r, w, &spec) {
-			for _, f := range up.File {
-				if f.Name == spec.File {
-					OK(w, f)
-					return
-				}
-			}
-		}
+		OK(w, ids)
 	case "remove":
 		if up.State != "ACTIVE" {
 			s.error(w, fmt.Errorf("removeFile not allowed in state %s", up.State))
@@ -1705,12 +1580,20 @@ func (s *handler) libraryItemDownloadSession(w http.ResponseWriter, r *http.Requ
 
 		switch s.action(r) {
 		case "create", "":
-			lib, item := s.libraryItemByID(spec.Session.LibraryItemID)
-			if item == nil {
+			var lib *library.Library
+			var files []library.File
+			for _, l := range s.Library {
+				if item, ok := l.Item[spec.Session.LibraryItemID]; ok {
+					lib = l.Library
+					files = item.File
+					break
+				}
+			}
+			if lib == nil {
+				log.Printf("library for item %q not found", spec.Session.LibraryItemID)
 				http.NotFound(w, r)
 				return
 			}
-
 			session := &library.Session{
 				ID:                        uuid.New().String(),
 				LibraryItemID:             spec.Session.LibraryItemID,
@@ -1721,10 +1604,10 @@ func (s *handler) libraryItemDownloadSession(w http.ResponseWriter, r *http.Requ
 			}
 			s.Download[session.ID] = download{
 				Session: session,
-				Library: lib.Library,
+				Library: lib,
 				File:    make(map[string]*library.DownloadFile),
 			}
-			for _, file := range item.File {
+			for _, file := range files {
 				s.Download[session.ID].File[file.Name] = &library.DownloadFile{
 					Name:   file.Name,
 					Status: "UNPREPARED",
@@ -1858,7 +1741,7 @@ func libraryPath(l *library.Library, id string) string {
 	return path.Join(append([]string{ds.Info.GetDatastoreInfo().Url, "contentlib-" + l.ID}, id)...)
 }
 
-func (s *handler) libraryItemFileCreate(up *update, name string, body io.ReadCloser, cs *library.Checksum) error {
+func (s *handler) libraryItemFileCreate(up *update, name string, body io.ReadCloser) error {
 	var in io.Reader = body
 	dir := libraryPath(up.Library, up.Session.LibraryItemID)
 	if err := os.MkdirAll(dir, 0750); err != nil {
@@ -1887,12 +1770,6 @@ func (s *handler) libraryItemFileCreate(up *update, name string, body io.ReadClo
 		return err
 	}
 
-	var h hash.Hash
-	if hasChecksum(cs) {
-		h = checksum[cs.Algorithm]()
-		in = io.TeeReader(in, h)
-	}
-
 	n, err := io.Copy(file, in)
 	_ = body.Close()
 	if err != nil {
@@ -1901,13 +1778,6 @@ func (s *handler) libraryItemFileCreate(up *update, name string, body io.ReadClo
 	err = file.Close()
 	if err != nil {
 		return err
-	}
-
-	if h != nil {
-		sum := fmt.Sprintf("%x", h.Sum(nil))
-		if sum != cs.Checksum {
-			return fmt.Errorf("checksum mismatch: actual=%s, expected=%s", sum, cs.Checksum)
-		}
 	}
 
 	i := s.Library[up.Library.ID].Item[up.Session.LibraryItemID]
@@ -1958,7 +1828,7 @@ func (s *handler) libraryItemFileData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.libraryItemFileCreate(up, name, r.Body, nil)
+	err := s.libraryItemFileCreate(up, name, r.Body)
 	if err != nil {
 		s.error(w, err)
 	}

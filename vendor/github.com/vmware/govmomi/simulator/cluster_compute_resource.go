@@ -104,9 +104,6 @@ func (c *ClusterComputeResource) update(cfg *types.ClusterConfigInfoEx, cspec *t
 		if val := cspec.DrsConfig.Enabled; val != nil {
 			cfg.DrsConfig.Enabled = val
 		}
-		if val := cspec.DrsConfig.DefaultVmBehavior; val != "" {
-			cfg.DrsConfig.DefaultVmBehavior = val
-		}
 	}
 
 	return nil

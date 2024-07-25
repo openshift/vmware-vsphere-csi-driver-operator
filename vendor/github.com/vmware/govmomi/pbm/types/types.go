@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014-2024 VMware, Inc. All Rights Reserved.
+Copyright (c) 2014-2023 VMware, Inc. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,8 +24,6 @@ import (
 )
 
 // A boxed array of `PbmCapabilityConstraintInstance`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityConstraintInstance struct {
 	PbmCapabilityConstraintInstance []PbmCapabilityConstraintInstance `xml:"PbmCapabilityConstraintInstance,omitempty" json:"_value"`
 }
@@ -35,8 +33,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilityInstance`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityInstance struct {
 	PbmCapabilityInstance []PbmCapabilityInstance `xml:"PbmCapabilityInstance,omitempty" json:"_value"`
 }
@@ -46,8 +42,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilityMetadata`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityMetadata struct {
 	PbmCapabilityMetadata []PbmCapabilityMetadata `xml:"PbmCapabilityMetadata,omitempty" json:"_value"`
 }
@@ -57,8 +51,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilityMetadataPerCategory`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityMetadataPerCategory struct {
 	PbmCapabilityMetadataPerCategory []PbmCapabilityMetadataPerCategory `xml:"PbmCapabilityMetadataPerCategory,omitempty" json:"_value"`
 }
@@ -68,8 +60,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilityPropertyInstance`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityPropertyInstance struct {
 	PbmCapabilityPropertyInstance []PbmCapabilityPropertyInstance `xml:"PbmCapabilityPropertyInstance,omitempty" json:"_value"`
 }
@@ -79,8 +69,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilityPropertyMetadata`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityPropertyMetadata struct {
 	PbmCapabilityPropertyMetadata []PbmCapabilityPropertyMetadata `xml:"PbmCapabilityPropertyMetadata,omitempty" json:"_value"`
 }
@@ -90,8 +78,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilitySchema`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilitySchema struct {
 	PbmCapabilitySchema []PbmCapabilitySchema `xml:"PbmCapabilitySchema,omitempty" json:"_value"`
 }
@@ -101,8 +87,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilitySubProfile`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilitySubProfile struct {
 	PbmCapabilitySubProfile []PbmCapabilitySubProfile `xml:"PbmCapabilitySubProfile,omitempty" json:"_value"`
 }
@@ -112,8 +96,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilityVendorNamespaceInfo`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityVendorNamespaceInfo struct {
 	PbmCapabilityVendorNamespaceInfo []PbmCapabilityVendorNamespaceInfo `xml:"PbmCapabilityVendorNamespaceInfo,omitempty" json:"_value"`
 }
@@ -123,8 +105,6 @@ func init() {
 }
 
 // A boxed array of `PbmCapabilityVendorResourceTypeInfo`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCapabilityVendorResourceTypeInfo struct {
 	PbmCapabilityVendorResourceTypeInfo []PbmCapabilityVendorResourceTypeInfo `xml:"PbmCapabilityVendorResourceTypeInfo,omitempty" json:"_value"`
 }
@@ -134,8 +114,6 @@ func init() {
 }
 
 // A boxed array of `PbmCompliancePolicyStatus`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmCompliancePolicyStatus struct {
 	PbmCompliancePolicyStatus []PbmCompliancePolicyStatus `xml:"PbmCompliancePolicyStatus,omitempty" json:"_value"`
 }
@@ -145,8 +123,6 @@ func init() {
 }
 
 // A boxed array of `PbmComplianceResult`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmComplianceResult struct {
 	PbmComplianceResult []PbmComplianceResult `xml:"PbmComplianceResult,omitempty" json:"_value"`
 }
@@ -156,8 +132,6 @@ func init() {
 }
 
 // A boxed array of `PbmDatastoreSpaceStatistics`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmDatastoreSpaceStatistics struct {
 	PbmDatastoreSpaceStatistics []PbmDatastoreSpaceStatistics `xml:"PbmDatastoreSpaceStatistics,omitempty" json:"_value"`
 }
@@ -167,8 +141,6 @@ func init() {
 }
 
 // A boxed array of `PbmDefaultProfileInfo`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmDefaultProfileInfo struct {
 	PbmDefaultProfileInfo []PbmDefaultProfileInfo `xml:"PbmDefaultProfileInfo,omitempty" json:"_value"`
 }
@@ -178,8 +150,6 @@ func init() {
 }
 
 // A boxed array of `PbmFaultNoPermissionEntityPrivileges`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmFaultNoPermissionEntityPrivileges struct {
 	PbmFaultNoPermissionEntityPrivileges []PbmFaultNoPermissionEntityPrivileges `xml:"PbmFaultNoPermissionEntityPrivileges,omitempty" json:"_value"`
 }
@@ -189,8 +159,6 @@ func init() {
 }
 
 // A boxed array of `PbmLoggingConfiguration`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmLoggingConfiguration struct {
 	PbmLoggingConfiguration []PbmLoggingConfiguration `xml:"PbmLoggingConfiguration,omitempty" json:"_value"`
 }
@@ -200,8 +168,6 @@ func init() {
 }
 
 // A boxed array of `PbmPlacementCompatibilityResult`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmPlacementCompatibilityResult struct {
 	PbmPlacementCompatibilityResult []PbmPlacementCompatibilityResult `xml:"PbmPlacementCompatibilityResult,omitempty" json:"_value"`
 }
@@ -211,8 +177,6 @@ func init() {
 }
 
 // A boxed array of `PbmPlacementHub`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmPlacementHub struct {
 	PbmPlacementHub []PbmPlacementHub `xml:"PbmPlacementHub,omitempty" json:"_value"`
 }
@@ -222,8 +186,6 @@ func init() {
 }
 
 // A boxed array of `PbmPlacementMatchingResources`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmPlacementMatchingResources struct {
 	PbmPlacementMatchingResources []BasePbmPlacementMatchingResources `xml:"PbmPlacementMatchingResources,omitempty,typeattr" json:"_value"`
 }
@@ -233,8 +195,6 @@ func init() {
 }
 
 // A boxed array of `PbmPlacementRequirement`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmPlacementRequirement struct {
 	PbmPlacementRequirement []BasePbmPlacementRequirement `xml:"PbmPlacementRequirement,omitempty,typeattr" json:"_value"`
 }
@@ -244,8 +204,6 @@ func init() {
 }
 
 // A boxed array of `PbmPlacementResourceUtilization`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmPlacementResourceUtilization struct {
 	PbmPlacementResourceUtilization []PbmPlacementResourceUtilization `xml:"PbmPlacementResourceUtilization,omitempty" json:"_value"`
 }
@@ -255,8 +213,6 @@ func init() {
 }
 
 // A boxed array of `PbmProfile`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmProfile struct {
 	PbmProfile []BasePbmProfile `xml:"PbmProfile,omitempty,typeattr" json:"_value"`
 }
@@ -266,8 +222,6 @@ func init() {
 }
 
 // A boxed array of `PbmProfileId`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmProfileId struct {
 	PbmProfileId []PbmProfileId `xml:"PbmProfileId,omitempty" json:"_value"`
 }
@@ -277,8 +231,6 @@ func init() {
 }
 
 // A boxed array of `PbmProfileOperationOutcome`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmProfileOperationOutcome struct {
 	PbmProfileOperationOutcome []PbmProfileOperationOutcome `xml:"PbmProfileOperationOutcome,omitempty" json:"_value"`
 }
@@ -288,8 +240,6 @@ func init() {
 }
 
 // A boxed array of `PbmProfileResourceType`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmProfileResourceType struct {
 	PbmProfileResourceType []PbmProfileResourceType `xml:"PbmProfileResourceType,omitempty" json:"_value"`
 }
@@ -299,8 +249,6 @@ func init() {
 }
 
 // A boxed array of `PbmProfileType`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmProfileType struct {
 	PbmProfileType []PbmProfileType `xml:"PbmProfileType,omitempty" json:"_value"`
 }
@@ -310,8 +258,6 @@ func init() {
 }
 
 // A boxed array of `PbmQueryProfileResult`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmQueryProfileResult struct {
 	PbmQueryProfileResult []PbmQueryProfileResult `xml:"PbmQueryProfileResult,omitempty" json:"_value"`
 }
@@ -321,8 +267,6 @@ func init() {
 }
 
 // A boxed array of `PbmQueryReplicationGroupResult`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmQueryReplicationGroupResult struct {
 	PbmQueryReplicationGroupResult []PbmQueryReplicationGroupResult `xml:"PbmQueryReplicationGroupResult,omitempty" json:"_value"`
 }
@@ -332,8 +276,6 @@ func init() {
 }
 
 // A boxed array of `PbmRollupComplianceResult`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmRollupComplianceResult struct {
 	PbmRollupComplianceResult []PbmRollupComplianceResult `xml:"PbmRollupComplianceResult,omitempty" json:"_value"`
 }
@@ -343,8 +285,6 @@ func init() {
 }
 
 // A boxed array of `PbmServerObjectRef`. To be used in `Any` placeholders.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type ArrayOfPbmServerObjectRef struct {
 	PbmServerObjectRef []PbmServerObjectRef `xml:"PbmServerObjectRef,omitempty" json:"_value"`
 }
@@ -400,8 +340,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmAssignDefaultRequirementProfile`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmAssignDefaultRequirementProfileRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// The profile that needs to be made default profile.
@@ -606,7 +544,6 @@ func init() {
 	types.Add("pbm:PbmCapabilityMetadataPerCategory", reflect.TypeOf((*PbmCapabilityMetadataPerCategory)(nil)).Elem())
 }
 
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCapabilityMetadataUniqueId struct {
 	types.DynamicData
 
@@ -664,22 +601,23 @@ type PbmCapabilityProfile struct {
 	// The <code>profileCategory</code>
 	// is a string value that corresponds to one of the
 	// `PbmProfileCategoryEnum_enum` values.
-	//   - REQUIREMENT profile - Defines the storage constraints applied
-	//     to virtual machine placement. Requirements are defined by
-	//     the user and can be associated with virtual machines and virtual
-	//     disks. During provisioning, you can use a requirements profile
-	//     for compliance and placement checking to support
-	//     selection and configuration of resources.
-	//   - RESOURCE profile - Specifies system-defined storage capabilities.
-	//     You cannot modify a resource profile. You cannot associate a resource
-	//     profile with vSphere entities, use it during provisioning, or target
-	//     entities for resource selection or configuration.
-	//     This type of profile gives the user visibility into the capabilities
-	//     supported by the storage provider.
-	//   - DATA\_SERVICE\_POLICY - Indicates a data service policy that can
-	//     be embedded into another storage policy. Policies of this type can't
-	//     be assigned to Virtual Machines or Virtual Disks. This policy cannot
-	//     be used for compliance checking.
+	//     - REQUIREMENT profile - Defines the storage constraints applied
+	//       to virtual machine placement. Requirements are defined by
+	//       the user and can be associated with virtual machines and virtual
+	//       disks. During provisioning, you can use a requirements profile
+	//       for compliance and placement checking to support
+	//       selection and configuration of resources.
+	//     - RESOURCE profile - Specifies system-defined storage capabilities.
+	//       You cannot modify a resource profile. You cannot associate a resource
+	//       profile with vSphere entities, use it during provisioning, or target
+	//       entities for resource selection or configuration.
+	//       This type of profile gives the user visibility into the capabilities
+	//       supported by the storage provider.
+	//
+	// DATA\_SERVICE\_POLICY - Indicates a data service policy that can
+	// be embedded into another storage policy. Policies of this type can't
+	// be assigned to Virtual Machines or Virtual Disks. This policy cannot
+	// be used for compliance checking.
 	ProfileCategory string `xml:"profileCategory" json:"profileCategory"`
 	// Type of the target resource to which the capability information applies.
 	//
@@ -826,9 +764,9 @@ type PbmCapabilityPropertyInstance struct {
 	//
 	// You must specify the value.
 	// A property value is one value or a collection of values.
-	//   - A single property value is expressed as a scalar value.
-	//   - A collection of values is expressed as a `PbmCapabilityDiscreteSet`
-	//     or a `PbmCapabilityRange` of values.
+	//     - A single property value is expressed as a scalar value.
+	//     - A collection of values is expressed as a `PbmCapabilityDiscreteSet`
+	//       or a `PbmCapabilityRange` of values.
 	//
 	// The datatype of each value must be one of the
 	// `PbmBuiltinType_enum` datatypes.
@@ -861,23 +799,23 @@ type PbmCapabilityPropertyMetadata struct {
 	// (`PbmCapabilityPropertyInstance*.*PbmCapabilityPropertyInstance.id`).
 	Id string `xml:"id" json:"id"`
 	// Property name and description.
-	//   - The <code>summary.label</code> property
-	//     (`PbmExtendedElementDescription.label`)
-	//     contains property 'name' in server locale.
-	//   - The <code>summary.summary</code> property
-	//     (`PbmExtendedElementDescription.summary`)
-	//     contains property 'description' in server locale.
-	//   - The <code>summary.messageCatalogKeyPrefix</code> property
-	//     (`PbmExtendedElementDescription.messageCatalogKeyPrefix`)
-	//     contains unique prefix for this property within given message catalog.
-	//     Prefix format: &lt;capability\_unique\_identifier&gt;.&lt;property\_id&gt;
-	//     capability\_unique\_identifier -- string representation of
-	//     `PbmCapabilityMetadataUniqueId` which globally identifies given
-	//     capability metadata definition uniquely.
-	//     property\_id -- 'id' of this property `PbmCapabilityPropertyMetadata.id`
-	//     Eg www.emc.com.storage.Recovery.Recovery\_site
-	//     www.emc.com.storage.Recovery.RPO
-	//     www.emc.com.storage.Recovery.RTO
+	//     - The <code>summary.label</code> property
+	//       (`PbmExtendedElementDescription.label`)
+	//       contains property 'name' in server locale.
+	//     - The <code>summary.summary</code> property
+	//       (`PbmExtendedElementDescription.summary`)
+	//       contains property 'description' in server locale.
+	//     - The <code>summary.messageCatalogKeyPrefix</code> property
+	//       (`PbmExtendedElementDescription.messageCatalogKeyPrefix`)
+	//       contains unique prefix for this property within given message catalog.
+	//       Prefix format: &lt;capability\_unique\_identifier.&lt;property\_id
+	//       capability\_unique\_identifier -- string representation of
+	//       `PbmCapabilityMetadataUniqueId` which globally identifies given
+	//       capability metadata definition uniquely.
+	//       property\_id -- 'id' of this property `PbmCapabilityPropertyMetadata.id`
+	//       Eg www.emc.com.storage.Recovery.Recovery\_site
+	//       www.emc.com.storage.Recovery.RPO
+	//       www.emc.com.storage.Recovery.RTO
 	Summary PbmExtendedElementDescription `xml:"summary" json:"summary"`
 	// Indicates whether incorporating given capability is mandatory during creation of
 	// profile.
@@ -888,11 +826,11 @@ type PbmCapabilityPropertyMetadata struct {
 	// (`PbmCapabilityPropertyInstance*.*PbmCapabilityPropertyInstance.value`)
 	// is specified as a builtin datatype and may also specify the interpretation of a
 	// collection of values of that datatype.
-	//   - `PbmCapabilityPropertyMetadata.type*.*PbmCapabilityTypeInfo.typeName`
-	//     specifies the `PbmBuiltinType_enum`.
-	//   - `PbmCapabilityPropertyMetadata.type*.*PbmCapabilityGenericTypeInfo.genericTypeName`
-	//     indicates how a collection of values of the specified datatype will be interpreted
-	//     (`PbmBuiltinGenericType_enum`).
+	//     - `PbmCapabilityPropertyMetadata.type*.*PbmCapabilityTypeInfo.typeName`
+	//       specifies the `PbmBuiltinType_enum`.
+	//     - `PbmCapabilityPropertyMetadata.type*.*PbmCapabilityGenericTypeInfo.genericTypeName`
+	//       indicates how a collection of values of the specified datatype will be interpreted
+	//       (`PbmBuiltinGenericType_enum`).
 	Type BasePbmCapabilityTypeInfo `xml:"type,omitempty,typeattr" json:"type,omitempty"`
 	// Default value, if any, that the property will assume when not
 	// constrained by requirements.
@@ -923,14 +861,14 @@ type PbmCapabilityPropertyMetadata struct {
 	// different types across capability profiles. This value, if specified,
 	// specifies the expected kind of constraint used in requirement profiles.
 	// Considerations for using this information:
-	//   - This is only a hint; any properly formed constraint
-	//     (see `PbmCapabilityPropertyInstance.value`)
-	//     is still valid for a requirement profile.
-	//   - If VMW\_SET is hinted, then a single value matching the property metadata type is
-	//     also an expected form of constraint, as the latter is an allowed convenience
-	//     for expressing a single-member set.
-	//   - If this hint is not specified, then the authoring system may default to a form of
-	//     constraint determined by its own criteria.
+	//     - This is only a hint; any properly formed constraint
+	//       (see `PbmCapabilityPropertyInstance.value`)
+	//       is still valid for a requirement profile.
+	//     - If VMW\_SET is hinted, then a single value matching the property metadata type is
+	//       also an expected form of constraint, as the latter is an allowed convenience
+	//       for expressing a single-member set.
+	//     - If this hint is not specified, then the authoring system may default to a form of
+	//       constraint determined by its own criteria.
 	RequirementsTypeHint string `xml:"requirementsTypeHint,omitempty" json:"requirementsTypeHint,omitempty"`
 }
 
@@ -1000,16 +938,16 @@ type PbmCapabilitySchemaVendorInfo struct {
 	VendorUuid string `xml:"vendorUuid" json:"vendorUuid"`
 	// Captures name and description information about the vendor/owner of
 	// the schema.
-	//   - The <code>summary.label</code> property
-	//     (`PbmExtendedElementDescription.label`)
-	//     contains vendor name information in server locale.
-	//   - The <code>summary.summary</code> property
-	//     (`PbmExtendedElementDescription.summary`)
-	//     contains vendor description string in server locale.
-	//   - The <code>summary.messageCatalogKeyPrefix</code> property
-	//     (`PbmExtendedElementDescription.messageCatalogKeyPrefix`)
-	//     contains unique prefix for the vendor information within given message
-	//     catalog.
+	//     - The <code>summary.label</code> property
+	//       (`PbmExtendedElementDescription.label`)
+	//       contains vendor name information in server locale.
+	//     - The <code>summary.summary</code> property
+	//       (`PbmExtendedElementDescription.summary`)
+	//       contains vendor description string in server locale.
+	//     - The <code>summary.messageCatalogKeyPrefix</code> property
+	//       (`PbmExtendedElementDescription.messageCatalogKeyPrefix`)
+	//       contains unique prefix for the vendor information within given message
+	//       catalog.
 	Info PbmExtendedElementDescription `xml:"info" json:"info"`
 }
 
@@ -1124,7 +1062,6 @@ func init() {
 	types.Add("pbm:PbmCapabilityTypeInfo", reflect.TypeOf((*PbmCapabilityTypeInfo)(nil)).Elem())
 }
 
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCapabilityVendorNamespaceInfo struct {
 	types.DynamicData
 
@@ -1136,7 +1073,6 @@ func init() {
 	types.Add("pbm:PbmCapabilityVendorNamespaceInfo", reflect.TypeOf((*PbmCapabilityVendorNamespaceInfo)(nil)).Elem())
 }
 
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCapabilityVendorResourceTypeInfo struct {
 	types.DynamicData
 
@@ -1145,7 +1081,7 @@ type PbmCapabilityVendorResourceTypeInfo struct {
 	//
 	// Must match one of the values for enum `PbmProfileResourceTypeEnum_enum`
 	ResourceType string `xml:"resourceType" json:"resourceType"`
-	// List of all vendorInfo &lt;--&gt; namespaceInfo tuples that are registered for
+	// List of all vendorInfo -- namespaceInfo tuples that are registered for
 	// given resource type
 	VendorNamespaceInfo []PbmCapabilityVendorNamespaceInfo `xml:"vendorNamespaceInfo" json:"vendorNamespaceInfo"`
 }
@@ -1161,8 +1097,6 @@ func init() {
 }
 
 // The parameters of `PbmPlacementSolver.PbmCheckCompatibility`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCheckCompatibilityRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Candidate list of hubs, either datastores or storage pods or a
@@ -1189,8 +1123,6 @@ func init() {
 }
 
 // The parameters of `PbmPlacementSolver.PbmCheckCompatibilityWithSpec`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCheckCompatibilityWithSpecRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Candidate list of hubs, either datastores or storage pods
@@ -1216,8 +1148,6 @@ func init() {
 }
 
 // The parameters of `PbmComplianceManager.PbmCheckCompliance`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCheckComplianceRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// One or more references to storage entities.
@@ -1225,16 +1155,16 @@ type PbmCheckComplianceRequestType struct {
 	// A maximum of 1000 virtual machines and/or virtual disks can be specified
 	// in a call. The results of calling the checkCompliance API with
 	// more than a 1000 entities is undefined.
-	//   - If the list of entities also contains datastores, the Server
-	//     will ignore the datastores.
-	//   - If the list contains valid and invalid entities, the Server ignores
-	//     the invalid entities and returns results for the valid entities.
-	//     Invalid entities are entities that are not in the vCenter inventory.
-	//   - If the list contains only datastores, the method throws
-	//     an <code>InvalidArgument</code> fault.
-	//   - If the list contains virtual machines and disks and the entities
-	//     are invalid or have been deleted by the time of the request, the method
-	//     throws an <code>InvalidArgument</code> fault.
+	//     - If the list of entities also contains datastores, the Server
+	//       will ignore the datastores.
+	//     - If the list contains valid and invalid entities, the Server ignores
+	//       the invalid entities and returns results for the valid entities.
+	//       Invalid entities are entities that are not in the vCenter inventory.
+	//     - If the list contains only datastores, the method throws
+	//       an <code>InvalidArgument</code> fault.
+	//     - If the list contains virtual machines and disks and the entities
+	//       are invalid or have been deleted by the time of the request, the method
+	//       throws an <code>InvalidArgument</code> fault.
 	//
 	// If an entity does not have an associated storage profile, the entity
 	// is removed from the list.
@@ -1259,8 +1189,6 @@ func init() {
 }
 
 // The parameters of `PbmPlacementSolver.PbmCheckRequirements`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCheckRequirementsRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Candidate list of hubs, either datastores or storage pods
@@ -1298,8 +1226,6 @@ func init() {
 }
 
 // The parameters of `PbmComplianceManager.PbmCheckRollupCompliance`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCheckRollupComplianceRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// One or more references to virtual machines.
@@ -1468,8 +1394,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmCreate`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmCreateRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Capability-based profile specification.
@@ -1603,8 +1527,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmDelete`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmDeleteRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Array of profile identifiers.
@@ -1640,7 +1562,6 @@ func init() {
 	types.Add("pbm:PbmDuplicateNameFault", reflect.TypeOf((*PbmDuplicateNameFault)(nil)).Elem())
 }
 
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmExtendedElementDescription struct {
 	types.DynamicData
 
@@ -1659,7 +1580,7 @@ type PbmExtendedElementDescription struct {
 	// will be provided by #messageArg.
 	// Both summary and label in ElementDescription will have a corresponding
 	// entry in the message catalog with the keys
-	// &lt;messageCatalogKeyPrefix&gt;.summary and &lt;messageCatalogKeyPrefix&gt;.label
+	// .summary and .label
 	// respectively.
 	// ElementDescription.summary and ElementDescription.label will contain
 	// the strings in server locale.
@@ -1723,7 +1644,6 @@ func init() {
 	types.Add("pbm:PbmFaultNoPermission", reflect.TypeOf((*PbmFaultNoPermission)(nil)).Elem())
 }
 
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFaultNoPermissionEntityPrivileges struct {
 	types.DynamicData
 
@@ -1768,7 +1688,6 @@ func init() {
 	types.Add("pbm:PbmFaultNotFoundFault", reflect.TypeOf((*PbmFaultNotFoundFault)(nil)).Elem())
 }
 
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFaultProfileStorageFault struct {
 	PbmFault
 }
@@ -1790,8 +1709,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmFetchCapabilityMetadata`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFetchCapabilityMetadataRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Type of profile resource. The Server supports the "STORAGE" resource
@@ -1821,8 +1738,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmFetchCapabilitySchema`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFetchCapabilitySchemaRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Unique identifier for the vendor/owner of capability metadata.
@@ -1853,21 +1768,19 @@ func init() {
 }
 
 // The parameters of `PbmComplianceManager.PbmFetchComplianceResult`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFetchComplianceResultRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// One or more references to storage entities.
 	// A maximum of 1000 virtual machines and/or virtual disks can be specified
 	// in a call. The results of calling the fetchComplianceResult API with
 	// more than a 1000 entities is undefined.
-	//   - If the list of entities also contains datastores, the Server
-	//     will ignore the datastores.
-	//   - If the list contains valid and invalid entities, the Server ignores
-	//     the invalid entities and returns results for the valid entities.
-	//     Invalid entities are entities that are not in the vCenter inventory.
-	//   - If the list contains only datastores, the method throws
-	//     an <code>InvalidArgument</code> fault.
+	//     - If the list of entities also contains datastores, the Server
+	//       will ignore the datastores.
+	//     - If the list contains valid and invalid entities, the Server ignores
+	//       the invalid entities and returns results for the valid entities.
+	//       Invalid entities are entities that are not in the vCenter inventory.
+	//     - If the list contains only datastores, the method throws
+	//       an <code>InvalidArgument</code> fault.
 	Entities []PbmServerObjectRef `xml:"entities" json:"entities"`
 	// Not used. if specified, the Server ignores the value.
 	// The Server uses the profiles associated with the specified entities.
@@ -1926,8 +1839,6 @@ func init() {
 }
 
 // The parameters of `PbmComplianceManager.PbmFetchRollupComplianceResult`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFetchRollupComplianceResultRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// One or more virtual machines.
@@ -1952,8 +1863,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmFetchVendorInfo`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFetchVendorInfoRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Specifies the resource type. The Server supports the STORAGE resource
@@ -1977,8 +1886,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmFindApplicableDefaultProfile`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmFindApplicableDefaultProfileRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Datastores for which the default profile is found out. Note that
@@ -2058,7 +1965,6 @@ func init() {
 	types.Add("pbm:PbmLineOfServiceInfo", reflect.TypeOf((*PbmLineOfServiceInfo)(nil)).Elem())
 }
 
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmLoggingConfiguration struct {
 	types.DynamicData
 
@@ -2412,8 +2318,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQueryAssociatedEntities`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryAssociatedEntitiesRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Storage policy array.
@@ -2435,8 +2339,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQueryAssociatedEntity`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryAssociatedEntityRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Profile identifier.
@@ -2463,8 +2365,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQueryAssociatedProfile`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryAssociatedProfileRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Reference to a virtual machine, virtual disk, or datastore.
@@ -2486,8 +2386,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQueryAssociatedProfiles`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryAssociatedProfilesRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Array of server object references.
@@ -2509,8 +2407,6 @@ func init() {
 }
 
 // The parameters of `PbmComplianceManager.PbmQueryByRollupComplianceStatus`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryByRollupComplianceStatusRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// `PbmComplianceStatus_enum`
@@ -2532,8 +2428,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQueryDefaultRequirementProfile`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryDefaultRequirementProfileRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Placement hub (i.e. datastore).
@@ -2555,8 +2449,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQueryDefaultRequirementProfiles`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryDefaultRequirementProfilesRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// The datastores for which the default profiles are requested. For
@@ -2580,8 +2472,6 @@ func init() {
 }
 
 // The parameters of `PbmPlacementSolver.PbmQueryMatchingHub`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryMatchingHubRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Candidate list of hubs, either datastores or storage pods or a
@@ -2607,8 +2497,6 @@ func init() {
 }
 
 // The parameters of `PbmPlacementSolver.PbmQueryMatchingHubWithSpec`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryMatchingHubWithSpecRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Candidate list of hubs, either datastores or storage
@@ -2634,8 +2522,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQueryProfile`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryProfileRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Type of resource. You can specify only STORAGE.
@@ -2707,8 +2593,6 @@ func init() {
 }
 
 // The parameters of `PbmReplicationManager.PbmQueryReplicationGroups`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQueryReplicationGroupsRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Array of server object references. Valid types are
@@ -2734,8 +2618,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmQuerySpaceStatsForStorageContainer`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmQuerySpaceStatsForStorageContainerRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Entity for which space statistics are being requested i.e datastore.
@@ -2761,8 +2643,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmResetDefaultRequirementProfile`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmResetDefaultRequirementProfileRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Profile to reset.
@@ -2826,8 +2706,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmRetrieveContent`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmRetrieveContentRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Array of storage profile identifiers.
@@ -2889,16 +2767,16 @@ type PbmRollupComplianceResult struct {
 	//
 	// The overall compliance status is determined by the following rules, applied in the order
 	// listed:
-	//   - If all the entities are <code>compliant</code>, the overall status is
-	//     <code>compliant</code>.
-	//   - Else if any entity's status is <code>outOfDate</code>, the overall status is
-	//     <code>outOfDate</code>.
-	//   - Else if any entity's status is <code>nonCompliant</code>, the overall status is
-	//     <code>nonCompliant</code>.
-	//   - Else if any entity's status is <code>unknown</code>, the overall status is
-	//     <code>unknown</code>.
-	//   - Else if any entity's status is <code>notApplicable</code>, the overall status is
-	//     <code>notApplicable</code>.
+	//     - If all the entities are <code>compliant</code>, the overall status is
+	//       <code>compliant</code>.
+	//     - Else if any entity's status is <code>outOfDate</code>, the overall status is
+	//       <code>outOfDate</code>.
+	//     - Else if any entity's status is <code>nonCompliant</code>, the overall status is
+	//       <code>nonCompliant</code>.
+	//     - Else if any entity's status is <code>unknown</code>, the overall status is
+	//       <code>unknown</code>.
+	//     - Else if any entity's status is <code>notApplicable</code>, the overall status is
+	//       <code>notApplicable</code>.
 	OverallComplianceStatus string `xml:"overallComplianceStatus" json:"overallComplianceStatus"`
 	// Overall compliance task status of the virtual machine and its virtual
 	// disks.
@@ -2952,6 +2830,7 @@ type PbmServerObjectRef struct {
 	//
 	// The value of <code>key</code> depends
 	// on the <code>objectType</code>.
+	//
 	//
 	// <table border="1"cellpadding="5">
 	// <tr><td>`*PbmObjectType**</td><td>*`key value**</td></tr>
@@ -3017,8 +2896,6 @@ func init() {
 }
 
 // The parameters of `PbmProfileProfileManager.PbmUpdate`.
-//
-// This structure may be used only with operations rendered under `/pbm`.
 type PbmUpdateRequestType struct {
 	This types.ManagedObjectReference `xml:"_this" json:"_this"`
 	// Profile identifier.

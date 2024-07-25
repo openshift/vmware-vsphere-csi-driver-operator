@@ -97,12 +97,6 @@ func (m *ExtensionManager) RegisterExtension(ctx *Context, req *types.RegisterEx
 	body.Res = new(types.RegisterExtensionResponse)
 	m.ExtensionList = append(m.ExtensionList, req.Extension)
 
-	f := mo.Field{Path: "extensionList", Key: req.Extension.Key}
-	ctx.Map.Update(m, []types.PropertyChange{
-		{Name: f.Path, Val: m.ExtensionList},
-		{Name: f.String(), Val: req.Extension, Op: types.PropertyChangeOpAdd},
-	})
-
 	return body
 }
 
@@ -112,12 +106,6 @@ func (m *ExtensionManager) UnregisterExtension(ctx *Context, req *types.Unregist
 	for i, x := range m.ExtensionList {
 		if x.Key == req.ExtensionKey {
 			m.ExtensionList = append(m.ExtensionList[:i], m.ExtensionList[i+1:]...)
-
-			f := mo.Field{Path: "extensionList", Key: req.ExtensionKey}
-			ctx.Map.Update(m, []types.PropertyChange{
-				{Name: f.Path, Val: m.ExtensionList},
-				{Name: f.String(), Op: types.PropertyChangeOpRemove},
-			})
 
 			body.Res = new(types.UnregisterExtensionResponse)
 			return body
@@ -135,12 +123,6 @@ func (m *ExtensionManager) UpdateExtension(ctx *Context, req *types.UpdateExtens
 	for i, x := range m.ExtensionList {
 		if x.Key == req.Extension.Key {
 			m.ExtensionList[i] = req.Extension
-
-			f := mo.Field{Path: "extensionList", Key: req.Extension.Key}
-			ctx.Map.Update(m, []types.PropertyChange{
-				{Name: f.Path, Val: m.ExtensionList},
-				{Name: f.String(), Val: req.Extension},
-			})
 
 			body.Res = new(types.UpdateExtensionResponse)
 			return body

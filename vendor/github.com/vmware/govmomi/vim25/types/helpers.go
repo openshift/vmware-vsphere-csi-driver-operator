@@ -1,11 +1,11 @@
 /*
-Copyright (c) 2015-2024 VMware, Inc. All Rights Reserved.
+Copyright (c) 2015-2022 VMware, Inc. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,14 +22,6 @@ import (
 	"strings"
 	"time"
 )
-
-func EnumValuesAsStrings[T ~string](enumValues []T) []string {
-	stringValues := make([]string, len(enumValues))
-	for i := range enumValues {
-		stringValues[i] = string(enumValues[i])
-	}
-	return stringValues
-}
 
 func NewBool(v bool) *bool {
 	return &v
@@ -128,7 +120,6 @@ func (ci VirtualMachineConfigInfo) ToConfigSpec() VirtualMachineConfigSpec {
 		Flags:                        &ci.Flags,
 		ConsolePreferences:           ci.ConsolePreferences,
 		PowerOpInfo:                  &ci.DefaultPowerOps,
-		RebootPowerOff:               ci.RebootPowerOff,
 		NumCPUs:                      ci.Hardware.NumCPU,
 		VcpuConfig:                   ci.VcpuConfig,
 		NumCoresPerSocket:            ci.Hardware.NumCoresPerSocket,
@@ -138,14 +129,14 @@ func (ci VirtualMachineConfigInfo) ToConfigSpec() VirtualMachineConfigSpec {
 		CpuHotRemoveEnabled:          ci.CpuHotRemoveEnabled,
 		VirtualICH7MPresent:          ci.Hardware.VirtualICH7MPresent,
 		VirtualSMCPresent:            ci.Hardware.VirtualSMCPresent,
-		DeviceChange:                 nil, // See below
+		DeviceChange:                 make([]BaseVirtualDeviceConfigSpec, len(ci.Hardware.Device)),
 		CpuAllocation:                ci.CpuAllocation,
 		MemoryAllocation:             ci.MemoryAllocation,
 		LatencySensitivity:           ci.LatencySensitivity,
 		CpuAffinity:                  ci.CpuAffinity,
 		MemoryAffinity:               ci.MemoryAffinity,
 		NetworkShaper:                ci.NetworkShaper,
-		CpuFeatureMask:               nil, // See below
+		CpuFeatureMask:               make([]VirtualMachineCpuIdInfoSpec, len(ci.CpuFeatureMask)),
 		ExtraConfig:                  ci.ExtraConfig,
 		SwapPlacement:                ci.SwapPlacement,
 		BootOptions:                  ci.BootOptions,
@@ -164,21 +155,20 @@ func (ci VirtualMachineConfigInfo) ToConfigSpec() VirtualMachineConfigSpec {
 		MigrateEncryption:            ci.MigrateEncryption,
 		FtEncryptionMode:             ci.FtEncryptionMode,
 		SevEnabled:                   ci.SevEnabled,
-		MotherboardLayout:            ci.Hardware.MotherboardLayout,
+		PmemFailoverEnabled:          ci.PmemFailoverEnabled,
+		Pmem:                         ci.Pmem,
+		NpivWorldWideNameOp:          ci.NpivWorldWideNameType,
+		RebootPowerOff:               ci.RebootPowerOff,
 		ScheduledHardwareUpgradeInfo: ci.ScheduledHardwareUpgradeInfo,
 		SgxInfo:                      ci.SgxInfo,
 		GuestMonitoringModeInfo:      ci.GuestMonitoringModeInfo,
-		PmemFailoverEnabled:          ci.PmemFailoverEnabled,
 		VmxStatsCollectionEnabled:    ci.VmxStatsCollectionEnabled,
 		VmOpNotificationToAppEnabled: ci.VmOpNotificationToAppEnabled,
 		VmOpNotificationTimeout:      ci.VmOpNotificationTimeout,
 		DeviceSwap:                   ci.DeviceSwap,
 		SimultaneousThreads:          ci.Hardware.SimultaneousThreads,
-		Pmem:                         ci.Pmem,
 		DeviceGroups:                 ci.DeviceGroups,
-		FixedPassthruHotPlugEnabled:  ci.FixedPassthruHotPlugEnabled,
-		MetroFtEnabled:               ci.MetroFtEnabled,
-		MetroFtHostGroup:             ci.MetroFtHostGroup,
+		MotherboardLayout:            ci.Hardware.MotherboardLayout,
 	}
 
 	// Unassign the Files field if all of its fields are empty.
@@ -220,36 +210,39 @@ func (ci VirtualMachineConfigInfo) ToConfigSpec() VirtualMachineConfigSpec {
 		cs.PowerOpInfo = nil
 	}
 
-	if l := len(ci.CpuFeatureMask); l > 0 {
-		cs.CpuFeatureMask = make([]VirtualMachineCpuIdInfoSpec, l)
-		for i := 0; i < l; i++ {
-			cs.CpuFeatureMask[i] = VirtualMachineCpuIdInfoSpec{
-				ArrayUpdateSpec: ArrayUpdateSpec{
-					Operation: ArrayUpdateOperationAdd,
-				},
-				Info: &HostCpuIdInfo{
-					Level:  ci.CpuFeatureMask[i].Level,
-					Vendor: ci.CpuFeatureMask[i].Vendor,
-					Eax:    ci.CpuFeatureMask[i].Eax,
-					Ebx:    ci.CpuFeatureMask[i].Ebx,
-					Ecx:    ci.CpuFeatureMask[i].Ecx,
-					Edx:    ci.CpuFeatureMask[i].Edx,
-				},
-			}
+	for i := 0; i < len(cs.CpuFeatureMask); i++ {
+		cs.CpuFeatureMask[i] = VirtualMachineCpuIdInfoSpec{
+			ArrayUpdateSpec: ArrayUpdateSpec{
+				Operation: ArrayUpdateOperationAdd,
+			},
+			Info: &HostCpuIdInfo{
+				// TODO: Does DynamicData need to be copied?
+				//       It is an empty struct...
+				Level:  ci.CpuFeatureMask[i].Level,
+				Vendor: ci.CpuFeatureMask[i].Vendor,
+				Eax:    ci.CpuFeatureMask[i].Eax,
+				Ebx:    ci.CpuFeatureMask[i].Ebx,
+				Ecx:    ci.CpuFeatureMask[i].Ecx,
+				Edx:    ci.CpuFeatureMask[i].Edx,
+			},
 		}
 	}
 
-	if l := len(ci.Hardware.Device); l > 0 {
-		cs.DeviceChange = make([]BaseVirtualDeviceConfigSpec, l)
-		for i := 0; i < l; i++ {
-			cs.DeviceChange[i] = &VirtualDeviceConfigSpec{
-				Operation:     VirtualDeviceConfigSpecOperationAdd,
-				FileOperation: VirtualDeviceConfigSpecFileOperationCreate,
-				Device:        ci.Hardware.Device[i],
-				Profile:       nil,
-				Backing:       nil,
-				FilterSpec:    nil,
-			}
+	for i := 0; i < len(cs.DeviceChange); i++ {
+		cs.DeviceChange[i] = &VirtualDeviceConfigSpec{
+			// TODO: Does DynamicData need to be copied?
+			//       It is an empty struct...
+			Operation:     VirtualDeviceConfigSpecOperationAdd,
+			FileOperation: VirtualDeviceConfigSpecFileOperationCreate,
+			Device:        ci.Hardware.Device[i],
+			// TODO: It is unclear how the profiles associated with the VM or
+			//       its hardware can be reintroduced/persisted in the
+			//       ConfigSpec.
+			Profile: nil,
+			// The backing will come from the device.
+			Backing: nil,
+			// TODO: Investigate futher.
+			FilterSpec: nil,
 		}
 	}
 

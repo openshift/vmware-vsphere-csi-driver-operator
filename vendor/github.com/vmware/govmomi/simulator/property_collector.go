@@ -131,10 +131,6 @@ func wrapValue(rval reflect.Value, rtype reflect.Type) interface{} {
 			pval = &types.ArrayOfByte{
 				Byte: v,
 			}
-		case types.ByteSlice:
-			pval = &types.ArrayOfByte{
-				Byte: v,
-			}
 		case []int16:
 			pval = &types.ArrayOfShort{
 				Short: v,
@@ -161,19 +157,15 @@ func wrapValue(rval reflect.Value, rtype reflect.Type) interface{} {
 	return pval
 }
 
-func fieldValueInterface(f reflect.StructField, rval reflect.Value, keyed ...bool) interface{} {
+func fieldValueInterface(f reflect.StructField, rval reflect.Value) interface{} {
 	if rval.Kind() == reflect.Ptr {
 		rval = rval.Elem()
-	}
-
-	if len(keyed) == 1 && keyed[0] {
-		return rval.Interface() // don't wrap keyed fields in ArrayOf* type
 	}
 
 	return wrapValue(rval, f.Type)
 }
 
-func fieldValue(rval reflect.Value, p string, keyed ...bool) (interface{}, error) {
+func fieldValue(rval reflect.Value, p string) (interface{}, error) {
 	var value interface{}
 	fields := strings.Split(p, ".")
 
@@ -212,7 +204,7 @@ func fieldValue(rval reflect.Value, p string, keyed ...bool) (interface{}, error
 
 		if i == len(fields)-1 {
 			ftype, _ := rval.Type().FieldByName(x)
-			value = fieldValueInterface(ftype, val, keyed...)
+			value = fieldValueInterface(ftype, val)
 			break
 		}
 
@@ -220,64 +212,6 @@ func fieldValue(rval reflect.Value, p string, keyed ...bool) (interface{}, error
 	}
 
 	return value, nil
-}
-
-func fieldValueKey(rval reflect.Value, p mo.Field) (interface{}, error) {
-	if rval.Kind() != reflect.Slice {
-		return nil, errInvalidField
-	}
-
-	zero := reflect.Value{}
-
-	for i := 0; i < rval.Len(); i++ {
-		item := rval.Index(i)
-		if item.Kind() == reflect.Interface {
-			item = item.Elem()
-		}
-		if item.Kind() == reflect.Ptr {
-			item = item.Elem()
-		}
-		if item.Kind() != reflect.Struct {
-			return reflect.Value{}, errInvalidField
-		}
-
-		field := item.FieldByName("Key")
-		if field == zero {
-			return nil, errInvalidField
-		}
-
-		switch key := field.Interface().(type) {
-		case string:
-			s, ok := p.Key.(string)
-			if !ok {
-				return nil, errInvalidField
-			}
-			if s == key {
-				return item.Interface(), nil
-			}
-		case int32:
-			s, ok := p.Key.(int32)
-			if !ok {
-				return nil, errInvalidField
-			}
-			if s == key {
-				return item.Interface(), nil
-			}
-		default:
-			return nil, errInvalidField
-		}
-	}
-
-	return nil, nil
-}
-
-func fieldValueIndex(rval reflect.Value, p mo.Field) (interface{}, error) {
-	val, err := fieldValueKey(rval, p)
-	if err != nil || val == nil || p.Item == "" {
-		return val, err
-	}
-
-	return fieldValue(reflect.ValueOf(val), p.Item)
 }
 
 func fieldRefs(f interface{}) []types.ManagedObjectReference {
@@ -395,19 +329,7 @@ func (rr *retrieveResult) collectFields(ctx *Context, rval reflect.Value, fields
 		}
 		seen[name] = true
 
-		var val interface{}
-		var err error
-		var field mo.Field
-		if field.FromString(name) {
-			keyed := field.Key != nil
-
-			val, err = fieldValue(rval, field.Path, keyed)
-			if err == nil && keyed {
-				val, err = fieldValueIndex(reflect.ValueOf(val), field)
-			}
-		} else {
-			err = errInvalidField
-		}
+		val, err := fieldValue(rval, name)
 
 		switch err {
 		case nil, errEmptyField:
