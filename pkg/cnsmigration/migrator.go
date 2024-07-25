@@ -50,6 +50,11 @@ type CNSVolumeMigrator struct {
 	// for storing result and matches
 	matchingCnsVolumes []types.CnsVolume
 	usedVolumeCache    *inUseVolumeStore
+
+	// for counting migrated volumes and stuff
+	migratedVolumes int
+	volumesNotFound int
+	failedToMigrate int
 }
 
 func NewCNSVolumeMigrator(config *rest.Config, dsSource, dsTarget string) *CNSVolumeMigrator {
@@ -78,7 +83,7 @@ func (c *CNSVolumeMigrator) StartMigration(ctx context.Context, volumeFile strin
 		return err
 	}
 
-	klog.Infof("logging successfully to vcenter")
+	printGreenInfo("logging successfully to vcenter")
 
 	err = c.getCNSVolumes(ctx, c.sourceDatastore)
 	if err != nil {
@@ -97,10 +102,18 @@ func (c *CNSVolumeMigrator) StartMigration(ctx context.Context, volumeFile strin
 
 	c.usedVolumeCache = NewInUseStore(pvList.Items)
 	c.usedVolumeCache.addAllPods(podList.Items)
-	return c.findCSIVolumes(ctx, volumeFile)
+	err = c.findAndMigrateCSIVolumes(ctx, volumeFile)
+	return err
 }
 
-func (c *CNSVolumeMigrator) findCSIVolumes(ctx context.Context, volumeFile string) error {
+func (c *CNSVolumeMigrator) printSummary() {
+	printGreenInfo("----------- Migration Summary ------------")
+	printGreenInfo("Migrated %d volumes", c.migratedVolumes)
+	printGreenInfo("Failed to migrate %d volumes", c.failedToMigrate)
+	printGreenInfo("Volumes not found %d", c.volumesNotFound)
+}
+
+func (c *CNSVolumeMigrator) findAndMigrateCSIVolumes(ctx context.Context, volumeFile string) error {
 	file, err := os.Open(volumeFile)
 	if err != nil {
 		msg := fmt.Errorf("error opening file %s: %v", volumeFile, err)
@@ -126,11 +139,11 @@ func (c *CNSVolumeMigrator) findCSIVolumes(ctx context.Context, volumeFile strin
 		if pvName == "" {
 			continue
 		}
-		klog.Infof("Starting migration for pv %s", pvName)
+		printGreenInfo("Starting migration for pv %s", pvName)
 		pv, err := c.clientSet.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
 		if err != nil {
 			msg := fmt.Errorf("error finding pv %s: %v", pvName, err)
-			klog.Error(msg)
+			printErrorObject(msg)
 			return msg
 		}
 
@@ -139,13 +152,15 @@ func (c *CNSVolumeMigrator) findCSIVolumes(ctx context.Context, volumeFile strin
 			if c.checkForDatastore(pv) {
 				err = c.migrateVolume(ctx, csiSource.VolumeHandle)
 				if err != nil {
+					c.failedToMigrate++
 					printError("error migrating volume %s with error: %v", pvName, err)
 				} else {
-					klog.Infof("successfully migrated pv %s with volumeID: %s", pvName, csiSource.VolumeHandle)
+					c.migratedVolumes++
+					printGreenInfo("successfully migrated pv %s with volumeID: %s", pvName, csiSource.VolumeHandle)
 				}
 			}
 		} else {
-			klog.Infof("pv %s is not of expected type", pvName)
+			printGreenInfo("pv %s is not a vSphere CSI volume", pvName)
 		}
 	}
 	return nil
@@ -155,7 +170,7 @@ func (c *CNSVolumeMigrator) migrateVolume(ctx context.Context, volumeID string) 
 	dtsDatastore, err := c.getDatastore(ctx, c.destinationDatastore)
 	if err != nil {
 		msg := fmt.Errorf("error finding destinationd datastore %s: %v", dtsDatastore, err)
-		klog.Error(msg)
+		printErrorObject(msg)
 		return msg
 	}
 
@@ -166,7 +181,7 @@ func (c *CNSVolumeMigrator) migrateVolume(ctx context.Context, volumeID string) 
 		// already relocated.
 		if soap.IsSoapFault(err) {
 			soapFault := soap.ToSoapFault(err)
-			klog.Errorf("type of fault: %v. SoapFault Info: %v", reflect.TypeOf(soapFault.VimFault()), soapFault)
+			printError("type of fault: %v. SoapFault Info: %v", reflect.TypeOf(soapFault.VimFault()), soapFault)
 			_, isAlreadyExistErr := soapFault.VimFault().(vim.AlreadyExists)
 			if isAlreadyExistErr {
 				// Volume already exists in the target SP, hence return success.
@@ -178,7 +193,7 @@ func (c *CNSVolumeMigrator) migrateVolume(ctx context.Context, volumeID string) 
 	taskInfo, err := task.WaitForResultEx(ctx)
 	if err != nil {
 		msg := fmt.Errorf("error waiting for relocation task: %v", err)
-		klog.Error(msg)
+		printErrorObject(msg)
 		return msg
 	}
 	results := taskInfo.Result.(types.CnsVolumeOperationBatchResult)
@@ -197,15 +212,17 @@ func (c *CNSVolumeMigrator) checkForDatastore(pv *v1.PersistentVolume) bool {
 	for _, cnsVolume := range c.matchingCnsVolumes {
 		vh := csiSource.VolumeHandle
 		if cnsVolume.VolumeId.Id == vh {
-			klog.Infof("found a volume to migrate: %s", vh)
+			printGreenInfo("found a volume to migrate: %s", vh)
 			pvcName, podName, inUseFlag := c.usedVolumeCache.volumeInUse(volumeHandle(vh))
 			if inUseFlag {
-				klog.Infof("volume %s is being used by pod %s in pvc %s", vh, podName, pvcName)
+				c.failedToMigrate++
+				printError("volume %s is being used by pod %s in pvc %s", vh, podName, pvcName)
 				return false
 			}
 			return true
 		}
 	}
+	c.volumesNotFound++
 	printInfo("Unable to find volume %s in CNS datastore %s", pv.Name, c.sourceDatastore)
 	return false
 }

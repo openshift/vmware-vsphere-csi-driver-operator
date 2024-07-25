@@ -70,6 +70,4 @@ func main() {
 	if err != nil {
 		klog.Fatalf("error migration one or more volumes: %v", err)
 	}
-
-	fmt.Println("Migrated all CNS volumes successfully")
 }
