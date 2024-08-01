@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/api/features"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/third_party/cloud-provider-vsphere/pkg/common/config"
 	"github.com/vmware/govmomi/cns"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
@@ -44,14 +45,14 @@ type VSphereConnection struct {
 // VSphereConfig contains configuration for cloud provider.  It wraps the legacy version and the newer upstream version
 // with yaml support
 type VSphereConfig struct {
-	Config       *vsphere.Config
+	Config       *config.Config
 	LegacyConfig *legacy.VSphereConfig
 }
 
 // LoadConfig load the desired config into this config object.
 func (c *VSphereConfig) LoadConfig(data string) error {
 	var err error
-	c.Config, err = vsphere.ReadConfig([]byte(data))
+	c.Config, err = config.ReadConfig([]byte(data))
 	if err != nil {
 		return err
 	}
