@@ -53,6 +53,7 @@ type storagePolicyAPI struct {
 	vcenterApiConnection *vclib.VSphereConnection
 	tagManager           *tags.Manager
 	infra                *v1.Infrastructure
+	failureDomains       []*v1.VSpherePlatformFailureDomainSpec
 	policyName           string
 	tagName              string
 	categoryName         string
@@ -65,10 +66,21 @@ type storagePolicyAPI struct {
 var _ vCenterInterface = &storagePolicyAPI{}
 
 func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
-	// TODO: Need to evaluate how to handle new storage policy in multi vcenter env
+	var fds []*v1.VSpherePlatformFailureDomainSpec
+
+	// Get Failure domains to use for this storage policy based on the connection hostname (vCenter)
+	server := connection.Hostname
+
+	for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+		if fd.Server == server {
+			fds = append(fds, &fd)
+		}
+	}
+
 	storagePolicyAPIClient := &storagePolicyAPI{
 		vcenterApiConnection: connection,
 		infra:                infra,
+		failureDomains:       fds,
 		categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
 		policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
 		tagName:              infra.Status.InfrastructureName,
@@ -85,15 +97,9 @@ func (v *storagePolicyAPI) GetDefaultDatastore(ctx context.Context, infra *v1.In
 	// Following pattern of older generated ini config, default datastore is from FD[0], else if no FDs are define, we'll
 	// grab from deprecated fields
 	var dcName, dsName string
-	if infra.Spec.PlatformSpec.VSphere != nil && len(infra.Spec.PlatformSpec.VSphere.FailureDomains) > 0 {
-		// Due to first FD potentially not matching first vCenter in infra section, lets find correct one.
-		for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
-			if fd.Server == v.vcenterApiConnection.Hostname {
-				dcName = fd.Topology.Datacenter
-				dsName = fd.Topology.Datastore
-				break
-			}
-		}
+	if len(v.failureDomains) > 0 {
+		dcName = v.failureDomains[0].Topology.Datacenter
+		dsName = v.failureDomains[0].Topology.Datastore
 	} else {
 		if config != nil {
 			dcName = config.GetWorkspaceDatacenter()
@@ -151,22 +157,16 @@ func (v *storagePolicyAPI) getDatastore(ctx context.Context, dcName string, dsNa
 
 func (v *storagePolicyAPI) createZonalStoragePolicy(ctx context.Context) (string, error) {
 	var err error
-	failureDomains := v.infra.Spec.PlatformSpec.VSphere.FailureDomains
-
 	var aggregatedErrors []error
 
-	// Failure domains go across vCenters.  So really we want to only do failure domains that are for this connection's
-	// vCenter.
-	for _, failureDomain := range failureDomains {
-		klog.V(4).Infof("Is failure domain %v part of this connection (%v): %v", failureDomain.Name, v.vcenterApiConnection.Hostname, failureDomain.Server == v.vcenterApiConnection.Hostname)
-		if failureDomain.Server == v.vcenterApiConnection.Hostname {
-			klog.V(4).Infof("Attempting to attach tag for failure domain %v", failureDomain.Name)
-			dataCenter := failureDomain.Topology.Datacenter
-			dataStore := failureDomain.Topology.Datastore
-			err := v.attachTags(ctx, dataCenter, dataStore)
-			if err != nil {
-				aggregatedErrors = append(aggregatedErrors, err)
-			}
+	// Process all failure domains for this ctx vCenter
+	for _, failureDomain := range v.failureDomains {
+		klog.V(4).Infof("Attempting to attach tag for failure domain %v", failureDomain.Name)
+		dataCenter := failureDomain.Topology.Datacenter
+		dataStore := failureDomain.Topology.Datastore
+		err := v.attachTags(ctx, dataCenter, dataStore)
+		if err != nil {
+			aggregatedErrors = append(aggregatedErrors, err)
 		}
 	}
 

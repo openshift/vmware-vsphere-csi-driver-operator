@@ -775,6 +775,7 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 		configFileName        string
 		secretData            runtime.Object
 		featureGates          featuregates.FeatureGate
+		checkMigrationURL     bool
 		expectedDatacenterMap map[string]string
 		expectError           bool
 	}{
@@ -786,7 +787,8 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			expectedDatacenterMap: map[string]string{
 				"foobar.lan": "Datacenter",
 			},
-			expectedTopology: "",
+			expectedTopology:  "",
+			checkMigrationURL: true,
 		},
 		{
 			name:             "when driver does have topology enabled",
@@ -796,7 +798,8 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			expectedDatacenterMap: map[string]string{
 				"foobar.lan": "Datacenter",
 			},
-			expectedTopology: "k8s-zone,k8s-region",
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: true,
 		},
 		{
 			name:             "when configuration has more than one vcenter",
@@ -825,7 +828,8 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 				"foobar.lan": "Datacenter",
 				"foobaz.lan": "Datacenterb",
 			},
-			expectedTopology: "k8s-zone,k8s-region",
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: false,
 		},
 		{
 			name:             "when configuration has more than one datacenter",
@@ -836,7 +840,8 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			expectedDatacenterMap: map[string]string{
 				"foobar.lan": "Datacentera, DatacenterB", // INI has a space, YAML does not
 			},
-			expectedTopology: "k8s-zone,k8s-region",
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: true,
 		},
 		{
 			name:             "when configuration has more than one datacenter yaml",
@@ -847,7 +852,8 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			expectedDatacenterMap: map[string]string{
 				"foobar.lan": "Datacentera,DatacenterB", // INI has a space, YAML does not
 			},
-			expectedTopology: "k8s-zone,k8s-region",
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: true,
 		},
 	}
 
@@ -924,14 +930,15 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 				}
 			}
 
-			datastoreURL, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("migration-datastore-url")
-			if err != nil {
-				t.Fatalf("error getting datasore url: %v", err)
+			if tc.checkMigrationURL {
+				datastoreURL, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("migration-datastore-url")
+				if err != nil {
+					t.Fatalf("error getting datasore url: %v", err)
+				}
+				if datastoreURL.String() != "foobar" {
+					t.Fatalf("expected datastoreURL to be %s got %s", "foobar", datastoreURL)
+				}
 			}
-			if datastoreURL.String() != "foobar" {
-				t.Fatalf("expected datastoreURL to be %s got %s", "foobar", datastoreURL)
-			}
-
 		})
 	}
 }

@@ -3,11 +3,12 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
-	"testing"
-
 	v1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
+	"testing"
 )
 
 func TestCreateStoragePolicyOnce(t *testing.T) {
@@ -139,7 +140,7 @@ func TestZonalPolicyCreation(t *testing.T) {
 		name                 string
 		infra                *v1.Infrastructure
 		expectedApiCallCount map[string]int
-		multiVCenter         bool
+		featureGates         featuregates.FeatureGate
 	}{
 		{
 			name:  "when there multiple failure domains exist",
@@ -151,6 +152,7 @@ func TestZonalPolicyCreation(t *testing.T) {
 				attach_tag_api:      2,
 				create_profile_api:  1,
 			},
+			featureGates: featuregates.NewFeatureGate([]v1.FeatureGateName{"SomeEnabledFeatureGate"}, []v1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters}),
 		},
 		{
 			name:  "when one failure domain exists",
@@ -161,17 +163,18 @@ func TestZonalPolicyCreation(t *testing.T) {
 				attach_tag_api:      1,
 				create_profile_api:  1,
 			},
+			featureGates: featuregates.NewFeatureGate([]v1.FeatureGateName{"SomeEnabledFeatureGate"}, []v1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters}),
 		},
 		{
-			name:         "when multiple failure domain exists across multiple vcenters",
-			infra:        testlib.GetZonalMultiVCenterInfra(),
-			multiVCenter: true,
+			name:  "when multiple failure domain exists across multiple vcenters",
+			infra: testlib.GetZonalMultiVCenterInfra(),
 			expectedApiCallCount: map[string]int{
 				create_tag_api:      1,
 				create_category_api: 1,
 				attach_tag_api:      1,
 				create_profile_api:  1,
 			},
+			featureGates: featuregates.NewFeatureGate([]v1.FeatureGateName{"SomeEnabledFeatureGate"}, []v1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters}),
 		},
 	}
 
@@ -196,9 +199,21 @@ func TestZonalPolicyCreation(t *testing.T) {
 			}
 
 			for _, conn := range connections {
+				var fds []*v1.VSpherePlatformFailureDomainSpec
+
+				// Get Failure domains to use for this storage policy based on the connection hostname (vCenter)
+				server := conn.Hostname
+
+				for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+					if fd.Server == server {
+						fds = append(fds, &fd)
+					}
+				}
+
 				storagePolicyAPIClient := &storagePolicyAPI{
 					vcenterApiConnection: conn,
-					infra:                infra,
+					infra:                tc.infra,
+					failureDomains:       fds,
 					categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
 					policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
 					tagName:              infra.Status.InfrastructureName,

@@ -15,12 +15,17 @@ import (
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
-	vsphere "k8s.io/cloud-provider-vsphere/pkg/common/config"
 	legacy "k8s.io/legacy-cloud-providers/vsphere"
 
 	"github.com/vmware/govmomi"
 	"gopkg.in/gcfg.v1"
 	"k8s.io/klog/v2"
+)
+
+const apiTimeout = 10 * time.Minute
+
+var (
+	clientLock sync.Mutex
 )
 
 // VSphereConnection contains information for connecting to vCenter
@@ -56,7 +61,7 @@ func (c *VSphereConfig) LoadConfig(data string) error {
 	err = gcfg.ReadStringInto(lCfg, data)
 	if err != nil {
 		// For now, we can just log an info so that we know.
-		klog.V(2).Info("Unable to load cloud config as legacy ini.")
+		klog.V(4).Info("Unable to load cloud config as legacy ini.")
 		return nil
 	}
 
@@ -83,7 +88,7 @@ func (c *VSphereConfig) GetDatacenters(vcenter string) ([]string, error) {
 		// If here, then legacy config may be in use.
 		datacenters = []string{c.LegacyConfig.Workspace.Datacenter}
 	}
-	logrus.Infof("Gathered the following data centers: %v", datacenters)
+	klog.V(2).Infof("Gathered the following data centers: %v", datacenters)
 	return datacenters, nil
 }
 
@@ -104,12 +109,6 @@ func (c *VSphereConfig) ValidateConfig(featureGates featuregates.FeatureGate) er
 	}
 	return nil
 }
-
-const apiTimeout = 10 * time.Minute
-
-var (
-	clientLock sync.Mutex
-)
 
 func NewVSphereConnection(username, password, vcenter string, cfg *VSphereConfig) *VSphereConnection {
 	return &VSphereConnection{

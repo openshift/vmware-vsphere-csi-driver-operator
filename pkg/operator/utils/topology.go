@@ -1,12 +1,9 @@
 package utils
 
 import (
-	"fmt"
-
 	cfgv1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	vsphere "k8s.io/cloud-provider-vsphere/pkg/common/config"
 )
 
 const (
@@ -42,21 +39,6 @@ func GetTopologyCategories(clusterCSIDriver *opv1.ClusterCSIDriver, infra *cfgv1
 		return infraCategories
 	}
 	return GetCSIDriverTopologyCategories(clusterCSIDriver)
-}
-
-func GetVCenters(config *vsphere.Config, multiVCenterEnabled bool) ([]string, error) {
-	if len(config.VirtualCenter) > 1 && !multiVCenterEnabled {
-		return nil, fmt.Errorf("the multi vcenter cloud config must define a single VirtualCenter")
-	} else if len(config.VirtualCenter) == 0 {
-		return nil, fmt.Errorf("cloud config must define at lease a single VirtualCenter")
-	}
-
-	var vCenters []string
-	for _, vcenter := range config.VirtualCenter {
-		vCenters = append(vCenters, vcenter.VCenterIP)
-	}
-
-	return vCenters, nil
 }
 
 func UpdateMetrics(infra *cfgv1.Infrastructure, clusterCSIDriver *opv1.ClusterCSIDriver) {

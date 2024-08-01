@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/openshift/api/features"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +62,7 @@ type VSphereController struct {
 	vSphereChecker           vSphereEnvironmentCheckInterface
 	vCenterConnectionStatus  bool
 	featureGates             featuregates.FeatureGate
+	cloudConfig              *vclib.VSphereConfig
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool)
 }
@@ -197,6 +199,24 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 
 	var connectionResult checks.ClusterCheckResult
 	logout := true
+
+	// Load config when it has changed or if first time syncing.  For now, we do every time, but in future maybe limit
+	// this to only when changed so that we can reduce logging messages.
+	c.cloudConfig, err = c.loadCloudConfig(infra)
+	if err != nil {
+		return err
+	}
+
+	// Update infra so we have failure domains in the case of an older cluster with out-dated infra definition.
+	/*if len(infra.Spec.PlatformSpec.VSphere.VCenters) == 0 && c.cloudConfig.LegacyConfig != nil {
+		klog.V(2).Infof("converting older in-tree config to platform spec")
+		convertIntreeToPlatformSpec(c.cloudConfig, infra.Spec.PlatformSpec.VSphere)
+	}*/
+	// The following logic is borrowed from VPD.  We should make util project contain this so its shared and kept in sync
+	ConvertToPlatformSpec(c.cloudConfig, infra)
+
+	// We no longer use the ConfigMap to store the vSphere config, so make sure to delete it
+	c.deleteConfigMapIfExists(ctx, legacyConfigMapName, c.targetNamespace)
 
 	if c.vsphereConnectionFunc != nil {
 		c.vSphereConnections, connectionResult, logout = c.vsphereConnectionFunc()
@@ -452,26 +472,6 @@ func hasErrorConditions(opStats operatorapi.OperatorStatus) bool {
 
 func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *ocpv1.Infrastructure) error {
 	klog.V(3).Infof("Creating vSphere connection")
-	cloudConfig := infra.Spec.CloudConfig
-	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
-	if err != nil {
-		return fmt.Errorf("failed to get cloud config: %v", err)
-	}
-
-	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
-	if !ok {
-		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
-	}
-
-	config := vclib.VSphereConfig{}
-	err = config.LoadConfig(cfgString)
-	if err != nil {
-		return err
-	}
-
-	// We no longer use the ConfigMap to store the vSphere config, so make sure to delete it
-	c.deleteConfigMapIfExists(ctx, legacyConfigMapName, c.targetNamespace)
-
 	for _, vcenter := range infra.Spec.PlatformSpec.VSphere.VCenters {
 		secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
 		if err != nil {
@@ -488,10 +488,30 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 			return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
 		}
 
-		vs := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, &config)
+		vs := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, c.cloudConfig)
 		c.vSphereConnections = append(c.vSphereConnections, vs)
 	}
 	return nil
+}
+
+func (c *VSphereController) loadCloudConfig(infra *ocpv1.Infrastructure) (*vclib.VSphereConfig, error) {
+	cloudConfig := infra.Spec.CloudConfig
+	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cloud config: %v", err)
+	}
+
+	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
+	if !ok {
+		return nil, fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
+	}
+
+	config := vclib.VSphereConfig{}
+	err = config.LoadConfig(cfgString)
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
 }
 
 func (c *VSphereController) updateConditions(
@@ -624,36 +644,28 @@ func (c *VSphereController) createCSISecret(
 	// TODO: none of our CSI operators check whether they are running in the correct cloud. Is
 	// this something we want to change? These operators are supposed to be deployed by CSO, which
 	// already does this checking for us.
-	cloudConfig := infra.Spec.CloudConfig
-	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
-	if err != nil {
-		return fmt.Errorf("failed to get cloud config: %w", err)
-	}
-
-	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
-	if !ok {
-		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
-	}
-
-	cfg := vclib.VSphereConfig{}
-	err = cfg.LoadConfig(cfgString)
-	if err != nil {
-		return fmt.Errorf("unable to fetch cloud provider config: %v", err)
-	}
 
 	// Pass in first vcenter for now.  I think this logic is no longer valid, but need to confirm if we are wanting
 	// multi vcenter to support storage migration.
-	storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, c.vSphereConnections[0], infra)
+	datastoreURL := ""
 
-	defaultDatastore, err := storageApiClient.GetDefaultDatastore(ctx, infra)
+	if len(infra.Spec.PlatformSpec.VSphere.VCenters) == 1 {
+		datastoreURLs := make(map[string]string)
+		for _, connection := range c.vSphereConnections {
+			storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, connection, infra)
 
-	if err != nil {
-		return fmt.Errorf("unable to fetch default datastore url: %v", err)
+			defaultDatastore, err := storageApiClient.GetDefaultDatastore(ctx, infra)
+
+			if err != nil {
+				return fmt.Errorf("unable to fetch default datastore url: %v", err)
+			}
+
+			datastoreURL = defaultDatastore.Summary.Url
+			datastoreURLs[connection.Hostname] = datastoreURL
+		}
 	}
 
-	datastoreURL := defaultDatastore.Summary.Url
-
-	requiredSecret, err := c.applyClusterCSIDriverChange(infra, &cfg, clusterCSIDriver, datastoreURL)
+	requiredSecret, err := c.applyClusterCSIDriverChange(infra, c.cloudConfig, clusterCSIDriver, datastoreURL)
 	if err != nil {
 		return err
 	}
@@ -692,8 +704,17 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	// variable was used in older, single vcenter way where passed into container from operator.
 	config := sourceCFG.Config
 	var vcenters string
-	for _, vcenter := range config.VirtualCenter {
+
+	// Sort keys alphabetically to guarantee order does not change in output config
+	var vCenterKeys []string
+	for key := range config.VirtualCenter {
+		vCenterKeys = append(vCenterKeys, key)
+	}
+	sort.Strings(vCenterKeys)
+
+	for _, vcenterKey := range vCenterKeys {
 		vcenterStr := string(csiVCenterConfigBytes)
+		vcenter := config.VirtualCenter[vcenterKey]
 
 		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, infra, c.configMapLister, c.apiClients.SecretInformer, c.featureGates)
 		if err != nil {
@@ -701,13 +722,15 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		}
 
 		for pattern, value := range map[string]string{
-			"${VCENTER}":                 vcenter.VCenterIP,
-			"${DATACENTERS}":             vcenter.Datacenters,
-			"${MIGRATION_DATASTORE_URL}": datastoreURL,
-			"${PASSWORD}":                password,
-			"${USER}":                    user,
+			"${VCENTER}":     vcenter.VCenterIP,
+			"${DATACENTERS}": vcenter.Datacenters,
+			"${PASSWORD}":    password,
+			"${USER}":        user,
 		} {
 			vcenterStr = strings.ReplaceAll(vcenterStr, pattern, value)
+		}
+		if len(vCenterKeys) < 2 {
+			vcenterStr = fmt.Sprintf("%v\nmigration-datastore-url = %v", vcenterStr, datastoreURL)
 		}
 		vcenters = vcenters + "\n" + vcenterStr
 	}
@@ -757,6 +780,7 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 		c.scLister,
 		c.apiClients.ClusterCSIDriverInformer,
 		c.eventRecorder,
+		c.featureGates,
 	)
 	return storageClassController
 }
@@ -867,4 +891,92 @@ func (c *VSphereController) deleteConfigMapIfExists(ctx context.Context, name, n
 			klog.Infof("Successfully deleted ConfigMap %s/%s", namespace, name)
 		}
 	}
+}
+
+func ConvertToPlatformSpec(config *vclib.VSphereConfig, infra *ocpv1.Infrastructure) {
+	vSphereSpec := infra.Spec.PlatformSpec.VSphere
+
+	if config != nil {
+		//   We only need to do this for legacy ini configs.  Yaml configs we expect all to be configured correctly.
+		if vSphereSpec != nil && config.LegacyConfig != nil {
+			if len(vSphereSpec.VCenters) != 0 {
+				// we need to check if we really need to add to VCenters and FailureDomains.
+				configuredVCenters := vCentersToMap(vSphereSpec.VCenters)
+
+				// vcenter is missing from the map, add it...
+				for _, vCenter := range config.Config.VirtualCenter {
+					if _, ok := configuredVCenters[vCenter.VCenterIP]; !ok {
+						klog.Warningf("vCenter %v is missing from vCenter map", vCenter.VCenterIP)
+						addVCenter(config, vSphereSpec, vCenter.VCenterIP)
+					}
+				}
+
+				// If platform spec defined vCenters, but no failure domains, this seems like invalid config.  We can
+				// attempt to add failure domain as a failsafe, but only if legacy ini config was used.
+				if len(vSphereSpec.FailureDomains) == 0 {
+					addFailureDomainsToPlatformSpec(config, vSphereSpec, config.LegacyConfig.Workspace.VCenterIP)
+				}
+			} else {
+				// If we are here, infrastructure resource hasn't been updated for any vCenter.  For multi vcenter support,
+				// being here is not supported.  For 1 vCenter we will allow which should be from a very old cluster being
+				// upgraded but never having infrastructure config updated to latest standards.
+				if len(config.Config.VirtualCenter) == 1 {
+					convertIntreeToPlatformSpec(config, vSphereSpec)
+				} else {
+					klog.Error("infrastructure has not been configured correctly to support multiple vCenters.")
+				}
+			}
+		}
+	}
+}
+
+func convertIntreeToPlatformSpec(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec) {
+	// All this logic should only happen if using legacy cloud provider config and admin has not set up failure domain
+	legacyCfg := config.LegacyConfig
+	if ccmVcenter, ok := legacyCfg.VirtualCenter[legacyCfg.Workspace.VCenterIP]; ok {
+		datacenters := strings.Split(ccmVcenter.Datacenters, ",")
+
+		platformSpec.VCenters = append(platformSpec.VCenters, ocpv1.VSpherePlatformVCenterSpec{
+			Server:      legacyCfg.Workspace.VCenterIP,
+			Datacenters: datacenters,
+		})
+		addFailureDomainsToPlatformSpec(config, platformSpec, legacyCfg.Workspace.VCenterIP)
+	}
+}
+
+func addVCenter(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec, vCenterName string) {
+	// This logic happens if using legacy or new yaml cloud provider config and admin has not set up failure domain
+	//legacyCfg := config.LegacyConfig
+	if ccmVcenter, ok := config.Config.VirtualCenter[vCenterName]; ok {
+		datacenters := strings.Split(ccmVcenter.Datacenters, ",")
+
+		platformSpec.VCenters = append(platformSpec.VCenters, ocpv1.VSpherePlatformVCenterSpec{
+			Server:      ccmVcenter.VCenterIP,
+			Datacenters: datacenters,
+		})
+	}
+}
+
+func addFailureDomainsToPlatformSpec(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec, vcenter string) {
+	legacyCfg := config.LegacyConfig
+	platformSpec.FailureDomains = append(platformSpec.FailureDomains, ocpv1.VSpherePlatformFailureDomainSpec{
+		Name:   "",
+		Region: "",
+		Zone:   "",
+		Server: vcenter,
+		Topology: ocpv1.VSpherePlatformTopology{
+			Datacenter:   legacyCfg.Workspace.Datacenter,
+			Folder:       legacyCfg.Workspace.Folder,
+			ResourcePool: legacyCfg.Workspace.ResourcePoolPath,
+			Datastore:    legacyCfg.Workspace.DefaultDatastore,
+		},
+	})
+}
+
+func vCentersToMap(vcenters []ocpv1.VSpherePlatformVCenterSpec) map[string]ocpv1.VSpherePlatformVCenterSpec {
+	vcenterMap := make(map[string]ocpv1.VSpherePlatformVCenterSpec, len(vcenters))
+	for _, v := range vcenters {
+		vcenterMap[v.Server] = v
+	}
+	return vcenterMap
 }

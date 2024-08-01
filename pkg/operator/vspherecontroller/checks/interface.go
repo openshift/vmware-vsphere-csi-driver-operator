@@ -7,17 +7,14 @@ import (
 )
 
 type CheckArgs struct {
-	vmConnection        []*check.VSphereConnection
-	apiClient           KubeAPIInterface
-	featureGates        featuregates.FeatureGate
-	multiVCenterEnabled bool
+	vmConnection []*check.VSphereConnection
+	apiClient    KubeAPIInterface
 }
 
 func NewCheckArgs(connection []*check.VSphereConnection, apiClient KubeAPIInterface, gates featuregates.FeatureGate) CheckArgs {
 	return CheckArgs{
 		vmConnection: connection,
 		apiClient:    apiClient,
-		featureGates: gates,
 	}
 }
 
