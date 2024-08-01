@@ -53,7 +53,7 @@ func main() {
 	}
 
 	if sourceDatastore == nil || *sourceDatastore == "" {
-		klog.Fatalf("Specify source datastore")
+		klog.Fatalf("Parameter --source must be specified")
 	}
 
 	fmt.Printf("KubeConfig is: %s\n", *kubeconfig)
