@@ -201,7 +201,7 @@ func (c *CNSVolumeMigrator) migrateVolume(ctx context.Context, volumeID string) 
 	for _, result := range results.VolumeResults {
 		fault := result.GetCnsVolumeOperationResult().Fault
 		if fault != nil {
-			printError("Fault: %+v encountered while relocating volume %v", fault, volumeID)
+			printError("Error relocating volume %v: %+v ", volumeID, fault)
 			return fmt.Errorf(fault.LocalizedMessage)
 		}
 	}
