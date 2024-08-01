@@ -269,7 +269,7 @@ func (c *CNSVolumeMigrator) getDatastore(ctx context.Context, dsName string) (*o
 func (c *CNSVolumeMigrator) loginToVCenter(ctx context.Context) error {
 	infra, err := c.openshiftConfigClientSet.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
 	if err != nil {
-		printError("error getting infrastrucure object: %v", infra)
+		printError("error getting infrastructure object: %v", infra)
 		return err
 	}
 
