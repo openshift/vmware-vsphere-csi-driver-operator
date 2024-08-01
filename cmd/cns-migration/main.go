@@ -68,6 +68,6 @@ func main() {
 
 	migrator.StartMigration(context.TODO(), *volumeFile)
 	if err != nil {
-		klog.Fatalf("error migration one or more volumes: %v", err)
+		klog.Fatalf("error migrating one or more volumes: %v", err)
 	}
 }
