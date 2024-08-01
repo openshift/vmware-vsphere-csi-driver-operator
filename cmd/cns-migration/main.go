@@ -56,6 +56,10 @@ func main() {
 		klog.Fatalf("Parameter --source must be specified")
 	}
 
+	if volumeFile == nil || *volumeFile == "" {
+		klog.Fatalf("Parameter --volume-file must be specified")
+	}
+
 	fmt.Printf("KubeConfig is: %s\n", *kubeconfig)
 
 	// use the current context in kubeconfig

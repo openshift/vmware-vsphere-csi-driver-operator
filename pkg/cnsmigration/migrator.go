@@ -3,15 +3,13 @@ package cnsmigration
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"reflect"
 	"strings"
-	"time"
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/cnsmigration/vclib"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/vmware/govmomi/cns/types"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -34,10 +32,6 @@ const (
 	secretNamespace      = "openshift-cluster-csi-drivers"
 )
 
-var (
-	resyncPeriod = 10 * time.Minute
-)
-
 type CNSVolumeMigrator struct {
 	clientSet                  kubernetes.Interface
 	destinationDatastore       string
@@ -50,6 +44,8 @@ type CNSVolumeMigrator struct {
 	// for storing result and matches
 	matchingCnsVolumes []types.CnsVolume
 	usedVolumeCache    *inUseVolumeStore
+
+	destinationDatastoreObject *object.Datastore
 
 	// for counting migrated volumes and stuff
 	migratedVolumes int
@@ -95,6 +91,7 @@ func (c *CNSVolumeMigrator) StartMigration(ctx context.Context, volumeFile strin
 		return err
 	}
 
+	// TODO: Group this by namespace, so as to reduce memory used by the list
 	podList, err := c.clientSet.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
@@ -115,23 +112,21 @@ func (c *CNSVolumeMigrator) printSummary() {
 }
 
 func (c *CNSVolumeMigrator) findAndMigrateCSIVolumes(ctx context.Context, volumeFile string) error {
-	file, err := os.Open(volumeFile)
-	if err != nil {
-		msg := fmt.Errorf("error opening file %s: %v", volumeFile, err)
-		klog.Error(msg)
-		return msg
-	}
-	defer file.Close()
-
-	fileBytes, err := io.ReadAll(file)
+	fileBytes, err := os.ReadFile(volumeFile)
 	if err != nil {
 		msg := fmt.Errorf("error reading file %s: %v", volumeFile, err)
-		klog.Error(msg)
+		printErrorObject(msg)
 		return msg
 	}
+
 	if len(fileBytes) == 0 {
 		msg := fmt.Errorf("file %s has no listed volumes", volumeFile)
 		return msg
+	}
+
+	c.destinationDatastoreObject, err = c.getDatastore(ctx, c.destinationDatastore)
+	if err != nil {
+		return fmt.Errorf("error finding destination datastore %s: %v", c.destinationDatastore, err)
 	}
 
 	volumeLines := strings.Split(string(fileBytes), "\n")
@@ -168,14 +163,7 @@ func (c *CNSVolumeMigrator) findAndMigrateCSIVolumes(ctx context.Context, volume
 }
 
 func (c *CNSVolumeMigrator) migrateVolume(ctx context.Context, volumeID string) error {
-	dtsDatastore, err := c.getDatastore(ctx, c.destinationDatastore)
-	if err != nil {
-		msg := fmt.Errorf("error finding destination datastore %s: %v", dtsDatastore, err)
-		printErrorObject(msg)
-		return msg
-	}
-
-	relocatedSpec := types.NewCnsBlockVolumeRelocateSpec(volumeID, dtsDatastore.Reference())
+	relocatedSpec := types.NewCnsBlockVolumeRelocateSpec(volumeID, c.destinationDatastoreObject.Reference())
 	task, err := c.vSphereConnection.CnsClient().RelocateVolume(ctx, relocatedSpec)
 	if err != nil {
 		// Handle case when target DS is same as source DS, i.e. volume has
@@ -210,8 +198,8 @@ func (c *CNSVolumeMigrator) migrateVolume(ctx context.Context, volumeID string) 
 
 func (c *CNSVolumeMigrator) checkForDatastore(pv *v1.PersistentVolume) bool {
 	csiSource := pv.Spec.CSI
+	vh := csiSource.VolumeHandle
 	for _, cnsVolume := range c.matchingCnsVolumes {
-		vh := csiSource.VolumeHandle
 		if cnsVolume.VolumeId.Id == vh {
 			printGreenInfo("found a volume to migrate: %s", vh)
 			pvcName, podName, inUseFlag := c.usedVolumeCache.volumeInUse(volumeHandle(vh))
@@ -224,7 +212,7 @@ func (c *CNSVolumeMigrator) checkForDatastore(pv *v1.PersistentVolume) bool {
 		}
 	}
 	c.volumesNotFound++
-	printInfo("Unable to find volume %s in CNS datastore %s", pv.Name, c.sourceDatastore)
+	printInfo("Unable to find volume %s, with handle %s in CNS datastore %s", pv.Name, vh, c.sourceDatastore)
 	return false
 }
 
@@ -309,6 +297,10 @@ func (c *CNSVolumeMigrator) loginToVCenter(ctx context.Context) error {
 
 	if err = c.vSphereConnection.Connect(ctx); err != nil {
 		return fmt.Errorf("error connecting to vcenter: %v", err)
+	}
+
+	if err = c.vSphereConnection.LoginToCNS(ctx); err != nil {
+		return fmt.Errorf("error logging into CNS: %v", err)
 	}
 
 	return nil

@@ -3,13 +3,16 @@ package vclib
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
-	"github.com/vmware/govmomi/vapi/rest"
-	"github.com/vmware/govmomi/vim25/soap"
-	"k8s.io/legacy-cloud-providers/vsphere"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
+	"github.com/vmware/govmomi/cns"
+	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vim25"
+	"github.com/vmware/govmomi/vim25/soap"
+	"k8s.io/legacy-cloud-providers/vsphere"
 
 	"github.com/vmware/govmomi"
 	"k8s.io/klog/v2"
@@ -19,6 +22,7 @@ import (
 type VSphereConnection struct {
 	Client     *govmomi.Client
 	RestClient *rest.Client
+	cnsClient  *cns.Client
 	Username   string
 	Password   string
 	Hostname   string
@@ -123,4 +127,30 @@ func (connection *VSphereConnection) Logout(ctx context.Context) error {
 		}
 	}
 	return connection.Client.Logout(ctx)
+}
+
+func (connection *VSphereConnection) LoginToCNS(ctx context.Context) error {
+	// Create CNS client
+	cnsClient, err := cns.NewClient(ctx, connection.VimClient())
+	if err != nil {
+		msg := fmt.Errorf("error creating cns client: %v", err)
+		klog.Error(msg)
+		return msg
+	}
+	connection.cnsClient = cnsClient
+	return nil
+}
+
+func (connection *VSphereConnection) VimClient() *vim25.Client {
+	return connection.Client.Client
+}
+
+// Return default datacenter configured in Config
+// TODO: Do we need to setup and handle multiple datacenters?
+func (connection *VSphereConnection) DefaultDatacenter() string {
+	return connection.Config.Workspace.Datacenter
+}
+
+func (connection *VSphereConnection) CnsClient() *cns.Client {
+	return connection.cnsClient
 }
