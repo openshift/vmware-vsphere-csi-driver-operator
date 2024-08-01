@@ -170,7 +170,7 @@ func (c *CNSVolumeMigrator) findAndMigrateCSIVolumes(ctx context.Context, volume
 func (c *CNSVolumeMigrator) migrateVolume(ctx context.Context, volumeID string) error {
 	dtsDatastore, err := c.getDatastore(ctx, c.destinationDatastore)
 	if err != nil {
-		msg := fmt.Errorf("error finding destinationd datastore %s: %v", dtsDatastore, err)
+		msg := fmt.Errorf("error finding destination datastore %s: %v", dtsDatastore, err)
 		printErrorObject(msg)
 		return msg
 	}
