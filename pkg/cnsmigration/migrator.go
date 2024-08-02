@@ -139,6 +139,7 @@ func (c *CNSVolumeMigrator) findAndMigrateCSIVolumes(ctx context.Context, volume
 		pv, err := c.clientSet.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
 		if err != nil {
 			msg := fmt.Errorf("error finding pv %s: %v", pvName, err)
+			c.volumesNotFound++
 			printErrorObject(msg)
 			return msg
 		}
