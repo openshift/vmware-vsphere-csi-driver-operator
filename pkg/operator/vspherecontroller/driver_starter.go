@@ -183,6 +183,16 @@ func (c *VSphereController) topologyHook(opSpec *operatorapi.OperatorSpec, deplo
 			containers[i].Args = append(containers[i].Args, "--feature-gates=Topology=true", "--strict-topology")
 		}
 		deployment.Spec.Template.Spec.Containers = containers
+	} else {
+		containers := deployment.Spec.Template.Spec.Containers
+		for i := range containers {
+			if containers[i].Name != "csi-provisioner" {
+				continue
+			}
+
+			containers[i].Args = append(containers[i].Args, "--feature-gates=Topology=false")
+		}
+		deployment.Spec.Template.Spec.Containers = containers
 	}
 	return nil
 }
