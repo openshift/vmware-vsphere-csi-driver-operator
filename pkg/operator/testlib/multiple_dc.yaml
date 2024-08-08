@@ -1,0 +1,15 @@
+global:
+  insecureFlag: true
+  secretName: vsphere-creds
+  secretNamespace: kube-system
+vcenter:
+  foobar.lan:
+    server: foobar.lan
+    port: 443
+    insecureFlag: true
+    datacenters:
+      - Datacentera
+      - DatacenterB
+labels:
+  zone: openshift-zone
+  region: openshift-region

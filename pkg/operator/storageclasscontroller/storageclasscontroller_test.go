@@ -61,15 +61,17 @@ func newStorageClassController(apiClients *utils.APIClient, storageclassfile str
 	)
 
 	c := &StorageClassController{
-		name:                 testScControllerName,
-		targetNamespace:      testScControllerNamespace,
-		manifest:             scBytes,
-		kubeClient:           apiClients.KubeClient,
-		operatorClient:       apiClients.OperatorClient,
-		storageClassLister:   apiClients.KubeInformers.InformersFor("").Storage().V1().StorageClasses().Lister(),
-		recorder:             rc,
-		makeStoragePolicyAPI: spFunc,
-		scStateEvaluator:     evaluator,
+		AbstractStorageClass{
+			name:                 testScControllerName,
+			targetNamespace:      testScControllerNamespace,
+			manifest:             scBytes,
+			kubeClient:           apiClients.KubeClient,
+			operatorClient:       apiClients.OperatorClient,
+			storageClassLister:   apiClients.KubeInformers.InformersFor("").Storage().V1().StorageClasses().Lister(),
+			recorder:             rc,
+			makeStoragePolicyAPI: spFunc,
+			scStateEvaluator:     evaluator,
+		},
 	}
 
 	return c
@@ -160,14 +162,15 @@ func TestSync(t *testing.T) {
 			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
 
 			apiDeps := getCheckAPIDependency(commonApiClient)
-			var conn *vclib.VSphereConnection
+			var conn vclib.VSphereConnection
+			conns := []*vclib.VSphereConnection{&conn}
 			scController := newStorageClassController(commonApiClient, test.storageClass, test.StoragePolicyAPIfails)
 
 			if test.shouldPanic {
 				defer assertPanic(t)
 			}
 			// err will be nil on even on failure, need to check conditions instead
-			err := scController.Sync(context.TODO(), conn, apiDeps)
+			err := scController.Sync(context.TODO(), conns, apiDeps)
 			if err != nil {
 				t.Errorf("failed to sync controller: %+v", err)
 			}
@@ -219,12 +222,14 @@ func TestSyncMultiple(t *testing.T) {
 			commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
 			storageClass := "storageclass1.yaml"
 			apiDeps := getCheckAPIDependency(commonApiClient)
-			var conn *vclib.VSphereConnection
+			conn := vclib.VSphereConnection{
+				Hostname: "test",
+			}
 			scController := newStorageClassController(commonApiClient, storageClass, test.storagePolicySyncFails)
 			scController.backoff = defaultBackoff
 
 			// err will be nil on even on failure, need to check conditions instead
-			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), &conn, apiDeps, opv1.ManagedStorageClass)
 			scController.policyName = policyName
 
 			if test.expectError {
@@ -239,12 +244,8 @@ func TestSyncMultiple(t *testing.T) {
 					t.Errorf("Expected no error got: %v", clusterCheckResult.CheckError)
 				}
 			}
-			// setting this to nil will cause the test that uses makeStoragePolicyAPI call to panic
-			if !test.storagePolicySyncFails {
-				scController.makeStoragePolicyAPI = nil
-			}
 
-			policyName, clusterCheckResult = scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+			policyName, clusterCheckResult = scController.syncStoragePolicy(context.TODO(), &conn, apiDeps, opv1.ManagedStorageClass)
 			if test.expectError {
 				if clusterCheckResult.CheckError == nil {
 					t.Errorf("Expected error got none")

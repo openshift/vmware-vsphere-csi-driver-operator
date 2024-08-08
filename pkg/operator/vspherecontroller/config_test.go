@@ -42,8 +42,8 @@ password   = "password123"`,
 			expectedError: false,
 			expectedString: `[Global]
 cluster-id = 1234
-user       = user1
-password   = password123`,
+user       = "user1"
+password   = "password123"`,
 		},
 		{
 			name: "Valid config with inline comments",

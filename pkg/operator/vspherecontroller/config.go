@@ -19,7 +19,7 @@ type iniConfig struct {
 func newINIConfig(config string) (*iniConfig, error) {
 	// We ignore inline comments when reading the INI file
 	// because passwords may contain comment symbols (# and ;)
-	options := iniv1.LoadOptions{IgnoreInlineComment: true}
+	options := iniv1.LoadOptions{IgnoreInlineComment: true, PreserveSurroundedQuote: true}
 	csiConfig, err := iniv1.LoadSources(options, []byte(config))
 	if err != nil {
 		return nil, fmt.Errorf("error loading ini file: %v", err)

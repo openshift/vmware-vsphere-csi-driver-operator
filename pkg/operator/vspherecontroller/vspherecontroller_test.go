@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
@@ -27,6 +30,11 @@ const (
 )
 
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
+	gates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters})
+	return newVsphereControllerWithGates(apiClients, gates)
+}
+
+func newVsphereControllerWithGates(apiClients *utils.APIClient, gates featuregates.FeatureGate) *VSphereController {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
@@ -60,6 +68,7 @@ func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 		eventRecorder:          rc,
 		vSphereChecker:         newVSphereEnvironmentChecker(),
 		infraLister:            infraInformer.Lister(),
+		featureGates:           gates,
 	}
 	c.controllers = []conditionalController{}
 	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
@@ -70,7 +79,7 @@ type dummyStorageClassController struct {
 	syncCalled int
 }
 
-func (c *dummyStorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+func (c *dummyStorageClassController) Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
 	c.syncCalled += 1
 	return nil
 }
@@ -88,7 +97,7 @@ func TestSync(t *testing.T) {
 		initialErrorMetricValue      float64
 		initialErrorMetricLabels     map[string]string
 		skipCheck                    bool
-		configObjects                runtime.Object
+		infra                        *configv1.Infrastructure
 		vcenterVersion               string
 		hostVersion                  string
 		startingNodeHardwareVersions []string
@@ -107,7 +116,28 @@ func TestSync(t *testing.T) {
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when all configuration is right YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -128,7 +158,34 @@ func TestSync(t *testing.T) {
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			failVCenterConnection:        true,
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionUnknown,
+				},
+				{
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_unknown",failure_reason="vsphere_connection_failed"} 1`,
+			operandStarted:      false,
+			storageClassCreated: false,
+		},
+		{
+			name:                         "when we can't connect to vcenter YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			infra:                        testlib.GetInfraObject(),
 			failVCenterConnection:        true,
 			expectedConditions: []opv1.OperatorCondition{
 				{
@@ -155,7 +212,29 @@ func TestSync(t *testing.T) {
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true /*withOCPAnnotation*/)},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			failVCenterConnection:        true,
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: false,
+		},
+		{
+			name:                         "when we can't connect to vcenter but CSI driver was installed previously, degrade cluster YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true /*withOCPAnnotation*/)},
+			infra:                        testlib.GetInfraObject(),
 			failVCenterConnection:        true,
 			expectedConditions: []opv1.OperatorCondition{
 				{
@@ -176,7 +255,27 @@ func TestSync(t *testing.T) {
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when vcenter version is older, block upgrades YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -197,7 +296,29 @@ func TestSync(t *testing.T) {
 			hostVersion:                  "7.0.1",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			expectedMetrics:     `vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="check_deprecated_esxi_version"} 1`,
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when host version is older, block upgrades YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.1",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -218,7 +339,27 @@ func TestSync(t *testing.T) {
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			storageClassCreated: false,
+			operandStarted:      true,
+		},
+		{
+			name:                         "when vcenter version is older but csi driver exists, degrade cluster YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
@@ -239,7 +380,34 @@ func TestSync(t *testing.T) {
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(false)},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
+vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
+			operandStarted:      false,
+			storageClassCreated: false,
+		},
+		{
+			name:                         "when all configuration is right, but an existing upstream CSI driver exists YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(false)},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -266,7 +434,34 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSINode()},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   testControllerName + "Disabled",
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1
+vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_driver_found"} 1`,
+			operandStarted:      false,
+			storageClassCreated: false,
+		},
+		{
+			name:                         "when all configuration is right, but an existing upstream CSI node object exists YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret(), testlib.GetCSINode()},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -294,7 +489,29 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-13", "vmx-15"},
 			finalNodeHardwareVersions:    []string{"vmx-15", "vmx-15"},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when node hw-version was old first and got upgraded YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-13", "vmx-15"},
+			finalNodeHardwareVersions:    []string{"vmx-15", "vmx-15"},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -317,7 +534,21 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			initialErrorMetricLabels:     map[string]string{"condition": "install_blocked", "failure_reason": "existing_driver_found"},
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			vcenterVersion:               "7.0.2",
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			operandStarted:               false,
+			// The metrics is not reset when no checks actually run.
+			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
+		},
+		{
+			name:                         "sync before the next recheck interval YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret()},
+			skipCheck:                    true,
+			initialErrorMetricValue:      1,
+			initialErrorMetricLabels:     map[string]string{"condition": "install_blocked", "failure_reason": "existing_driver_found"},
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.2",
+			infra:                        testlib.GetInfraObject(),
 			operandStarted:               false,
 			// The metrics is not reset when no checks actually run.
 			expectedMetrics: `vsphere_csi_driver_error{condition="install_blocked",failure_reason="existing_driver_found"} 1`,
@@ -329,7 +560,28 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			vcenterVersion:               "7.0.1", // Minimum for upgrade is 7.0.2
 			hostVersion:                  "7.0.2",
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when vcenter version is 7.0.1 and csi driver exists, mark upgradeable: false YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.1", // Minimum for upgrade is 7.0.2
+			hostVersion:                  "7.0.2",
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -350,7 +602,28 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.1", // Minimum for upgrade is 7.0.2
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
-			configObjects:                runtime.Object(testlib.GetInfraObject()),
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when host version is 7.0.1 and csi driver exists, mark upgradeable: false YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.1", // Minimum for upgrade is 7.0.2
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
@@ -380,7 +653,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			for _, node := range nodes {
 				test.initialObjects = append(test.initialObjects, runtime.Object(node))
 			}
-			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
+			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, runtime.Object(test.infra))
 			clusterCSIDriver := testlib.GetClusterCSIDriver(false)
 			testlib.AddClusterCSIDriverClient(commonApiClient, clusterCSIDriver)
 
@@ -400,88 +673,91 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			scController := ctrl.storageClassController.(*dummyStorageClassController)
 
 			var cleanUpFunc func()
-			var conn *vclib.VSphereConnection
+			var connections []*vclib.VSphereConnection
 			var connError error
-			conn, cleanUpFunc, connError = testlib.SetupSimulator(testlib.DefaultModel)
-			if test.vcenterVersion != "" {
-				testlib.CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
-			}
-			ctrl.vsphereConnectionFunc = makeVsphereConnectionFunc(conn, test.failVCenterConnection, connError)
-			defer func() {
-				if cleanUpFunc != nil {
-					cleanUpFunc()
+			connections, cleanUpFunc, connError = testlib.SetupSimulator(testlib.DefaultModel, test.infra)
+
+			for _, conn := range connections {
+				if test.vcenterVersion != "" {
+					testlib.CustomizeVCenterVersion(test.vcenterVersion, test.vcenterVersion, conn)
 				}
-			}()
-			err := setHardwareVersionsFunc(nodes, conn, test.startingNodeHardwareVersions)()
-			if err != nil {
-				t.Fatalf("error setting hardware version for node %s", nodes[0].Name)
-			}
-
-			hostVersion := test.hostVersion
-			if hostVersion == "" {
-				hostVersion = "7.0.2"
-			}
-			err = testlib.CustomizeHostVersion(testlib.DefaultHostId, hostVersion)
-			if err != nil {
-				t.Fatalf("Failed to customize host: %s", err)
-			}
-
-			if test.skipCheck {
-				ctrl.vSphereChecker = newSkippingChecker()
-			}
-
-			err = ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
-			if test.expectError == nil && err != nil {
-				t.Fatalf("Unexpected error that could degrade cluster: %+v", err)
-			}
-
-			// check storageclass results
-			if test.storageClassCreated && scController.syncCalled == 0 {
-				t.Fatalf("expected storageclass to be created")
-			}
-
-			if !test.storageClassCreated && scController.syncCalled > 0 {
-				t.Fatalf("unexpected storageclass created")
-			}
-
-			if test.expectError != nil && err == nil {
-				t.Fatalf("expected cluster to be degraded with: %v, got none", test.expectError)
-			}
-			// if hardware version changes between the syncs lets rerun sync again
-			if len(test.finalNodeHardwareVersions) > 0 {
-				err = adjustConditionsAndResync(setHardwareVersionsFunc(nodes, conn, test.finalNodeHardwareVersions), ctrl)
-			}
-
-			_, status, _, err := ctrl.operatorClient.GetOperatorState()
-			if err != nil {
-				t.Errorf("failed to get operator state: %+v", err)
-			}
-			extraConditions := sets.New[string]()
-			for i := range status.Conditions {
-				extraConditions.Insert(status.Conditions[i].Type)
-			}
-			for i := range test.expectedConditions {
-				expectedCondition := test.expectedConditions[i]
-				matchingCondition := testlib.GetMatchingCondition(status.Conditions, expectedCondition.Type)
-				if matchingCondition == nil {
-					t.Fatalf("found no matching condition for: %s", expectedCondition.Type)
+				ctrl.vsphereConnectionFunc = makeVsphereConnectionFunc(conn, test.failVCenterConnection, connError)
+				defer func() {
+					if cleanUpFunc != nil {
+						cleanUpFunc()
+					}
+				}()
+				err := setHardwareVersionsFunc(nodes, conn, test.startingNodeHardwareVersions)()
+				if err != nil {
+					t.Fatalf("error setting hardware version for node %s", nodes[0].Name)
 				}
-				if matchingCondition.Status != expectedCondition.Status {
-					t.Fatalf("for condition %s: expected status: %v, got: %v", expectedCondition.Type, expectedCondition.Status, matchingCondition.Status)
+
+				hostVersion := test.hostVersion
+				if hostVersion == "" {
+					hostVersion = "7.0.2"
 				}
-				extraConditions.Delete(expectedCondition.Type)
-			}
-			if len(extraConditions) > 0 {
-				t.Fatalf("found unexpected conditions: %+v", extraConditions.UnsortedList())
-			}
+				err = testlib.CustomizeHostVersion(testlib.DefaultHostId, hostVersion)
+				if err != nil {
+					t.Fatalf("Failed to customize host: %s", err)
+				}
 
-			if test.operandStarted != ctrl.operandControllerStarted {
-				t.Fatalf("expected operandStarted to be %v, got %v", test.operandStarted, ctrl.operandControllerStarted)
-			}
+				if test.skipCheck {
+					ctrl.vSphereChecker = newSkippingChecker()
+				}
 
-			if test.expectedMetrics != "" {
-				if err := testutil.CollectAndCompare(utils.InstallErrorMetric, strings.NewReader(metricsHeader+test.expectedMetrics+"\n"), utils.InstallErrorMetric.Name); err != nil {
-					t.Errorf("wrong metrics: %s", err)
+				err = ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
+				if test.expectError == nil && err != nil {
+					t.Fatalf("Unexpected error that could degrade cluster: %+v", err)
+				}
+
+				// check storageclass results
+				if test.storageClassCreated && scController.syncCalled == 0 {
+					t.Fatalf("expected storageclass to be created")
+				}
+
+				if !test.storageClassCreated && scController.syncCalled > 0 {
+					t.Fatalf("unexpected storageclass created")
+				}
+
+				if test.expectError != nil && err == nil {
+					t.Fatalf("expected cluster to be degraded with: %v, got none", test.expectError)
+				}
+				// if hardware version changes between the syncs lets rerun sync again
+				if len(test.finalNodeHardwareVersions) > 0 {
+					err = adjustConditionsAndResync(setHardwareVersionsFunc(nodes, conn, test.finalNodeHardwareVersions), ctrl)
+				}
+
+				_, status, _, err := ctrl.operatorClient.GetOperatorState()
+				if err != nil {
+					t.Errorf("failed to get operator state: %+v", err)
+				}
+				extraConditions := sets.New[string]()
+				for i := range status.Conditions {
+					extraConditions.Insert(status.Conditions[i].Type)
+				}
+				for i := range test.expectedConditions {
+					expectedCondition := test.expectedConditions[i]
+					matchingCondition := testlib.GetMatchingCondition(status.Conditions, expectedCondition.Type)
+					if matchingCondition == nil {
+						t.Fatalf("found no matching condition for: %s", expectedCondition.Type)
+					}
+					if matchingCondition.Status != expectedCondition.Status {
+						t.Fatalf("for condition %s: expected status: %v, got: %v", expectedCondition.Type, expectedCondition.Status, matchingCondition.Status)
+					}
+					extraConditions.Delete(expectedCondition.Type)
+				}
+				if len(extraConditions) > 0 {
+					t.Fatalf("found unexpected conditions: %+v", extraConditions.UnsortedList())
+				}
+
+				if test.operandStarted != ctrl.operandControllerStarted {
+					t.Fatalf("expected operandStarted to be %v, got %v", test.operandStarted, ctrl.operandControllerStarted)
+				}
+
+				if test.expectedMetrics != "" {
+					if err := testutil.CollectAndCompare(utils.InstallErrorMetric, strings.NewReader(metricsHeader+test.expectedMetrics+"\n"), utils.InstallErrorMetric.Name); err != nil {
+						t.Errorf("wrong metrics: %s", err)
+					}
 				}
 			}
 		})
@@ -489,43 +765,95 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 }
 
 func TestApplyClusterCSIDriver(t *testing.T) {
+	multiVCenterGateDisabled := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters})
+
 	tests := []struct {
-		name               string
-		clusterCSIDriver   *opv1.ClusterCSIDriver
-		operatorObj        *testlib.FakeDriverInstance
-		expectedTopology   string
-		configFileName     string
-		expectedDatacenter string
-		expectError        bool
+		name                  string
+		clusterCSIDriver      *opv1.ClusterCSIDriver
+		operatorObj           *testlib.FakeDriverInstance
+		expectedTopology      string
+		configFileName        string
+		secretData            runtime.Object
+		featureGates          featuregates.FeatureGate
+		checkMigrationURL     bool
+		expectedDatacenterMap map[string]string
+		expectError           bool
 	}{
 		{
-			name:               "when driver does not have topology enabled",
-			clusterCSIDriver:   testlib.GetClusterCSIDriver(false),
-			operatorObj:        testlib.MakeFakeDriverInstance(),
-			expectedDatacenter: "Datacenter",
-			expectedTopology:   "",
+			name:             "when driver does not have topology enabled",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(false),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			secretData:       testlib.GetDCSecret(),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacenter",
+			},
+			expectedTopology:  "",
+			checkMigrationURL: true,
 		},
 		{
-			name:               "when driver does have topology enabled",
-			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
-			operatorObj:        testlib.MakeFakeDriverInstance(),
-			expectedDatacenter: "Datacenter",
-			expectedTopology:   "k8s-zone,k8s-region",
+			name:             "when driver does have topology enabled",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			secretData:       testlib.GetDCSecret(),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacenter",
+			},
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: true,
 		},
 		{
 			name:             "when configuration has more than one vcenter",
 			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
 			operatorObj:      testlib.MakeFakeDriverInstance(),
 			configFileName:   "multiple_vc.ini",
+			secretData:       testlib.GetDCSecret(),
 			expectError:      true,
 		},
 		{
-			name:               "when configuration has more than one datacenter",
-			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
-			operatorObj:        testlib.MakeFakeDriverInstance(),
-			configFileName:     "multiple_dc.ini",
-			expectedDatacenter: "Datacentera, DatacenterB",
-			expectedTopology:   "k8s-zone,k8s-region",
+			name:             "when configuration has more than one vcenter yaml",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			configFileName:   "multiple_vc.yaml",
+			secretData:       testlib.GetMultiVCSecret(),
+			expectError:      true,
+		},
+		{
+			name:             "when configuration has more than one vcenter yaml gate enabled",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			configFileName:   "multiple_vc.yaml",
+			secretData:       testlib.GetMultiVCSecret(),
+			featureGates:     featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereMultiVCenters}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacenter",
+				"foobaz.lan": "Datacenterb",
+			},
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: false,
+		},
+		{
+			name:             "when configuration has more than one datacenter",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			configFileName:   "multiple_dc.ini",
+			secretData:       testlib.GetDCSecret(),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacentera, DatacenterB", // INI has a space, YAML does not
+			},
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: true,
+		},
+		{
+			name:             "when configuration has more than one datacenter yaml",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			configFileName:   "multiple_dc.yaml",
+			secretData:       testlib.GetDCSecret(),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacentera,DatacenterB", // INI has a space, YAML does not
+			},
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: true,
 		},
 	}
 
@@ -533,26 +861,31 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 		tc := tests[i]
 		t.Run(tc.name, func(t *testing.T) {
 			infra := testlib.GetInfraObject()
-			initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+			initialObjects := []runtime.Object{tc.secretData}
 			commonApiClient := testlib.NewFakeClients(initialObjects, tc.operatorObj, infra)
 			testlib.AddClusterCSIDriverClient(commonApiClient, tc.clusterCSIDriver)
 			stopCh := make(chan struct{})
 			defer close(stopCh)
 
 			go testlib.StartFakeInformer(commonApiClient, stopCh)
-			if err := testlib.AddInitialObjects(initialObjects, commonApiClient); err != nil {
+			if err := testlib.AddInitialObjects(append(initialObjects, tc.clusterCSIDriver), commonApiClient); err != nil {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
 
-			testlib.WaitForSync(commonApiClient, stopCh)
-			ctrl := newVsphereController(commonApiClient)
+			gates := tc.featureGates
+			if gates == nil {
+				gates = multiVCenterGateDisabled
+			}
 
-			legacyVsphereConfig, err := testlib.GetLegacyVSphereConfig(tc.configFileName)
+			testlib.WaitForSync(commonApiClient, stopCh)
+			ctrl := newVsphereControllerWithGates(commonApiClient, gates)
+
+			vsphereConfig, err := testlib.GetVSphereConfig(tc.configFileName)
 			if err != nil {
 				t.Fatalf("error loading legacy vsphere config: %v", err)
 			}
 
-			configMap, err := ctrl.applyClusterCSIDriverChange(infra, legacyVsphereConfig, tc.clusterCSIDriver, "foobar")
+			configMap, err := ctrl.applyClusterCSIDriverChange(infra, vsphereConfig, tc.clusterCSIDriver, "foobar")
 
 			// if we expected error and we got some, we should stop running this test
 			if tc.expectError && err != nil {
@@ -581,22 +914,31 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 					t.Fatalf("expected topology %v, unexpected topology found %v", tc.expectedTopology, labelSection)
 				}
 			}
-			datacenters, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("datacenters")
-			if err != nil {
-				t.Fatalf("error getting datacenters: %v", err)
-			}
-			if datacenters.String() != tc.expectedDatacenter {
-				t.Fatalf("expected datacenter to be %s, got %s", tc.expectedDatacenter, datacenters.String())
+
+			// We need to iterate through each vcenter and verify.
+			if tc.expectedDatacenterMap != nil {
+				for key := range tc.expectedDatacenterMap {
+					fmt.Printf("VirtualCenter \"%v\"\n", key)
+					fmt.Printf("Section %v\n", csiConfig.Section(fmt.Sprintf("VirtualCenter \"%v\"", key)))
+					datacenters, err := csiConfig.Section(fmt.Sprintf("VirtualCenter \"%v\"", key)).GetKey("datacenters")
+					if err != nil {
+						t.Fatalf("error getting datacenters: %v", err)
+					}
+					if datacenters.String() != tc.expectedDatacenterMap[key] {
+						t.Fatalf("expected datacenter for vcenter %v to be %s, got %s", key, tc.expectedDatacenterMap[key], datacenters.String())
+					}
+				}
 			}
 
-			datastoreURL, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("migration-datastore-url")
-			if err != nil {
-				t.Fatalf("error getting datasore url: %v", err)
+			if tc.checkMigrationURL {
+				datastoreURL, err := csiConfig.Section("VirtualCenter \"foobar.lan\"").GetKey("migration-datastore-url")
+				if err != nil {
+					t.Fatalf("error getting datasore url: %v", err)
+				}
+				if datastoreURL.String() != "foobar" {
+					t.Fatalf("expected datastoreURL to be %s got %s", "foobar", datastoreURL)
+				}
 			}
-			if datastoreURL.String() != "foobar" {
-				t.Fatalf("expected datastoreURL to be %s got %s", "foobar", datastoreURL)
-			}
-
 		})
 	}
 }
@@ -683,8 +1025,8 @@ func adjustConditionsAndResync(modifierFunc func() error, ctrl *VSphereControlle
 	return ctrl.sync(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder))
 }
 
-func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection bool, connError error) func() (*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
-	return func() (*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
+func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection bool, connError error) func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
+	return func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool) {
 		if failConnection {
 			err := fmt.Errorf("connection to vcenter failed")
 			result := checks.ClusterCheckResult{
@@ -698,7 +1040,7 @@ func makeVsphereConnectionFunc(conn *vclib.VSphereConnection, failConnection boo
 			if connError != nil {
 				return nil, checks.MakeGenericVCenterAPIError(connError), false
 			}
-			return conn, checks.MakeClusterCheckResultPass(), false
+			return []*vclib.VSphereConnection{conn}, checks.MakeClusterCheckResultPass(), false
 		}
 	}
 }

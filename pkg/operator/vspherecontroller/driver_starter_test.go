@@ -24,9 +24,21 @@ func TestGetvCenterName(t *testing.T) {
 			expectedVCenterName: "localhost",
 		},
 		{
+			name:                "when infra object does not have vcenter YAML",
+			infra:               testlib.GetInfraObject(),
+			configMap:           testlib.GetNewConfigMap(),
+			expectedVCenterName: "localhost",
+		},
+		{
 			name:                "when infra object does have vcenter",
 			infra:               testlib.GetSingleFailureDomainInfra(),
 			configMap:           testlib.GetConfigMap(),
+			expectedVCenterName: "vcenter.home.lan",
+		},
+		{
+			name:                "when infra object does have vcenter YAML",
+			infra:               testlib.GetSingleFailureDomainInfra(),
+			configMap:           testlib.GetNewConfigMap(),
 			expectedVCenterName: "vcenter.home.lan",
 		},
 	}

@@ -4,18 +4,29 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/openshift/api/features"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/third_party/cloud-provider-vsphere/pkg/common/config"
 	"github.com/vmware/govmomi/cns"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
-	"k8s.io/legacy-cloud-providers/vsphere"
+	legacy "k8s.io/legacy-cloud-providers/vsphere"
 
 	"github.com/vmware/govmomi"
+	"gopkg.in/gcfg.v1"
 	"k8s.io/klog/v2"
+)
+
+const apiTimeout = 10 * time.Minute
+
+var (
+	clientLock sync.Mutex
 )
 
 // VSphereConnection contains information for connecting to vCenter
@@ -28,22 +39,85 @@ type VSphereConnection struct {
 	Hostname   string
 	Port       string
 	Insecure   bool
-	Config     *vsphere.VSphereConfig
+	Config     *VSphereConfig
 }
 
-const apiTimeout = 10 * time.Minute
+// VSphereConfig contains configuration for cloud provider.  It wraps the legacy version and the newer upstream version
+// with yaml support
+type VSphereConfig struct {
+	Config       *config.Config
+	LegacyConfig *legacy.VSphereConfig
+}
 
-var (
-	clientLock sync.Mutex
-)
+// LoadConfig load the desired config into this config object.
+func (c *VSphereConfig) LoadConfig(data string) error {
+	var err error
+	c.Config, err = config.ReadConfig([]byte(data))
+	if err != nil {
+		return err
+	}
 
-func NewVSphereConnection(username, password string, cfg *vsphere.VSphereConfig) *VSphereConnection {
+	// Load legacy if cfgString is not yaml.  May be needed in areas that require legacy logic.
+	lCfg := &legacy.VSphereConfig{}
+	err = gcfg.ReadStringInto(lCfg, data)
+	if err != nil {
+		// For now, we can just log an info so that we know.
+		klog.V(4).Info("Unable to load cloud config as legacy ini.")
+		return nil
+	}
+
+	c.LegacyConfig = lCfg
+	return nil
+}
+
+// GetVCenterHostname get the vcenter's hostname.
+func (c *VSphereConfig) GetVCenterHostname(vcenter string) string {
+	return c.Config.VirtualCenter[vcenter].VCenterIP
+}
+
+// IsInsecure returns true if the vcenter is configured to have an insecure connection.
+func (c *VSphereConfig) IsInsecure(vcenter string) bool {
+	return c.Config.VirtualCenter[vcenter].InsecureFlag
+}
+
+// GetDatacenters gets the datacenters.  Falls back to legacy style ini lookup if vcenter not found in primary config.
+func (c *VSphereConfig) GetDatacenters(vcenter string) ([]string, error) {
+	var datacenters []string
+	if c.Config.VirtualCenter[vcenter] != nil {
+		datacenters = strings.Split(c.Config.VirtualCenter[vcenter].Datacenters, ",")
+	} else {
+		// If here, then legacy config may be in use.
+		datacenters = []string{c.LegacyConfig.Workspace.Datacenter}
+	}
+	klog.V(2).Infof("Gathered the following data centers: %v", datacenters)
+	return datacenters, nil
+}
+
+// GetWorkspaceDatacenter get the legacy datacenter from workspace config.
+func (c *VSphereConfig) GetWorkspaceDatacenter() string {
+	return c.LegacyConfig.Workspace.Datacenter
+}
+
+// GetDefaultDatastore get the default datastore.  This is primarily used with legacy ini config.
+func (c *VSphereConfig) GetDefaultDatastore() string {
+	return c.LegacyConfig.Workspace.DefaultDatastore
+}
+
+// ValidateConfig validates if current loaded config is valid.
+func (c *VSphereConfig) ValidateConfig(featureGates featuregates.FeatureGate) error {
+	if len(c.Config.VirtualCenter) > 1 && !featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
+		return fmt.Errorf("cloud config must define a single VirtualCenter")
+	}
+	return nil
+}
+
+func NewVSphereConnection(username, password, vcenter string, cfg *VSphereConfig) *VSphereConnection {
 	return &VSphereConnection{
 		Username: username,
 		Password: password,
 		Config:   cfg,
-		Hostname: cfg.Workspace.VCenterIP,
-		Insecure: cfg.Global.InsecureFlag,
+		Hostname: cfg.GetVCenterHostname(vcenter),
+		Insecure: cfg.IsInsecure(vcenter),
 	}
 }
 
@@ -148,7 +222,7 @@ func (connection *VSphereConnection) VimClient() *vim25.Client {
 // Return default datacenter configured in Config
 // TODO: Do we need to setup and handle multiple datacenters?
 func (connection *VSphereConnection) DefaultDatacenter() string {
-	return connection.Config.Workspace.Datacenter
+	return connection.Config.GetWorkspaceDatacenter()
 }
 
 func (connection *VSphereConnection) CnsClient() *cns.Client {
