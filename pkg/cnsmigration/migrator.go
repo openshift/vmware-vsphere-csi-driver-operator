@@ -107,6 +107,7 @@ func (c *CNSVolumeMigrator) printSummary() {
 	printGreenInfo("Migrated %d volumes", c.migratedVolumes)
 	printGreenInfo("Failed to migrate %d volumes", c.failedToMigrate)
 	printGreenInfo("Volumes not found %d", c.volumesNotFound)
+	printGreenInfo("----------- End of Summary ------------")
 }
 
 func (c *CNSVolumeMigrator) findAndMigrateCSIVolumes(ctx context.Context, volumeFile string) error {
@@ -135,11 +136,13 @@ func (c *CNSVolumeMigrator) findAndMigrateCSIVolumes(ctx context.Context, volume
 		}
 		printGreenInfo("Starting migration for pv %s", pvName)
 		pv, err := c.clientSet.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
+
+		// although we failed to find this PV, we will continue migrating other PVs
 		if err != nil {
 			msg := fmt.Errorf("error finding pv %s: %v", pvName, err)
 			c.volumesNotFound++
 			printErrorObject(msg)
-			return msg
+			continue
 		}
 
 		csiSource := pv.Spec.CSI
