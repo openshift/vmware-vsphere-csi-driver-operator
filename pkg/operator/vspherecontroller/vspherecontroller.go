@@ -3,7 +3,6 @@ package vspherecontroller
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/api/features"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	ocpv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	operatorapi "github.com/openshift/api/operator/v1"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
@@ -75,6 +75,7 @@ const (
 	metricsCertSecretName             = "vmware-vsphere-csi-driver-controller-metrics-serving-cert"
 	webhookSecretName                 = "vmware-vsphere-csi-driver-webhook-secret"
 	trustedCAConfigMap                = "vmware-vsphere-csi-driver-trusted-ca-bundle"
+	driverConfigSecretName            = "vsphere-csi-config-secret"
 	defaultNamespace                  = "openshift-cluster-csi-drivers"
 	driverOperandName                 = "vmware-vsphere-csi-driver"
 	resyncDuration                    = 20 * time.Minute
