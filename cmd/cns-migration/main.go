@@ -70,7 +70,7 @@ func main() {
 
 	migrator := cnsmigration.NewCNSVolumeMigrator(config, *sourceDatastore, *destinationDatastore)
 
-	migrator.StartMigration(context.TODO(), *volumeFile)
+	err = migrator.StartMigration(context.TODO(), *volumeFile)
 	if err != nil {
 		klog.Fatalf("error migrating one or more volumes: %v", err)
 	}
