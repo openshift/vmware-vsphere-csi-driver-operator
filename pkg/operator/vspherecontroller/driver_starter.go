@@ -126,12 +126,12 @@ func (c *VSphereController) createCSIDriver() {
 		),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,
-			cloudCredSecretName,
+			metricsCertSecretName,
 			c.apiClients.SecretInformer,
 		),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,
-			metricsCertSecretName,
+			driverConfigSecretName,
 			c.apiClients.SecretInformer,
 		),
 		csidrivercontrollerservicecontroller.WithReplicasHook(c.nodeLister),
@@ -149,7 +149,7 @@ func (c *VSphereController) createCSIDriver() {
 			trustedCAConfigMap,
 			c.apiClients.ConfigMapInformer,
 		),
-		WithSecretDaemonSetAnnotationHook("vsphere-csi-config-secret", defaultNamespace, c.apiClients.SecretInformer),
+		WithSecretDaemonSetAnnotationHook(driverConfigSecretName, defaultNamespace, c.apiClients.SecretInformer),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
