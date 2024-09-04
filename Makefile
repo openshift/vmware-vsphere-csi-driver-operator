@@ -40,3 +40,11 @@ test-e2e:
 	hack/e2e.sh
 
 .PHONY: test-e2e
+
+operator-e2e-test: GO_TEST_PACKAGES :=./test/e2e/...
+operator-e2e-test: GO_TEST_FLAGS += -v
+operator-e2e-test: GO_TEST_FLAGS += -count=1
+operator-e2e-test: GO_TEST_FLAGS += -timeout 3h
+operator-e2e-test: GO_TEST_FLAGS += -p 1
+operator-e2e-test: test-unit
+.PHONY: operator-e2e-test
