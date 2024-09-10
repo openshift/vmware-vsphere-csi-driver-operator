@@ -88,17 +88,13 @@ func (c *CNSVolumeMigrator) StartMigration(ctx context.Context, volumeFile strin
 	}
 
 	// check if the vCenter version is supported
-	supported, err := c.checkRequiredVersion()
+	err = c.checkRequiredVersion()
 	if err != nil {
-		printError("error checking for required version: %v", err)
+		printError("error checking minimum version of vCenter that supports volume migration: %v", err)
 		return err
 	}
-	if !supported {
-		printError("vCenter version is not supported")
-		return fmt.Errorf("vCenter version is not supported")
-	} else {
-		printGreenInfo("vCenter version supports CNS volume Migration")
-	}
+
+	printGreenInfo("vCenter version supports CNS volume Migration")
 
 	printGreenInfo("logging successfully to vcenter")
 
@@ -346,17 +342,17 @@ func (c *CNSVolumeMigrator) loginToVCenter(ctx context.Context) error {
 	return nil
 }
 
-func (c *CNSVolumeMigrator) checkRequiredVersion() (bool, error) {
+func (c *CNSVolumeMigrator) checkRequiredVersion() error {
 	apiVersion, build, err := c.vSphereConnection.GetVersionInfo()
 	if err != nil {
-		return false, err
+		return fmt.Errorf("error getting vCenter version: %v", err)
 	}
 	match, message, err := utils.CheckForMinimumPatchedVersion(minRequirement, apiVersion, build)
 	if err != nil {
-		return false, fmt.Errorf("error checking for minimum version: %v", err)
+		return fmt.Errorf("error checking for minimum version: %v", err)
 	}
 	if !match {
-		return false, fmt.Errorf("vCenter version %s:%d is not supported: %s", apiVersion, build, message)
+		return fmt.Errorf("vCenter version %s:%s is not supported: minimum supported version is - %s", apiVersion, build, message)
 	}
-	return true, nil
+	return nil
 }
