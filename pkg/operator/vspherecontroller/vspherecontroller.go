@@ -3,6 +3,7 @@ package vspherecontroller
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -63,6 +64,9 @@ type VSphereController struct {
 	vCenterConnectionStatus  bool
 	featureGates             featuregates.FeatureGate
 	cloudConfig              *vclib.VSphereConfig
+
+	currentManagmentState operatorapi.ManagementState
+
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool)
 }
@@ -160,11 +164,6 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		return err
 	}
 
-	if opSpec.ManagementState != operatorapi.Managed {
-		klog.Warningf("%s: ManagementState is %s, skipping", c.name, opSpec.ManagementState)
-		return nil
-	}
-
 	infra, err := c.infraLister.Get(infraGlobalName)
 	if err != nil {
 		return err
@@ -179,6 +178,22 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 		klog.V(4).Infof("Unsupported platform: infrastructure status.platformStatus.type is %s", infra.Status.PlatformStatus.Type)
 		return nil
 	}
+
+	if opSpec.ManagementState != operatorapi.Managed {
+		klog.Warningf("%s: ManagementState is %s, skipping", c.name, opSpec.ManagementState)
+		if opSpec.ManagementState == operatorapi.Removed {
+			// if previously we were managing the operator and now we are not, then we should restart the operator
+			if c.currentManagmentState == operatorapi.Managed {
+				klog.Errorf("Operator is being removed, restarting the operator")
+				os.Exit(0)
+			}
+			// if we are in removed state, we should remove all conditions
+			return c.removeOperands(ctx, opStatus)
+		}
+		return nil
+	}
+
+	c.currentManagmentState = opSpec.ManagementState
 
 	clusterCSIDriver, err := c.clusterCSIDriverLister.Get(utils.VSphereDriverName)
 	if err != nil {
@@ -565,20 +580,19 @@ func (c *VSphereController) updateConditions(
 
 	// Mark operator as disabled if the CSI driver is not running. CSO will then set Progressing=False and Available=True,
 	// with proper messages.
-	disabledConditionName := c.name + "Disabled"
 	if !c.operandControllerStarted && blockCSIDriverInstall {
-		klog.V(4).Infof("Adding %s: True", disabledConditionName)
+		klog.V(4).Infof("Adding %s: True", c.getDisabledConditionName())
 		disabledCond := operatorapi.OperatorCondition{
-			Type:    disabledConditionName,
+			Type:    c.getDisabledConditionName(),
 			Status:  operatorapi.ConditionTrue,
 			Message: lastCheckResult.Reason,
 		}
 		updateFuncs = append(updateFuncs, v1helpers.UpdateConditionFn(disabledCond))
 	} else {
 		// Remove the disabled condition
-		klog.V(4).Infof("Removing %s", disabledConditionName)
+		klog.V(4).Infof("Removing %s", c.getDisabledConditionName())
 		updateFuncs = append(updateFuncs, func(status *operatorapi.OperatorStatus) error {
-			v1helpers.RemoveOperatorCondition(&status.Conditions, disabledConditionName)
+			v1helpers.RemoveOperatorCondition(&status.Conditions, c.getDisabledConditionName())
 			return nil
 		})
 	}
@@ -764,7 +778,6 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	requiredSecret := resourceread.ReadSecretV1OrDie(c.secretManifest)
 	requiredSecret.Data["cloud.conf"] = []byte(csiConfig.String())
 	return requiredSecret, nil
-
 }
 
 func (c *VSphereController) createStorageClassController() storageclasscontroller.StorageClassSyncInterface {

@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	csiscc "github.com/openshift/library-go/pkg/operator/csi/csistorageclasscontroller"
 	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
@@ -47,6 +48,7 @@ var (
 
 type StorageClassSyncInterface interface {
 	Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+	SyncRemove(ctx context.Context) error
 }
 
 type AbstractStorageClass struct {
@@ -143,6 +145,13 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 
 	checkResult, overallClusterStatus := checkResultFunc()
 	return c.updateConditions(ctx, checkResult, overallClusterStatus)
+}
+
+func (c *StorageClassController) SyncRemove(ctx context.Context) error {
+	scString := string(c.manifest)
+	sc := resourceread.ReadStorageClassV1OrDie([]byte(scString))
+	_, _, err := resourceapply.DeleteStorageClass(ctx, c.kubeClient.StorageV1(), c.recorder, sc)
+	return err
 }
 
 func (c *AbstractStorageClass) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
