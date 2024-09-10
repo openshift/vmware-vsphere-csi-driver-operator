@@ -9,6 +9,7 @@ import (
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/vmware/govmomi/cns/types"
 	"github.com/vmware/govmomi/find"
@@ -28,6 +29,15 @@ const (
 	clientOperatorName   = "cns-migrator"
 	cloudCredSecretName  = "vmware-vsphere-cloud-credentials"
 	secretNamespace      = "openshift-cluster-csi-drivers"
+)
+
+var (
+	minRequirement = utils.PatchVersionRequirements{
+		MinimumVersion7Series: "7.0.3",
+		MinimumBuild7Series:   23788036,
+		MinimumVersion8Series: "8.0.2",
+		MinimumBuild8Series:   23504390,
+	}
 )
 
 type CNSVolumeMigrator struct {
@@ -75,6 +85,19 @@ func (c *CNSVolumeMigrator) StartMigration(ctx context.Context, volumeFile strin
 	if err != nil {
 		printError("error logging into vcenter: %v", err)
 		return err
+	}
+
+	// check if the vCenter version is supported
+	supported, err := c.checkRequiredVersion()
+	if err != nil {
+		printError("error checking for required version: %v", err)
+		return err
+	}
+	if !supported {
+		printError("vCenter version is not supported")
+		return fmt.Errorf("vCenter version is not supported")
+	} else {
+		printGreenInfo("vCenter version supports CNS volume Migration")
 	}
 
 	printGreenInfo("logging successfully to vcenter")
@@ -320,6 +343,20 @@ func (c *CNSVolumeMigrator) loginToVCenter(ctx context.Context) error {
 	if err = c.vSphereConnection.LoginToCNS(ctx); err != nil {
 		return fmt.Errorf("error logging into CNS: %v", err)
 	}
-
 	return nil
+}
+
+func (c *CNSVolumeMigrator) checkRequiredVersion() (bool, error) {
+	apiVersion, build, err := c.vSphereConnection.GetVersionInfo()
+	if err != nil {
+		return false, err
+	}
+	match, message, err := utils.CheckForMinimumPatchedVersion(minRequirement, apiVersion, build)
+	if err != nil {
+		return false, fmt.Errorf("error checking for minimum version: %v", err)
+	}
+	if !match {
+		return false, fmt.Errorf("vCenter version %s:%d is not supported: %s", apiVersion, build, message)
+	}
+	return true, nil
 }
