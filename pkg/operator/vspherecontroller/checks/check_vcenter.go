@@ -3,9 +3,8 @@ package checks
 import (
 	"context"
 	"fmt"
-	"strings"
 
-	"github.com/blang/semver"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 )
 
 const (
@@ -22,7 +21,7 @@ func (v *VCenterChecker) Check(ctx context.Context, checkOpts CheckArgs) []Clust
 		vmClient := vConn.Client
 		vcenterAPIVersion := vmClient.ServiceContent.About.ApiVersion
 
-		hasRequiredMinimum, err := isMinimumVersion(minRequiredVCenterVersion, vcenterAPIVersion)
+		hasRequiredMinimum, err := utils.IsMinimumVersion(minRequiredVCenterVersion, vcenterAPIVersion)
 		// if we can't determine the version, we are going to mark cluster as upgrade
 		// disabled without degrading the cluster
 		if err != nil {
@@ -34,7 +33,7 @@ func (v *VCenterChecker) Check(ctx context.Context, checkOpts CheckArgs) []Clust
 			return []ClusterCheckResult{makeDeprecatedEnvironmentError(CheckStatusDeprecatedVCenter, reason)}
 		}
 
-		hasUpgradeableMinimum, err := isMinimumVersion(minUpgradeableVCenterVersion, vcenterAPIVersion)
+		hasUpgradeableMinimum, err := utils.IsMinimumVersion(minUpgradeableVCenterVersion, vcenterAPIVersion)
 		if err != nil {
 			reason := fmt.Errorf("error parsing minimum version %v", err)
 			return []ClusterCheckResult{makeDeprecatedEnvironmentError(CheckStatusVcenterAPIError, reason)}
@@ -46,28 +45,4 @@ func (v *VCenterChecker) Check(ctx context.Context, checkOpts CheckArgs) []Clust
 	}
 
 	return []ClusterCheckResult{}
-}
-
-func isMinimumVersion(minimumVersion string, currentVersion string) (bool, error) {
-	minimumSemver, err := semver.New(minimumVersion)
-	if err != nil {
-		return true, err
-	}
-	semverString := parseForSemver(currentVersion)
-	currentSemVer, err := semver.ParseTolerant(semverString)
-	if err != nil {
-		return true, err
-	}
-	if currentSemVer.Compare(*minimumSemver) >= 0 {
-		return true, nil
-	}
-	return false, nil
-}
-
-func parseForSemver(version string) string {
-	parts := strings.Split(version, ".")
-	if len(parts) > 3 {
-		return strings.Join(parts[0:3], ".")
-	}
-	return version
 }
