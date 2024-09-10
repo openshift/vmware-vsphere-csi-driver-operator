@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -44,8 +43,13 @@ var (
 	WaitPollTimeout  = 10 * time.Minute
 )
 
+//	TestStorageRemoval tests the removal of the storage operator from the cluster
+//
+// by marking the ClusterCSIDriver as removed and waiting for the storage resources to be removed.
+// The test does not verify removal of each storage resource but only deployment and daemonset.
+// It also verifies if storage can be restored by marking managmentState as Managed
 func TestStorageRemoval(t *testing.T) {
-	kubeConfig, err := library.NewClientConfigForTest()
+	kubeConfig, err := library.NewClientConfigForTest(t)
 	if err != nil {
 		t.Fatalf("Failed to get kubeconfig: %v", err)
 	}
@@ -84,7 +88,7 @@ func restoreStorage(t *testing.T, client *operatorclient.Clientset, configClient
 
 func waitForStorageResourceRemoval(t *testing.T, client *operatorclient.Clientset, kubeClient *kubernetes.Clientset) error {
 	// make sure storage to be removed
-	klog.Infof("Waiting for storage resource to be removed")
+	t.Logf("Waiting for storage resource to be removed")
 	return wait.PollUntilContextTimeout(context.TODO(), WaitPollInterval, WaitPollTimeout, false, func(pollContext context.Context) (bool, error) {
 		disabledConditionStatusVar, err := checkDisabledCondition(t, pollContext, client)
 		if err != nil {
@@ -184,7 +188,6 @@ func makeClusterCSIDriverRemoved(ctx context.Context, client *operatorclient.Cli
 		}
 
 		if clusterCSIDriver.Spec.ManagementState == operatorapi.Removed {
-			klog.Infof("ClusterCSIDriver %s already in removed state", csiDriverName)
 			return true, nil
 		}
 

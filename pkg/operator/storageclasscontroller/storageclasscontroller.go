@@ -149,13 +149,6 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 
 func (c *StorageClassController) SyncRemove(ctx context.Context) error {
 	scString := string(c.manifest)
-	pairs := []string{
-		"${STORAGE_POLICY_NAME}", "sample",
-	}
-
-	policyReplacer := strings.NewReplacer(pairs...)
-	scString = policyReplacer.Replace(scString)
-
 	sc := resourceread.ReadStorageClassV1OrDie([]byte(scString))
 	_, _, err := resourceapply.DeleteStorageClass(ctx, c.kubeClient.StorageV1(), c.recorder, sc)
 	return err
