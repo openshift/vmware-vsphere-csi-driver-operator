@@ -352,7 +352,7 @@ func (c *CNSVolumeMigrator) checkRequiredVersion() error {
 	}
 	match, message, err := utils.CheckForMinimumPatchedVersion(minRequirement, apiVersion, build)
 	if err != nil {
-		return fmt.Errorf("error checking for minimum version: %v", err)
+		return fmt.Errorf("cns-migration requires %s, error checking for minimum version: %v", message, err)
 	}
 	if !match {
 		return fmt.Errorf("vCenter version %s:%s is not supported: minimum supported version is - %s", apiVersion, build, message)
