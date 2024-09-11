@@ -47,6 +47,12 @@ func TestCheckForMinimumPatchedVersion(t *testing.T) {
 			buildNumber:      "21958406",
 			meetsRequirement: false,
 		},
+		{
+			name:             "when vSphere version parsing fails",
+			vSphereVersion:   "7-21.32.21",
+			buildNumber:      "21958406",
+			meetsRequirement: false,
+		},
 	}
 
 	for i := range tests {
@@ -58,10 +64,7 @@ func TestCheckForMinimumPatchedVersion(t *testing.T) {
 				MinimumVersion8Series: "8.0.2",
 				MinimumBuild8Series:   23504390,
 			}
-			checkFlag, _, err := CheckForMinimumPatchedVersion(minRequirement, test.vSphereVersion, test.buildNumber)
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
+			checkFlag, _, _ := CheckForMinimumPatchedVersion(minRequirement, test.vSphereVersion, test.buildNumber)
 
 			if checkFlag != test.meetsRequirement {
 				t.Errorf("for checking version requirement, expected %v got %v", test.meetsRequirement, checkFlag)

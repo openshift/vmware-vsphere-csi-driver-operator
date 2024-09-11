@@ -41,21 +41,32 @@ type PatchVersionRequirements struct {
 }
 
 func CheckForMinimumPatchedVersion(minRequirement PatchVersionRequirements, vSphereVersion string, build string) (bool, string, error) {
-	hasMinimumApiVersion, err := IsMinimumVersion(minRequirement.MinimumVersion7Series, vSphereVersion)
-	min7SeriesString := fmt.Sprintf(">= %s-%d", minRequirement.MinimumVersion7Series, minRequirement.MinimumBuild7Series)
+	if strings.HasPrefix(vSphereVersion, "7") {
+		hasMinimumApiVersion, err := IsMinimumVersion(minRequirement.MinimumVersion7Series, vSphereVersion)
+		min7SeriesString := fmt.Sprintf(">= %s-%d", minRequirement.MinimumVersion7Series, minRequirement.MinimumBuild7Series)
 
-	if err != nil {
-		return true, min7SeriesString, err
-	}
-	if !hasMinimumApiVersion {
+		if err != nil {
+			return false, min7SeriesString, err
+		}
+		if !hasMinimumApiVersion {
+			return false, min7SeriesString, nil
+		}
+		buildNumber, err := strconv.Atoi(build)
+		if err != nil {
+			return true, min7SeriesString, fmt.Errorf("error converting build number %s to integer", build)
+		}
+
+		if buildNumber >= minRequirement.MinimumBuild7Series {
+			return true, min7SeriesString, nil
+		}
+
 		return false, min7SeriesString, nil
-	}
 
-	if strings.HasPrefix(vSphereVersion, "8") {
+	} else {
 		hasMinimumApiVersion, err := IsMinimumVersion(minRequirement.MinimumVersion8Series, vSphereVersion)
 		min8SeriesString := fmt.Sprintf("> %s-%d", minRequirement.MinimumVersion8Series, minRequirement.MinimumBuild8Series)
 		if err != nil {
-			return true, min8SeriesString, err
+			return false, min8SeriesString, err
 		}
 
 		if !hasMinimumApiVersion {
@@ -72,16 +83,5 @@ func CheckForMinimumPatchedVersion(minRequirement PatchVersionRequirements, vSph
 		}
 
 		return false, min8SeriesString, nil
-	} else {
-		buildNumber, err := strconv.Atoi(build)
-		if err != nil {
-			return true, min7SeriesString, fmt.Errorf("error converting build number %s to integer", build)
-		}
-
-		if buildNumber >= minRequirement.MinimumBuild7Series {
-			return true, min7SeriesString, nil
-		}
-
-		return false, min7SeriesString, nil
 	}
 }
