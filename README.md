@@ -14,7 +14,7 @@ oc scale --replicas=0 deploy/cluster-version-operator -n openshift-cluster-versi
 oc scale --replicas=0 deploy/cluster-storage-operator -n openshift-cluster-storage-operator
 
 # Delete operator resources (daemonset, deployments)
-oc -n openshift-cluster-csi-drivers delete deployment.apps/vmware-vsphere-csi-driver-operator deployment.apps/vmware-vsphere-csi-driver-controller daemonset.apps/vmware-vsphere-csi-driver-node
+oc -n openshift-cluster-csi-drivers delete deployment.apps/vmware-vsphere-csi-driver-operator deployment.apps/vmware-vsphere-csi-driver-controller daemonset.apps/vmware-vsphere-csi-driver-node deployment.apps/vmware-vsphere-csi-driver-webhook
 ```
 
 To build and run the operator locally:
@@ -36,6 +36,7 @@ export NODE_DRIVER_REGISTRAR_IMAGE=quay.io/openshift/origin-csi-node-driver-regi
 export LIVENESS_PROBE_IMAGE=quay.io/openshift/origin-csi-livenessprobe:latest
 export KUBE_RBAC_PROXY_IMAGE=quay.io/openshift/origin-kube-rbac-proxy:latest
 export VMWARE_VSPHERE_SYNCER_IMAGE=quay.io/openshift/origin-vsphere-csi-driver-syncer
+export OPERATOR_NAME=vmware-vsphere-csi-driver-operator
 
 # Run the operator via CLI
 ./vmware-vsphere-csi-driver-operator start --kubeconfig $MY_KUBECONFIG --namespace openshift-cluster-csi-drivers
