@@ -8,6 +8,8 @@ import (
 	"github.com/blang/semver"
 )
 
+const defaultMinimumVersion = "8.0.2"
+
 func IsMinimumVersion(minimumVersion string, currentVersion string) (bool, error) {
 	minimumSemver, err := semver.New(minimumVersion)
 	if err != nil {
@@ -42,46 +44,39 @@ type PatchVersionRequirements struct {
 
 func CheckForMinimumPatchedVersion(minRequirement PatchVersionRequirements, vSphereVersion string, build string) (bool, string, error) {
 	if strings.HasPrefix(vSphereVersion, "7") {
-		hasMinimumApiVersion, err := IsMinimumVersion(minRequirement.MinimumVersion7Series, vSphereVersion)
-		min7SeriesString := fmt.Sprintf(">= %s-%d", minRequirement.MinimumVersion7Series, minRequirement.MinimumBuild7Series)
-
-		if err != nil {
-			return false, min7SeriesString, err
-		}
-		if !hasMinimumApiVersion {
-			return false, min7SeriesString, nil
-		}
-		buildNumber, err := strconv.Atoi(build)
-		if err != nil {
-			return true, min7SeriesString, fmt.Errorf("error converting build number %s to integer", build)
-		}
-
-		if buildNumber >= minRequirement.MinimumBuild7Series {
-			return true, min7SeriesString, nil
-		}
-
-		return false, min7SeriesString, nil
-
+		return checkVersionAndBuildNumber(vSphereVersion, build, minRequirement.MinimumVersion7Series, minRequirement.MinimumBuild7Series)
+	} else if strings.HasPrefix(vSphereVersion, "8") {
+		return checkVersionAndBuildNumber(vSphereVersion, build, minRequirement.MinimumVersion8Series, minRequirement.MinimumBuild8Series)
 	} else {
-		hasMinimumApiVersion, err := IsMinimumVersion(minRequirement.MinimumVersion8Series, vSphereVersion)
-		min8SeriesString := fmt.Sprintf("> %s-%d", minRequirement.MinimumVersion8Series, minRequirement.MinimumBuild8Series)
+		hasMinimumApiVersion, err := IsMinimumVersion(defaultMinimumVersion, vSphereVersion)
 		if err != nil {
-			return false, min8SeriesString, err
+			return false, defaultMinimumVersion, err
 		}
 
 		if !hasMinimumApiVersion {
-			return false, min8SeriesString, nil
+			return false, defaultMinimumVersion, nil
 		}
-
-		buildNumber, err := strconv.Atoi(build)
-		if err != nil {
-			return true, min8SeriesString, fmt.Errorf("error converting build number %s to integer", build)
-		}
-
-		if buildNumber > minRequirement.MinimumBuild8Series {
-			return true, min8SeriesString, nil
-		}
-
-		return false, min8SeriesString, nil
+		return true, defaultMinimumVersion, nil
 	}
+}
+
+func checkVersionAndBuildNumber(version string, build string, minVersion string, minBuildNumber int) (bool, string, error) {
+	minVersionString := fmt.Sprintf(">= %s-%d", minVersion, minBuildNumber)
+
+	hasMinimumApiVersion, err := IsMinimumVersion(minVersion, version)
+	if err != nil {
+		return false, minVersionString, err
+	}
+
+	if !hasMinimumApiVersion {
+		return false, minVersionString, nil
+	}
+	buildNumber, err := strconv.Atoi(build)
+	if err != nil {
+		return true, minVersionString, fmt.Errorf("error converting build number %s to integer", build)
+	}
+	if buildNumber >= minBuildNumber {
+		return true, minVersionString, nil
+	}
+	return false, minVersionString, nil
 }
