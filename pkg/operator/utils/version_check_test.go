@@ -24,8 +24,20 @@ func TestCheckForMinimumPatchedVersion(t *testing.T) {
 			meetsRequirement: true,
 		},
 		{
+			name:             "when vSphere version minimum 8.0.2 series does not meet requirement",
+			vSphereVersion:   "8.0.2",
+			buildNumber:      "3232",
+			meetsRequirement: false,
+		},
+		{
 			name:             "when vSphere version does not meet 7 series build number requirement",
 			vSphereVersion:   "7.0.3",
+			buildNumber:      "21324296",
+			meetsRequirement: false,
+		},
+		{
+			name:             "when vSphere version 6 does not meet requirement",
+			vSphereVersion:   "6.7.3",
 			buildNumber:      "21324296",
 			meetsRequirement: false,
 		},
@@ -52,6 +64,12 @@ func TestCheckForMinimumPatchedVersion(t *testing.T) {
 			vSphereVersion:   "7-21.32.21",
 			buildNumber:      "21958406",
 			meetsRequirement: false,
+		},
+		{
+			name:             "when vSphere version is 9 series",
+			vSphereVersion:   "9.0.0",
+			buildNumber:      "1",
+			meetsRequirement: true,
 		},
 	}
 
