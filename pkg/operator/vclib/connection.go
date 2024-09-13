@@ -141,6 +141,13 @@ func (connection *VSphereConnection) Connect(ctx context.Context) error {
 	return nil
 }
 
+func (connection *VSphereConnection) GetVersionInfo() (string, string, error) {
+	if connection.Client == nil {
+		return "", "", fmt.Errorf("no connection found to vcenter")
+	}
+	return connection.Client.Client.ServiceContent.About.ApiVersion, connection.Client.Client.ServiceContent.About.Build, nil
+}
+
 func (connection *VSphereConnection) NewClient(ctx context.Context) error {
 	serverAddress := connection.Hostname
 	serverURL, err := soap.ParseURL(serverAddress)

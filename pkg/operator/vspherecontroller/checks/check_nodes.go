@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -150,7 +151,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 		return makeDeprecatedEnvironmentError(CheckStatusVcenterAPIError, err)
 	}
 	hostAPIVersion := hostSystem.Config.Product.ApiVersion
-	hasRequiredMinimum, err := isMinimumVersion(minRequiredHostVersion, hostAPIVersion)
+	hasRequiredMinimum, err := utils.IsMinimumVersion(minRequiredHostVersion, hostAPIVersion)
 	if err != nil {
 		klog.Errorf("error parsing host version for node %s and host %s: %v", node.Name, hostName, err)
 	}
@@ -159,7 +160,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 		return makeDeprecatedEnvironmentError(CheckStatusDeprecatedESXIVersion, reason)
 	}
 
-	hasUpgradeableMinimum, err := isMinimumVersion(minUpgradeableHostVersion, hostAPIVersion)
+	hasUpgradeableMinimum, err := utils.IsMinimumVersion(minUpgradeableHostVersion, hostAPIVersion)
 	if err != nil {
 		klog.Errorf("error parsing host version for node %s and host %s: %v", node.Name, hostName, err)
 	}
