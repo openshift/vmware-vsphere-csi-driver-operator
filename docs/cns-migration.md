@@ -42,7 +42,9 @@ To migrate all CSI PersistentVolume(PV) in the cluster, we can extract pv names 
 ```
 export KUBECONFIG=<path-to-kube-config>
 
-./cns-migration --source <source_datastore> --destination <destination_datastore> -volume-file <path_to_file_with_pv_names>```
+./cns-migration --source <source_datastore> --destination <destination_datastore> -volume-file <path_to_file_with_pv_names>
+
+```
 
 #### For example:
 
