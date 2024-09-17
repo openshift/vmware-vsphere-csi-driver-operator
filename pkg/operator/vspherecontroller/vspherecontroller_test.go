@@ -84,6 +84,10 @@ func (c *dummyStorageClassController) Sync(ctx context.Context, connection []*vc
 	return nil
 }
 
+func (c *dummyStorageClassController) SyncRemove(ctx context.Context) error {
+	return nil
+}
+
 func TestSync(t *testing.T) {
 	metricsHeader := `
         # HELP vsphere_csi_driver_error [ALPHA] vSphere driver installation error
