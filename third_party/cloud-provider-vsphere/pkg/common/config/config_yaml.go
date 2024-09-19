@@ -205,7 +205,6 @@ func ReadRawConfigYAML(byConfig []byte) (*CommonConfigYAML, error) {
 	}
 
 	if err := yaml.Unmarshal(byConfig, &cfg); err != nil {
-		klog.Errorf("Unmarshal failed: %s", err)
 		return nil, err
 	}
 
