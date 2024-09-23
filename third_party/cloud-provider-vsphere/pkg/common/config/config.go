@@ -259,14 +259,14 @@ func ReadConfig(byConfig []byte) (*Config, error) {
 		return nil, fmt.Errorf("Invalid YAML/INI file")
 	}
 
-	cfg, err := ReadConfigYAML(byConfig)
-	if err != nil {
-		klog.V(4).Infof("ReadConfigYAML failed: %s", err)
-
-		cfg, err = ReadConfigINI(byConfig)
-		if err != nil {
-			klog.Errorf("ReadConfigINI failed: %s", err)
-			return nil, err
+	cfg, errYAML := ReadConfigYAML(byConfig)
+	if errYAML != nil {
+		var errINI error
+		cfg, errINI = ReadConfigINI(byConfig)
+		if errINI != nil {
+			klog.Errorf("ReadConfigYAML failed: %s", errYAML)
+			klog.Errorf("ReadConfigINI failed: %s", errINI)
+			return nil, errINI
 		}
 
 		klog.Info("ReadConfig INI succeeded. INI-based cloud-config is deprecated and will be removed in 2.0. Please use YAML based cloud-config.")
