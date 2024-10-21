@@ -8,10 +8,8 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
@@ -30,11 +28,6 @@ const (
 )
 
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
-	gates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters})
-	return newVsphereControllerWithGates(apiClients, gates)
-}
-
-func newVsphereControllerWithGates(apiClients *utils.APIClient, gates featuregates.FeatureGate) *VSphereController {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
@@ -68,7 +61,6 @@ func newVsphereControllerWithGates(apiClients *utils.APIClient, gates featuregat
 		eventRecorder:          rc,
 		vSphereChecker:         newVSphereEnvironmentChecker(),
 		infraLister:            infraInformer.Lister(),
-		featureGates:           gates,
 	}
 	c.controllers = []conditionalController{}
 	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
@@ -769,8 +761,6 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 }
 
 func TestApplyClusterCSIDriver(t *testing.T) {
-	multiVCenterGateDisabled := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters})
-
 	tests := []struct {
 		name                  string
 		clusterCSIDriver      *opv1.ClusterCSIDriver
@@ -778,7 +768,6 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 		expectedTopology      string
 		configFileName        string
 		secretData            runtime.Object
-		featureGates          featuregates.FeatureGate
 		checkMigrationURL     bool
 		expectedDatacenterMap map[string]string
 		expectError           bool
@@ -806,28 +795,11 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			checkMigrationURL: true,
 		},
 		{
-			name:             "when configuration has more than one vcenter",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			configFileName:   "multiple_vc.ini",
-			secretData:       testlib.GetDCSecret(),
-			expectError:      true,
-		},
-		{
-			name:             "when configuration has more than one vcenter yaml",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			configFileName:   "multiple_vc.yaml",
-			secretData:       testlib.GetMultiVCSecret(),
-			expectError:      true,
-		},
-		{
 			name:             "when configuration has more than one vcenter yaml gate enabled",
 			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
 			operatorObj:      testlib.MakeFakeDriverInstance(),
 			configFileName:   "multiple_vc.yaml",
 			secretData:       testlib.GetMultiVCSecret(),
-			featureGates:     featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereMultiVCenters}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
 			expectedDatacenterMap: map[string]string{
 				"foobar.lan": "Datacenter",
 				"foobaz.lan": "Datacenterb",
@@ -876,13 +848,8 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
 
-			gates := tc.featureGates
-			if gates == nil {
-				gates = multiVCenterGateDisabled
-			}
-
 			testlib.WaitForSync(commonApiClient, stopCh)
-			ctrl := newVsphereControllerWithGates(commonApiClient, gates)
+			ctrl := newVsphereController(commonApiClient)
 
 			vsphereConfig, err := testlib.GetVSphereConfig(tc.configFileName)
 			if err != nil {

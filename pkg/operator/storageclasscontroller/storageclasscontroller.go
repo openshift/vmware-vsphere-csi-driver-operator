@@ -69,12 +69,6 @@ type AbstractStorageClass struct {
 
 type StorageClassController struct{ AbstractStorageClass }
 
-func makeStorageClassController(abstract AbstractStorageClass) *StorageClassController {
-	scc := StorageClassController{AbstractStorageClass: abstract}
-	scc.AbstractStorageClass.StorageClassSyncInterface = &scc
-	return &scc
-}
-
 func NewStorageClassController(
 	name,
 	targetNamespace string,

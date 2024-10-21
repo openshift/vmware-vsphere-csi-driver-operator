@@ -21,7 +21,6 @@ import (
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
@@ -102,9 +101,7 @@ func NewVSphereController(
 	apiClients utils.APIClient,
 	csiConfigManifest []byte,
 	secretManifest []byte,
-	recorder events.Recorder,
-	gates featuregates.FeatureGate,
-) factory.Controller {
+	recorder events.Recorder) factory.Controller {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
@@ -722,7 +719,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		vcenterStr := string(csiVCenterConfigBytes)
 		vcenter := config.VirtualCenter[vcenterKey]
 
-		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, infra, c.configMapLister, c.apiClients.SecretInformer, c.featureGates)
+		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, infra, c.configMapLister, c.apiClients.SecretInformer)
 		if err != nil {
 			return nil, err
 		}

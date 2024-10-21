@@ -9,7 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	v1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 )
@@ -125,9 +124,7 @@ func TestEnvironmentCheck(t *testing.T) {
 				NodeLister:      nodeLister,
 			}
 
-			fg := featuregates.NewFeatureGate([]v1.FeatureGateName{}, []v1.FeatureGateName{})
-
-			checkOpts := checks.NewCheckArgs(connections, checkerApiClient, fg)
+			checkOpts := checks.NewCheckArgs(connections, checkerApiClient)
 			var result checks.ClusterCheckResult
 			var checkRan bool
 			for i := 0; i < test.runCount; i++ {
