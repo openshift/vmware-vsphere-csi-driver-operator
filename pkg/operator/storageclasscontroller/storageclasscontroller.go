@@ -14,9 +14,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 
-	"github.com/openshift/api/features"
 	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	csiscc "github.com/openshift/library-go/pkg/operator/csi/csistorageclasscontroller"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -86,7 +84,6 @@ func NewStorageClassController(
 	storageClassLister storagev1.StorageClassLister,
 	clusterCSIDriverInformer clustercsidriverinformer.ClusterCSIDriverInformer,
 	recorder events.Recorder,
-	featureGates featuregates.FeatureGate,
 ) StorageClassSyncInterface {
 	evaluator := csiscc.NewStorageClassStateEvaluator(
 		kubeClient,
@@ -108,13 +105,8 @@ func NewStorageClassController(
 		backoff:              defaultBackoff,
 		nextCheck:            time.Now(),
 	}
-	if featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
-		klog.V(2).Infof("Creating multi vcenter storage class controller")
-		c = makeMultiVCenterStorageClassController(scc)
-	} else {
-		klog.V(2).Infof("Creating single vcenter storage class controller")
-		c = makeStorageClassController(scc)
-	}
+	klog.V(2).Infof("Creating multi vcenter storage class controller")
+	c = makeMultiVCenterStorageClassController(scc)
 
 	return c
 }
