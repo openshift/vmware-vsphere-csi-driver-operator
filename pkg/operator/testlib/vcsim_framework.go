@@ -59,7 +59,7 @@ func SetupSimulator(modelDir string, infra *ocpv1.Infrastructure) ([]*vclib.VSph
 	var models []*simulator.Model
 
 	createdVCs := make(map[string]*vclib.VSphereConnection)
-	if len(infra.Spec.PlatformSpec.VSphere.FailureDomains) > 0 {
+	if infra.Spec.PlatformSpec.VSphere != nil && len(infra.Spec.PlatformSpec.VSphere.FailureDomains) > 0 {
 		fmt.Printf("Adding connections via FD\n")
 		for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
 			if createdVCs[fd.Server] == nil {
