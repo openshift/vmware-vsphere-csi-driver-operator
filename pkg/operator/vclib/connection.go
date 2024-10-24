@@ -11,11 +11,11 @@ import (
 	"github.com/openshift/api/features"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/third_party/cloud-provider-vsphere/pkg/common/config"
 	"github.com/vmware/govmomi/cns"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/soap"
+	"k8s.io/cloud-provider-vsphere/pkg/common/config"
 	legacy "k8s.io/legacy-cloud-providers/vsphere"
 
 	"github.com/vmware/govmomi"
