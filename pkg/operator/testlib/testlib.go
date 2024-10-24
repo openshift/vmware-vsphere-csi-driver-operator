@@ -255,6 +255,12 @@ func GetInfraObject() *ocpv1.Infrastructure {
 	}
 }
 
+func GetInfraObjectWithEmptyPlatformSpec() *ocpv1.Infrastructure {
+	infra := GetInfraObject()
+	infra.Spec.PlatformSpec.VSphere = nil
+	return infra
+}
+
 func GetSingleFailureDomainInfra() *ocpv1.Infrastructure {
 	return &ocpv1.Infrastructure{
 		ObjectMeta: metav1.ObjectMeta{

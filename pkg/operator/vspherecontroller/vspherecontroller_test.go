@@ -135,6 +135,27 @@ func TestSync(t *testing.T) {
 			storageClassCreated: true,
 		},
 		{
+			name:                         "infrastructure with empty platformSpec.vSphere does not crash the operator",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			infra:                        testlib.GetInfraObjectWithEmptyPlatformSpec(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
 			name:                         "when all configuration is right YAML",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",

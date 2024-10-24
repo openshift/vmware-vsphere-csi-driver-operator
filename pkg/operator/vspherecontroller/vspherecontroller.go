@@ -224,11 +224,8 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	}
 
 	// Update infra so we have failure domains in the case of an older cluster with out-dated infra definition.
-	/*if len(infra.Spec.PlatformSpec.VSphere.VCenters) == 0 && c.cloudConfig.LegacyConfig != nil {
-		klog.V(2).Infof("converting older in-tree config to platform spec")
-		convertIntreeToPlatformSpec(c.cloudConfig, infra.Spec.PlatformSpec.VSphere)
-	}*/
 	// The following logic is borrowed from VPD.  We should make util project contain this so its shared and kept in sync
+	infra = infra.DeepCopy() // ConvertToPlatformSpec modifies the object in place
 	ConvertToPlatformSpec(c.cloudConfig, infra)
 
 	// We no longer use the ConfigMap to store the vSphere config, so make sure to delete it
@@ -908,11 +905,16 @@ func (c *VSphereController) deleteConfigMapIfExists(ctx context.Context, name, n
 }
 
 func ConvertToPlatformSpec(config *vclib.VSphereConfig, infra *ocpv1.Infrastructure) {
+	if infra.Spec.PlatformSpec.VSphere == nil {
+		// Add an empty vSphere spec to infra created in OCP 4.10 and earlier.
+		// It gets populated from the `config` object below.
+		infra.Spec.PlatformSpec.VSphere = &ocpv1.VSpherePlatformSpec{}
+	}
 	vSphereSpec := infra.Spec.PlatformSpec.VSphere
 
 	if config != nil {
 		//   We only need to do this for legacy ini configs.  Yaml configs we expect all to be configured correctly.
-		if vSphereSpec != nil && config.LegacyConfig != nil {
+		if config.LegacyConfig != nil {
 			if len(vSphereSpec.VCenters) != 0 {
 				// we need to check if we really need to add to VCenters and FailureDomains.
 				configuredVCenters := vCentersToMap(vSphereSpec.VCenters)
