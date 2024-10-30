@@ -109,7 +109,7 @@ func (c *VSphereController) createCSIDriver() {
 			c.apiClients.ConfigMapInformer.Informer(),
 			c.apiClients.NodeInformer.Informer(),
 		},
-		WithVSphereCredentials(defaultNamespace, secretName, c.apiClients.SecretInformer),
+		WithVSphereCredentials(defaultNamespace, utils.SecretName, c.apiClients.SecretInformer),
 		WithSyncerImageHook("vsphere-syncer"),
 		WithLogLevelDeploymentHook(),
 		c.topologyHook,
@@ -121,7 +121,7 @@ func (c *VSphereController) createCSIDriver() {
 		),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,
-			secretName,
+			utils.SecretName,
 			c.apiClients.SecretInformer,
 		),
 		csidrivercontrollerservicecontroller.WithReplicasHook(c.nodeLister),
