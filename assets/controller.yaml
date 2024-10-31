@@ -20,6 +20,7 @@ spec:
       labels:
         app: vmware-vsphere-csi-driver-controller
       annotations:
+        openshift.io/required-scc: restricted-v2
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
     spec:
       serviceAccountName: vmware-vsphere-csi-driver-controller-sa
