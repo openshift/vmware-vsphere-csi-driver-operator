@@ -133,7 +133,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 	return c.updateConditions(ctx, checkResult, overallClusterStatus)
 }
 
-func (c *StorageClassController) SyncRemove(ctx context.Context) error {
+func (c *AbstractStorageClass) SyncRemove(ctx context.Context) error {
 	scString := string(c.manifest)
 	sc := resourceread.ReadStorageClassV1OrDie([]byte(scString))
 	_, _, err := resourceapply.DeleteStorageClass(ctx, c.kubeClient.StorageV1(), c.recorder, sc)
