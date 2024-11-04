@@ -1,6 +1,202 @@
 
+<a name="v0.30.0"></a>
+## [Release v0.30.0](https://github.com/vmware/govmomi/compare/v0.29.0...v0.30.0)
+
+> Release Date: 2022-12-12
+
+### 🐞 Fix
+
+- [1ad33d48]	Heal the broken Namespace API
+- [22c48147]	Update $mktemp to support macOS
+- [05b0b08c]	DialTLSContext / Go 1.18+ CertificateVerify support
+
+### 💫 API Changes
+
+- [58f4112b]	Update types to vSphere 8.0 GA
+- [ba206c5b]	add Content Library security compliance support
+- [4c24f821]	Add SRIOV device names
+- [642156dd]	Adds vSphere 7.0u1-u3 support to namespace-management (Tanzu)
+
+### 💫 `govc` (CLI)
+
+- [60a18c56]	about.cert was not respecting -k
+- [15d1181d]	bash completion improvements
+- [0dbf717b]	Add sso.lpp.info and sso.lpp.update commands
+- [fe87cff9]	host.info: use writer instead of os.stdout
+- [a7196e41]	host.info: use writer instead of os.stdout
+- [3d6de9da]	fix host.esxcli runtime error occurred when no arguments specified
+- [8c7ba5ef]	Add feature in sso.group.ls to list groups using FindGroupsInGroup method
+- [dc3e1d79]	Add feature sso.group.lsgroups using FindGroupsInGroup method
+- [bf991e6e]	add event key for json and plain text output
+- [2017e846]	Support creating content libraries with security policies
+
+### 💫 `vcsim` (Simulator)
+
+- [86f9d42a]	Update test keys to be RSA 2048
+- [cedf695b]	Fix duplicated name check in CloneVM_Task
+- [8f4da558]	add QueryNetworkHint support for LLDP and CDP details
+- [1cab3254]	Fix RetrieveProperties path validation to avoid panic
+- [7f42a1d2]	use node id for ServiceContent.InstanceUuid
+- [03319493]	Fix snapshot tasks to update rootSnapshot
+- [b6ebcb6b]	Fix disk capacity validation in ConfigureDevices
+- [61032a23]	Fix StorageIOAllocationInfo of VirtualDisk
+- [cbfe0c93]	support disconnect/reconnect host
+- [b44828a4]	Fix datastore freespace changed by ReconfigVM_Task
+
+### 📃 Documentation
+
+- [813a5d88]	update `README.md`
+
+### 🧹 Chore
+
+- [eabc29ba]	Update version.go for v0.30.0
+
+### ⚠️ BREAKING
+
+### 📖 Commits
+
+- [eabc29ba]	chore: Update version.go for v0.30.0
+- [1c919824]	Update CONTRIBUTORS for release
+- [1ad33d48]	fix: Heal the broken Namespace API
+- [22c48147]	fix: Update $mktemp to support macOS
+- [05b0b08c]	fix: DialTLSContext / Go 1.18+ CertificateVerify support
+- [86f9d42a]	vcsim: Update test keys to be RSA 2048
+- [60a18c56]	govc: about.cert was not respecting -k
+- [58f4112b]	api: Update types to vSphere 8.0 GA
+- [15d1181d]	govc: bash completion improvements
+- [c018f078]	perms on template files
+- [813a5d88]	docs: update `README.md`
+- [0dbf717b]	govc: Add sso.lpp.info and sso.lpp.update commands
+- [fe87cff9]	govc: host.info: use writer instead of os.stdout
+- [a7196e41]	govc: host.info: use writer instead of os.stdout
+- [ba206c5b]	api: add Content Library security compliance support
+- [cedf695b]	vcsim: Fix duplicated name check in CloneVM_Task
+- [8f4da558]	vcsim: add QueryNetworkHint support for LLDP and CDP details
+- [3b2816ac]	Add optional recommRequired PlaceVmsXCluster req arguments
+- [f975908a]	build(deps): bump andstor/file-existence-action from 1 to 2
+- [1373b80f]	build(deps): bump chuhlomin/render-template from 1.5 to 1.6
+- [dc55a27e]	build(deps): bump nokogiri from 1.13.6 to 1.13.9 in /gen
+- [63980ff2]	Fix: use latestPages in task HistoryCollector
+- [3d6de9da]	govc: fix host.esxcli runtime error occurred when no arguments specified
+- [1e9eed94]	Update list of projects using govmomi
+- [7f4d115c]	fixup! api: Add SRIOV device names
+- [8f1dc575]	Add API cnsreconfigpolicy bindings and static check fixes to cns/client_test.go
+- [bf68e8f0]	fixup! api: Add SRIOV device names
+- [4c24f821]	api: Add SRIOV device names
+- [c1bb56db]	Updated USAGE.md
+- [aca677ad]	build(deps): bump actions/stale from 5 to 6
+- [1cab3254]	vcsim: Fix RetrieveProperties path validation to avoid panic
+- [65a6f6bc]	Address review comments
+- [99d12605]	correct new lines in group.ls
+- [4d9f6e01]	correct new lines in USAGE.md
+- [e5bee862]	move FindUsersInGroup to users.ls
+- [8c7ba5ef]	govc: Add feature in sso.group.ls to list groups using FindGroupsInGroup method
+- [ee332ae7]	Add new query selection parameters to be used for QueryAllVolume/QueryVolumeAsync API
+- [dc3e1d79]	govc: Add feature sso.group.lsgroups using FindGroupsInGroup method
+- [201ae28f]	Add common stub for hgfs for non-linux env
+- [7f42a1d2]	vcsim: use node id for ServiceContent.InstanceUuid
+- [76e99b00]	Boilerplate check requires a date range in the license.
+- [bf991e6e]	govc: add event key for json and plain text output
+- [4a29caee]	add OpenBSD build constraint
+- [81bc76bc]	toolbbox: add hgfs OpenBSD stub
+- [03319493]	vcsim: Fix snapshot tasks to update rootSnapshot
+- [b6ebcb6b]	vcsim: Fix disk capacity validation in ConfigureDevices
+- [2017e846]	govc: Support creating content libraries with security policies
+- [642156dd]	api: Adds vSphere 7.0u1-u3 support to namespace-management (Tanzu)
+- [61032a23]	vcsim: Fix StorageIOAllocationInfo of VirtualDisk
+- [cbfe0c93]	vcsim: support disconnect/reconnect host
+- [b44828a4]	vcsim: Fix datastore freespace changed by ReconfigVM_Task
+
+<a name="v0.29.0"></a>
+## [Release v0.29.0](https://github.com/vmware/govmomi/compare/v0.28.0...v0.29.0)
+
+> Release Date: 2022-07-06
+
+### 🐞 Fix
+
+- [d6dd8fb3]	Typos in vim25/soap/client CA tests
+- [e086dfe4]	generate negative device key in AssignController
+- [371a24a4]	Interface conversion panic in pkg simulator
+- [a982c033]	use correct controlflag for vslm SetControlFlags API test
+- [37b3b24c]	avoid possible panic in govc metric commands
+- [310516e2]	govc: disambiguate vm/host search flags in vm.migrate
+- [6af2cdc3]	govc-tests in Go v1.18
+- [142cdca4]	Security update golangci-lint
+- [971079ba]	use correct vcenter.DeploymentSpec.VmConfigSpec json tag
+
+### 💫 API Changes
+
+- [e6b5974a]	Add versioned user-agent header
+- [ca7ee510]	add VmConfigSpec field to content library DeploymentSpec
+
+### 💫 `govc` (CLI)
+
+- [515ca29f]	Use unique searchFlagKey when calling NewSearchFlag
+- [9d4ca658]	add library.deploy '-config' flag
+- [fc17df08]	add 'device.clock.add' command
+- [11f2d453]	Edit disk storage IO
+
+### 💫 `vcsim` (Simulator)
+
+- [a1a36c9a]	Fix disk capacity fields in ReconfigVM_Task
+- [361c90ca]	Remove VM Guest.Net entry when removing Ethernet card
+- [578b95e5]	Fix createVM to encode VM name
+- [3325da0c]	add content library VmConfigSpec support
+- [8928a489]	Update Dockerfile
+
+### 📃 Documentation
+
+- [5f5fb51e]	Fix broken link in PR template
+
+### 🧹 Chore
+
+- [69ac8494]	Update version.go for v0.29.0
+- [80489cb5]	Update release automation
+- [e1f76e37]	Add missing copyright header
+- [6ed812fe]	Add Go boilerplate check
+
+### ⚠️ BREAKING
+
+### 📖 Commits
+
+- [69ac8494]	chore: Update version.go for v0.29.0
+- [7d3b2b39]	Update generated types
+- [a1a36c9a]	vcsim: Fix disk capacity fields in ReconfigVM_Task
+- [5f5fb51e]	docs: Fix broken link in PR template
+- [d6dd8fb3]	fix: Typos in vim25/soap/client CA tests
+- [e086dfe4]	fix: generate negative device key in AssignController
+- [361c90ca]	vcsim: Remove VM Guest.Net entry when removing Ethernet card
+- [80489cb5]	chore: Update release automation
+- [e6b5974a]	api: Add versioned user-agent header
+- [578b95e5]	vcsim: Fix createVM to encode VM name
+- [371a24a4]	fix: Interface conversion panic in pkg simulator
+- [a982c033]	fix: use correct controlflag for vslm SetControlFlags API test
+- [37b3b24c]	fix: avoid possible panic in govc metric commands
+- [310516e2]	fix: govc: disambiguate vm/host search flags in vm.migrate
+- [5929abfb]	correct SetControlFlags and ClearControlFlags APIs
+- [6af2cdc3]	fix: govc-tests in Go v1.18
+- [e1f76e37]	chore: Add missing copyright header
+- [6ed812fe]	chore: Add Go boilerplate check
+- [142cdca4]	fix: Security update golangci-lint
+- [3f4993d4]	build(deps): bump chuhlomin/render-template from 1.4 to 1.5
+- [971079ba]	fix: use correct vcenter.DeploymentSpec.VmConfigSpec json tag
+- [892dcfcc]	build(deps): bump nokogiri from 1.13.5 to 1.13.6 in /gen
+- [303f0d95]	build(deps): bump goreleaser/goreleaser-action from 2 to 3
+- [7eef76c3]	build(deps): bump nokogiri from 1.13.4 to 1.13.5 in /gen
+- [515ca29f]	govc: Use unique searchFlagKey when calling NewSearchFlag
+- [9d4ca658]	govc: add library.deploy '-config' flag
+- [c5ebd552]	fix:fail to add ssd disk into allflash disk group Closes: [#2846](https://github.com/vmware/govmomi/issues/2846)
+- [88f48e02]	Updated USAGE.md
+- [3325da0c]	vcsim: add content library VmConfigSpec support
+- [ca7ee510]	api: add VmConfigSpec field to content library DeploymentSpec
+- [8928a489]	vcsim: Update Dockerfile
+- [bf5d054d]	Fixed docs for govc library.info w/-json
+- [2f9fab55]	emacs: fix json mode
+- [fc17df08]	govc: add 'device.clock.add' command
+- [11f2d453]	govc: Edit disk storage IO
+
 <a name="v0.28.0"></a>
-## [Release v0.28.0](https://github.com/vmware/govmomi/compare/v0.27.4...v0.28.0)
+## [Release v0.28.0](https://github.com/vmware/govmomi/compare/v0.27.5...v0.28.0)
 
 > Release Date: 2022-04-27
 
@@ -186,6 +382,22 @@ in `vcsim` are not changed.
 - [ebff29b7]	chore: Add notes to PR RELEASE workflow
 - [48f7a881]	vcsim: emit VmMigratedEvent in RelocateVM method
 - [bb4f739b]	Support finding Portgroups by ID in Finder.Network
+
+<a name="v0.27.5"></a>
+## [Release v0.27.5](https://github.com/vmware/govmomi/compare/v0.27.4...v0.27.5)
+
+> Release Date: 2022-06-02
+
+### 🐞 Fix
+
+- [e97c9708]	use correct controlflag for vslm SetControlFlags API test
+
+### ⚠️ BREAKING
+
+### 📖 Commits
+
+- [e97c9708]	fix: use correct controlflag for vslm SetControlFlags API test
+- [f8cf9ef7]	correct SetControlFlags and ClearControlFlags APIs
 
 <a name="v0.27.4"></a>
 ## [Release v0.27.4](https://github.com/vmware/govmomi/compare/v0.27.3...v0.27.4)
