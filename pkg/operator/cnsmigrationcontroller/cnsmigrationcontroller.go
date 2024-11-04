@@ -3,6 +3,13 @@ package cnsmigrationcontroller
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/davecgh/go-spew/spew"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
@@ -16,14 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/legacy-cloud-providers/vsphere"
-	"net/url"
-	"os"
-	"regexp"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/vsphere-csi-driver/v3/pkg/csi/service/common"
-	"strings"
-	"sync"
-	"time"
 
 	"k8s.io/client-go/kubernetes"
 	corelister "k8s.io/client-go/listers/core/v1"
@@ -147,7 +148,7 @@ func (c *CNSMigrationController) registerCNSDisks(ctx context.Context) (map[stri
 		return nil, err
 	}
 
-	manager, err := cnsvolume.GetManager(ctx, vCenter, nil, false, true, false, cnstypes.CnsClusterFlavorVanilla)
+	manager, err := cnsvolume.GetManager(ctx, vCenter, nil, false, true, false, false)
 	if err != nil {
 		klog.Errorf("failed to get manager. err: %v", err)
 		return nil, err
@@ -217,7 +218,7 @@ func (c *CNSMigrationController) registerCNSDisks(ctx context.Context) (map[stri
 			}
 			klog.V(6).Infof("vSphere CSI operator registering volume %q with create spec %+v", volumePath, spew.Sdump(createSpec))
 			// This is the CNS registration call where we surface the issues before upgrading clusters.
-			volumeInfo, _, err = manager.CreateVolume(ctx, createSpec, nil)
+			volumeInfo, _, err = manager.CreateVolume(ctx, createSpec)
 			if err != nil {
 				err = fmt.Errorf("failed to register volume %q: %+v", volumePath, err)
 				klog.Error(err)
