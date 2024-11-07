@@ -81,7 +81,6 @@ func NewCSIConfigObserverController(
 
 	c := &CSIConfigObserverController{
 		Controller: configobserver.NewConfigObserver(
-			name,
 			operatorClient,
 			eventRecorder.WithComponentSuffix("csi-config-observer-controller-"+strings.ToLower(name)),
 			Listers{
