@@ -396,7 +396,6 @@ type CnsBlockBackingDetails struct {
 	BackingDiskUrlPath             string `xml:"backingDiskUrlPath,omitempty"`
 	BackingDiskObjectId            string `xml:"backingDiskObjectId,omitempty"`
 	AggregatedSnapshotCapacityInMb int64  `xml:"aggregatedSnapshotCapacityInMb,omitempty"`
-	BackingDiskPath                string `xml:"backingDiskPath,omitempty"`
 }
 
 func init() {
