@@ -2,13 +2,14 @@ package storageclasscontroller
 
 import (
 	"context"
+	"time"
+
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	"k8s.io/klog/v2"
-	"time"
 )
 
 type MultiVCenterStorageClassController struct {
@@ -16,12 +17,14 @@ type MultiVCenterStorageClassController struct {
 	connPolicyNames map[string]string // Key is vcenter name, value is policy name
 }
 
+var _ StorageClassSyncInterface = &MultiVCenterStorageClassController{}
+
 func makeMultiVCenterStorageClassController(abstract AbstractStorageClass) *MultiVCenterStorageClassController {
 	scc := MultiVCenterStorageClassController{
 		AbstractStorageClass: abstract,
 		connPolicyNames:      make(map[string]string),
 	}
-	scc.AbstractStorageClass.StorageClassSyncInterface = &scc
+	scc.StorageClassSyncInterface = &scc
 	return &scc
 }
 

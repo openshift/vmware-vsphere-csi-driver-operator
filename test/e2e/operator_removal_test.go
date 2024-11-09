@@ -70,8 +70,7 @@ func TestStorageRemoval(t *testing.T) {
 	t.Logf("removed storage operator from cluster")
 	err = waitForStorageResourceRemoval(t, ocpOperatorClient, kubeClient)
 	if err != nil {
-		restoreStorage(t, ocpOperatorClient, configClient, kubeClient)
-		t.Fatalf("Failed to wait for storage resource removal: %v", err)
+		t.Errorf("failed to remove storage operator: %v", err)
 	}
 	time.Sleep(10 * time.Second)
 	restoreStorage(t, ocpOperatorClient, configClient, kubeClient)
@@ -88,29 +87,33 @@ func restoreStorage(t *testing.T, client *operatorclient.Clientset, configClient
 
 func waitForStorageResourceRemoval(t *testing.T, client *operatorclient.Clientset, kubeClient *kubernetes.Clientset) error {
 	// make sure storage to be removed
-	t.Logf("Waiting for storage resource to be removed")
+	t.Logf("********** Waiting for storage resource to be removed **********")
 	return wait.PollUntilContextTimeout(context.TODO(), WaitPollInterval, WaitPollTimeout, false, func(pollContext context.Context) (bool, error) {
 		disabledConditionStatusVar, err := checkDisabledCondition(t, pollContext, client)
 		if err != nil {
 			return false, err
 		}
-		done := disabledConditionStatusVar == operatorDisabled
-		if done {
-			deploymentCreated, err := checkForDeploymentCreation(t, pollContext, kubeClient)
+		var deploymentExists bool
+		var daemonSetExists bool
+
+		if disabledConditionStatusVar == operatorDisabled {
+			deploymentExists, err = checkForDeploymentCreation(t, pollContext, kubeClient)
 			if err != nil {
 				return false, err
 			}
-			done = !deploymentCreated
 		}
 
-		if done {
-			daemonsetCreated, err := checkForDaemonset(t, pollContext, kubeClient)
+		if disabledConditionStatusVar == operatorDisabled {
+			daemonSetExists, err = checkForDaemonset(t, pollContext, kubeClient)
 			if err != nil {
 				return false, err
 			}
-			done = !daemonsetCreated
 		}
-		return done, nil
+		t.Logf("Disable Condition: %+v, DeploymentExists: %v, Daemonsetexists: %v", disabledConditionStatusVar, deploymentExists, daemonSetExists)
+		if disabledConditionStatusVar != operatorDisabled || deploymentExists || daemonSetExists {
+			return false, nil
+		}
+		return true, nil
 	})
 }
 

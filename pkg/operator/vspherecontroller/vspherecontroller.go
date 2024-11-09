@@ -17,12 +17,10 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	ocpv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	operatorapi "github.com/openshift/api/operator/v1"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
@@ -62,7 +60,6 @@ type VSphereController struct {
 	csiConfigManifest        []byte
 	vSphereChecker           vSphereEnvironmentCheckInterface
 	vCenterConnectionStatus  bool
-	featureGates             featuregates.FeatureGate
 	cloudConfig              *vclib.VSphereConfig
 
 	currentManagmentState operatorapi.ManagementState
@@ -104,9 +101,7 @@ func NewVSphereController(
 	apiClients utils.APIClient,
 	csiConfigManifest []byte,
 	secretManifest []byte,
-	recorder events.Recorder,
-	gates featuregates.FeatureGate,
-) factory.Controller {
+	recorder events.Recorder) factory.Controller {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
 	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
@@ -137,7 +132,6 @@ func NewVSphereController(
 		clusterCSIDriverLister:  apiClients.ClusterCSIDriverInformer.Lister(),
 		infraLister:             infraInformer.Lister(),
 		vCenterConnectionStatus: false,
-		featureGates:            gates,
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -425,7 +419,7 @@ func (c *VSphereController) runConditionalController(ctx context.Context) {
 func (c *VSphereController) runClusterCheck(ctx context.Context, infra *ocpv1.Infrastructure) (time.Duration, checks.ClusterCheckResult, bool) {
 	checkerApiClient := c.getCheckAPIDependency(infra)
 
-	checkOpts := checks.NewCheckArgs(c.vSphereConnections, checkerApiClient, c.featureGates)
+	checkOpts := checks.NewCheckArgs(c.vSphereConnections, checkerApiClient)
 	return c.vSphereChecker.Check(ctx, checkOpts)
 }
 
@@ -699,12 +693,6 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 
 	csiConfigString := string(c.csiConfigManifest)
 
-	// Validate config.  We used to fail when calling utils.GetDataCenters, but now we will let config validate itself.
-	err := sourceCFG.ValidateConfig(c.featureGates)
-	if err != nil {
-		return nil, err
-	}
-
 	csiVCenterConfigBytes, err := assets.ReadFile("csi_cloud_config_vcenters.ini")
 
 	if err != nil {
@@ -728,7 +716,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		vcenterStr := string(csiVCenterConfigBytes)
 		vcenter := config.VirtualCenter[vcenterKey]
 
-		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, infra, c.configMapLister, c.apiClients.SecretInformer, c.featureGates)
+		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, infra, c.configMapLister, c.apiClients.SecretInformer)
 		if err != nil {
 			return nil, err
 		}
@@ -791,13 +779,11 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 		c.scLister,
 		c.apiClients.ClusterCSIDriverInformer,
 		c.eventRecorder,
-		c.featureGates,
 	)
 	return storageClassController
 }
 
-func getUserAndPassword(namespace string, secretName string, vcenter string, infra *ocpv1.Infrastructure, configMapLister corelister.ConfigMapLister, secretInformer corev1informers.SecretInformer, featureGates featuregates.FeatureGate,
-) (string, string, error) {
+func getUserAndPassword(namespace string, secretName string, vcenter string, infra *ocpv1.Infrastructure, configMapLister corelister.ConfigMapLister, secretInformer corev1informers.SecretInformer) (string, string, error) {
 	secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
 	if err != nil {
 		return "", "", err
@@ -811,10 +797,6 @@ func getUserAndPassword(namespace string, secretName string, vcenter string, inf
 	// }
 	// So we need to figure those keys out
 	var usernameKey, passwordKey string
-
-	if len(secret.Data) > 2 && !featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
-		klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
-	}
 
 	usernameKey = vcenter + ".username"
 	passwordKey = vcenter + ".password"

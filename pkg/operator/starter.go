@@ -21,8 +21,6 @@ import (
 	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
-	"github.com/openshift/library-go/pkg/operator/events"
 	goc "github.com/openshift/library-go/pkg/operator/genericoperatorclient"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 
@@ -76,32 +74,6 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		return err
 	}
 
-	desiredVersion := getReleaseVersion()
-	missingVersion := "0.0.1-snapshot"
-
-	// By default, this will exit(0) if the featuregates change
-	featureGateAccessor := featuregates.NewFeatureGateAccess(
-		desiredVersion, missingVersion,
-		configInformers.Config().V1().ClusterVersions(),
-		configInformers.Config().V1().FeatureGates(),
-		events.NewLoggingEventRecorder("vspherecontroller"),
-	)
-	go featureGateAccessor.Run(context.Background())
-	go configInformers.Start(context.Background().Done())
-
-	select {
-	case <-featureGateAccessor.InitialFeatureGatesObserved():
-		featureGates, _ := featureGateAccessor.CurrentFeatureGates()
-		klog.Infof("FeatureGates initialized: %v", featureGates.KnownFeatures())
-	case <-time.After(1 * time.Minute):
-		klog.Fatal("timed out waiting for FeatureGate detection")
-	}
-
-	featureGates, err := featureGateAccessor.CurrentFeatureGates()
-	if err != nil {
-		klog.Fatalf("unable to retrieve current feature gates: %v", err)
-	}
-
 	commonAPIClient := utils.APIClient{
 		OperatorClient:           operatorClient,
 		KubeClient:               kubeClient,
@@ -132,8 +104,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		commonAPIClient,
 		csiConfigBytes,
 		cloudConfigBytes,
-		controllerConfig.EventRecorder,
-		featureGates)
+		controllerConfig.EventRecorder)
 
 	featureConfigBytes, err := assets.ReadFile("vsphere_features_config.yaml")
 	if err != nil {
