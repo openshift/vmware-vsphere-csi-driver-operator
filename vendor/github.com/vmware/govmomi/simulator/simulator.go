@@ -961,19 +961,3 @@ func UnmarshalBody(typeFunc func(string) (reflect.Type, bool), data []byte) (*Me
 
 	return method, nil
 }
-
-func newInvalidStateFault(format string, args ...any) *types.InvalidState {
-	msg := fmt.Sprintf(format, args...)
-	return &types.InvalidState{
-		VimFault: types.VimFault{
-			MethodFault: types.MethodFault{
-				FaultCause: &types.LocalizedMethodFault{
-					Fault: &types.SystemErrorFault{
-						Reason: msg,
-					},
-					LocalizedMessage: msg,
-				},
-			},
-		},
-	}
-}

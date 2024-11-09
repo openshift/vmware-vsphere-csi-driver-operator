@@ -9,7 +9,6 @@ import (
 	"time"
 
 	opv1 "github.com/openshift/api/operator/v1"
-	applyoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivercontrollerservicecontroller"
 	dc "github.com/openshift/library-go/pkg/operator/deploymentcontroller"
@@ -26,7 +25,6 @@ import (
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -71,14 +69,11 @@ type DaemonSetHookFunc func(*opv1.OperatorSpec, *appsv1.DaemonSet) error
 // <name>Progressing: indicates that the CSI Node Service is being deployed.
 // <name>Degraded: produced when the sync() method returns an error.
 type CSIDriverNodeServiceController struct {
-	// instanceName is the name to identify what instance this belongs too: FooDriver for instance
-	instanceName string
-	// controllerInstanceName is the name to identify this instance of this particular control loop: FooDriver-CSIDriverNodeService for instance.
-	controllerInstanceName string
-	manifest               []byte
-	operatorClient         v1helpers.OperatorClientWithFinalizers
-	kubeClient             kubernetes.Interface
-	dsInformer             appsinformersv1.DaemonSetInformer
+	name           string
+	manifest       []byte
+	operatorClient v1helpers.OperatorClientWithFinalizers
+	kubeClient     kubernetes.Interface
+	dsInformer     appsinformersv1.DaemonSetInformer
 	// Optional hook functions to modify the DaemonSet.
 	// If one of these functions returns an error, the sync
 	// fails indicating the ordinal position of the failed function.
@@ -88,7 +83,7 @@ type CSIDriverNodeServiceController struct {
 }
 
 func NewCSIDriverNodeServiceController(
-	instanceName string,
+	name string,
 	manifest []byte,
 	recorder events.Recorder,
 	operatorClient v1helpers.OperatorClientWithFinalizers,
@@ -98,8 +93,7 @@ func NewCSIDriverNodeServiceController(
 	optionalDaemonSetHooks ...DaemonSetHookFunc,
 ) factory.Controller {
 	c := &CSIDriverNodeServiceController{
-		instanceName:           instanceName,
-		controllerInstanceName: factory.ControllerInstanceName(instanceName, "CSIDriverNodeService"),
+		name:                   name,
 		manifest:               manifest,
 		operatorClient:         operatorClient,
 		kubeClient:             kubeClient,
@@ -119,13 +113,13 @@ func NewCSIDriverNodeServiceController(
 	).WithSyncDegradedOnError(
 		operatorClient,
 	).ToController(
-		c.instanceName, // don't change what is passed here unless you also remove the old FooDegraded condition
-		recorder.WithComponentSuffix("csi-driver-node-service_"+strings.ToLower(instanceName)),
+		c.name,
+		recorder.WithComponentSuffix("csi-driver-node-service_"+strings.ToLower(name)),
 	)
 }
 
 func (c *CSIDriverNodeServiceController) Name() string {
-	return c.instanceName
+	return c.name
 }
 
 func (c *CSIDriverNodeServiceController) sync(ctx context.Context, syncContext factory.SyncContext) error {
@@ -158,7 +152,7 @@ func (c *CSIDriverNodeServiceController) sync(ctx context.Context, syncContext f
 func (c *CSIDriverNodeServiceController) syncManaged(ctx context.Context, opSpec *opv1.OperatorSpec, opStatus *opv1.OperatorStatus, syncContext factory.SyncContext) error {
 	klog.V(4).Infof("syncManaged")
 	if management.IsOperatorRemovable() {
-		if err := v1helpers.EnsureFinalizer(ctx, c.operatorClient, c.instanceName); err != nil {
+		if err := v1helpers.EnsureFinalizer(ctx, c.operatorClient, c.name); err != nil {
 			return err
 		}
 	}
@@ -179,49 +173,45 @@ func (c *CSIDriverNodeServiceController) syncManaged(ctx context.Context, opSpec
 		return err
 	}
 
-	// Create an OperatorStatusApplyConfiguration with generations
-	status := applyoperatorv1.OperatorStatus().
-		WithGenerations(&applyoperatorv1.GenerationStatusApplyConfiguration{
-			Group:          ptr.To("apps"),
-			Resource:       ptr.To("daemonsets"),
-			Namespace:      ptr.To(daemonSet.Namespace),
-			Name:           ptr.To(daemonSet.Name),
-			LastGeneration: ptr.To(daemonSet.Generation),
-		})
-
-	// Set Available condition
-	availableCondition := applyoperatorv1.OperatorCondition().
-		WithType(c.instanceName + opv1.OperatorStatusTypeAvailable).
-		WithStatus(opv1.ConditionTrue)
+	availableCondition := opv1.OperatorCondition{
+		Type:   c.name + opv1.OperatorStatusTypeAvailable,
+		Status: opv1.ConditionTrue,
+	}
 
 	if daemonSet.Status.NumberAvailable > 0 {
-		availableCondition = availableCondition.WithStatus(opv1.ConditionTrue)
+		availableCondition.Status = opv1.ConditionTrue
 	} else {
-		availableCondition = availableCondition.
-			WithStatus(opv1.ConditionFalse).
-			WithMessage("Waiting for the DaemonSet to deploy the CSI Node Service").
-			WithReason("Deploying")
+		availableCondition.Status = opv1.ConditionFalse
+		availableCondition.Message = "Waiting for the DaemonSet to deploy the CSI Node Service"
+		availableCondition.Reason = "Deploying"
 	}
-	status = status.WithConditions(availableCondition)
 
-	// Set Progressing condition
-	progressingCondition := applyoperatorv1.OperatorCondition().
-		WithType(c.instanceName + opv1.OperatorStatusTypeProgressing).
-		WithStatus(opv1.ConditionFalse)
+	progressingCondition := opv1.OperatorCondition{
+		Type:   c.name + opv1.OperatorStatusTypeProgressing,
+		Status: opv1.ConditionFalse,
+	}
 
 	if ok, msg := isProgressing(opStatus, daemonSet); ok {
-		progressingCondition = progressingCondition.
-			WithStatus(opv1.ConditionTrue).
-			WithMessage(msg).
-			WithReason("Deploying")
+		progressingCondition.Status = opv1.ConditionTrue
+		progressingCondition.Message = msg
+		progressingCondition.Reason = "Deploying"
 	}
-	status = status.WithConditions(progressingCondition)
 
-	return c.operatorClient.ApplyOperatorStatus(
+	updateStatusFn := func(newStatus *opv1.OperatorStatus) error {
+		// TODO: set ObservedGeneration (the last stable generation change we dealt with)
+		resourcemerge.SetDaemonSetGeneration(&newStatus.Generations, daemonSet)
+		return nil
+	}
+
+	_, _, err = v1helpers.UpdateStatus(
 		ctx,
-		c.controllerInstanceName,
-		status,
+		c.operatorClient,
+		updateStatusFn,
+		v1helpers.UpdateConditionFn(availableCondition),
+		v1helpers.UpdateConditionFn(progressingCondition),
 	)
+
+	return err
 }
 
 func (c *CSIDriverNodeServiceController) getDaemonSet(opSpec *opv1.OperatorSpec) (*appsv1.DaemonSet, error) {
@@ -305,5 +295,5 @@ func (c *CSIDriverNodeServiceController) syncDeleting(ctx context.Context, opSpe
 	}
 
 	// All removed, remove the finalizer as the last step
-	return v1helpers.RemoveFinalizer(ctx, c.operatorClient, c.instanceName)
+	return v1helpers.RemoveFinalizer(ctx, c.operatorClient, c.name)
 }

@@ -7,15 +7,7 @@ import (
 	"strings"
 	"time"
 
-	opv1 "github.com/openshift/api/operator/v1"
-	applyoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
-	"github.com/openshift/library-go/pkg/controller/factory"
-	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/management"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
-	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
-	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,7 +16,14 @@ import (
 	appsinformersv1 "k8s.io/client-go/informers/apps/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	"k8s.io/utils/ptr"
+
+	opv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcemerge"
+	"github.com/openshift/library-go/pkg/operator/resource/resourceread"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
 )
 
 // DeploymentHookFunc is a hook function to modify the Deployment.
@@ -43,11 +42,7 @@ type ManifestHookFunc func(*opv1.OperatorSpec, []byte) ([]byte, error)
 // <name>Progressing: indicates that the Deployment is in progress.
 // <name>Degraded: produced when the sync() method returns an error.
 type DeploymentController struct {
-	// instanceName is the name to identify what instance this belongs too: FooDriver for instance
-	instanceName string
-	// controllerInstanceName is the name to identify this instance of this particular control loop: FooDriver-CSIDriverNodeService for instance.
-	controllerInstanceName string
-
+	name              string
 	manifest          []byte
 	operatorClient    v1helpers.OperatorClientWithFinalizers
 	kubeClient        kubernetes.Interface
@@ -116,7 +111,7 @@ func NewDeploymentController(
 // NewDeploymentControllerBuilder initializes and returns a pointer to a
 // minimal DeploymentController.
 func NewDeploymentControllerBuilder(
-	instanceName string,
+	name string,
 	manifest []byte,
 	recorder events.Recorder,
 	operatorClient v1helpers.OperatorClientWithFinalizers,
@@ -124,13 +119,12 @@ func NewDeploymentControllerBuilder(
 	deployInformer appsinformersv1.DeploymentInformer,
 ) *DeploymentController {
 	return &DeploymentController{
-		instanceName:           instanceName,
-		controllerInstanceName: factory.ControllerInstanceName(instanceName, "Deployment"),
-		manifest:               manifest,
-		operatorClient:         operatorClient,
-		kubeClient:             kubeClient,
-		deployInformer:         deployInformer,
-		recorder:               recorder,
+		name:           name,
+		manifest:       manifest,
+		operatorClient: operatorClient,
+		kubeClient:     kubeClient,
+		deployInformer: deployInformer,
+		recorder:       recorder,
 	}
 }
 
@@ -196,14 +190,14 @@ func (c *DeploymentController) ToController() (factory.Controller, error) {
 		controller = controller.WithSyncDegradedOnError(c.operatorClient)
 	}
 	return controller.ToController(
-		c.instanceName, // don't change what is passed here unless you also remove the old FooDegraded condition
-		c.recorder.WithComponentSuffix(strings.ToLower(c.instanceName)+"-deployment-controller-"),
+		c.name,
+		c.recorder.WithComponentSuffix(strings.ToLower(c.name)+"-deployment-controller-"),
 	), errors.NewAggregate(c.errors)
 }
 
 // Name returns the name of the DeploymentController.
 func (c *DeploymentController) Name() string {
-	return c.instanceName
+	return c.name
 }
 
 func (c *DeploymentController) sync(ctx context.Context, syncContext factory.SyncContext) error {
@@ -237,7 +231,7 @@ func (c *DeploymentController) syncManaged(ctx context.Context, opSpec *opv1.Ope
 	klog.V(4).Infof("syncManaged")
 
 	if management.IsOperatorRemovable() {
-		if err := v1helpers.EnsureFinalizer(ctx, c.operatorClient, c.instanceName); err != nil {
+		if err := v1helpers.EnsureFinalizer(ctx, c.operatorClient, c.name); err != nil {
 			return err
 		}
 	}
@@ -257,50 +251,51 @@ func (c *DeploymentController) syncManaged(ctx context.Context, opSpec *opv1.Ope
 		return err
 	}
 
-	// Create an OperatorStatusApplyConfiguration with generations
-	status := applyoperatorv1.OperatorStatus().
-		WithGenerations(&applyoperatorv1.GenerationStatusApplyConfiguration{
-			Group:          ptr.To("apps"),
-			Resource:       ptr.To("deployments"),
-			Namespace:      ptr.To(deployment.Namespace),
-			Name:           ptr.To(deployment.Name),
-			LastGeneration: ptr.To(deployment.Generation),
-		})
+	updateStatusFuncs := []v1helpers.UpdateStatusFunc{
+		func(newStatus *opv1.OperatorStatus) error {
+			// TODO: set ObservedGeneration (the last stable generation change we dealt with)
+			resourcemerge.SetDeploymentGeneration(&newStatus.Generations, deployment)
+			return nil
+		},
+	}
 
-	// Set Available condition
+	// Set Available Condition
 	if slices.Contains(c.conditions, opv1.OperatorStatusTypeAvailable) {
-		availableCondition := applyoperatorv1.
-			OperatorCondition().WithType(c.instanceName + opv1.OperatorStatusTypeAvailable)
+		availableCondition := opv1.OperatorCondition{
+			Type:   c.name + opv1.OperatorStatusTypeAvailable,
+			Status: opv1.ConditionTrue,
+		}
 		if deployment.Status.AvailableReplicas > 0 {
-			availableCondition = availableCondition.WithStatus(opv1.ConditionTrue)
+			availableCondition.Status = opv1.ConditionTrue
 		} else {
-			availableCondition = availableCondition.
-				WithStatus(opv1.ConditionFalse).
-				WithMessage("Waiting for Deployment").
-				WithReason("Deploying")
+			availableCondition.Status = opv1.ConditionFalse
+			availableCondition.Message = "Waiting for Deployment"
+			availableCondition.Reason = "Deploying"
 		}
-		status = status.WithConditions(availableCondition)
+		updateStatusFuncs = append(updateStatusFuncs, v1helpers.UpdateConditionFn(availableCondition))
 	}
 
-	// Set Progressing condition
+	// Set Progressing Condition
 	if slices.Contains(c.conditions, opv1.OperatorStatusTypeProgressing) {
-		progressingCondition := applyoperatorv1.OperatorCondition().
-			WithType(c.instanceName + opv1.OperatorStatusTypeProgressing).
-			WithStatus(opv1.ConditionFalse)
-		if ok, msg := isProgressing(deployment); ok {
-			progressingCondition = progressingCondition.
-				WithStatus(opv1.ConditionTrue).
-				WithMessage(msg).
-				WithReason("Deploying")
+		progressingCondition := opv1.OperatorCondition{
+			Type:   c.name + opv1.OperatorStatusTypeProgressing,
+			Status: opv1.ConditionFalse,
 		}
-		status = status.WithConditions(progressingCondition)
+		if ok, msg := isProgressing(deployment); ok {
+			progressingCondition.Status = opv1.ConditionTrue
+			progressingCondition.Message = msg
+			progressingCondition.Reason = "Deploying"
+		}
+		updateStatusFuncs = append(updateStatusFuncs, v1helpers.UpdateConditionFn(progressingCondition))
 	}
 
-	return c.operatorClient.ApplyOperatorStatus(
+	_, _, err = v1helpers.UpdateStatus(
 		ctx,
-		c.controllerInstanceName,
-		status,
+		c.operatorClient,
+		updateStatusFuncs...,
 	)
+
+	return err
 }
 
 func (c *DeploymentController) syncDeleting(ctx context.Context, opSpec *opv1.OperatorSpec, opStatus *opv1.OperatorStatus, syncContext factory.SyncContext) error {
@@ -318,7 +313,7 @@ func (c *DeploymentController) syncDeleting(ctx context.Context, opSpec *opv1.Op
 	}
 
 	// All removed, remove the finalizer as the last step
-	return v1helpers.RemoveFinalizer(ctx, c.operatorClient, c.instanceName)
+	return v1helpers.RemoveFinalizer(ctx, c.operatorClient, c.name)
 }
 
 func (c *DeploymentController) getDeployment(opSpec *opv1.OperatorSpec) (*appsv1.Deployment, error) {
