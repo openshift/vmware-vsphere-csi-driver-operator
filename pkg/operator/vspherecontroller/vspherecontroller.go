@@ -66,10 +66,8 @@ type VSphereController struct {
 }
 
 const (
-	cloudConfigNamespace              = "openshift-config"
 	infraGlobalName                   = "cluster"
 	storageOperatorName               = "cluster"
-	secretName                        = "vmware-vsphere-cloud-credentials"
 	trustedCAConfigMap                = "vmware-vsphere-csi-driver-trusted-ca-bundle"
 	defaultNamespace                  = "openshift-cluster-csi-drivers"
 	driverOperandName                 = "vmware-vsphere-csi-driver"
@@ -77,10 +75,7 @@ const (
 	envVMWareVsphereDriverSyncerImage = "VMWARE_VSPHERE_SYNCER_IMAGE"
 	storageClassControllerName        = "VMwareVSphereDriverStorageClassController"
 	storageClassName                  = "thin-csi"
-
-	managedConfigNamespace = "openshift-config-managed"
-	adminGateConfigMap     = "admin-gates"
-	migrationAck413        = "ack-4.13-kube-127-vsphere-migration-in-4.14"
+	migrationAck413                   = "ack-4.13-kube-127-vsphere-migration-in-4.14"
 )
 
 type conditionalControllerInterface interface {
@@ -101,7 +96,7 @@ func NewVSphereController(
 ) factory.Controller {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
-	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
+	configMapInformer := kubeInformers.InformersFor(utils.CloudConfigNamespace).Core().V1().ConfigMaps()
 
 	infraInformer := ocpConfigInformer.Config().V1().Infrastructures()
 	storageInformer := apiClients.OCPOperatorInformers.Operator().V1().Storages()
@@ -113,7 +108,7 @@ func NewVSphereController(
 	nodeLister := apiClients.NodeInformer.Lister()
 
 	// managedConfigMapInformer for applying admin-gates
-	managedConfigMapInformer := kubeInformers.InformersFor(managedConfigNamespace).Core().V1().ConfigMaps()
+	managedConfigMapInformer := kubeInformers.InformersFor(utils.ManagedConfigNamespace).Core().V1().ConfigMaps()
 
 	rc := recorder.WithComponentSuffix("vmware-" + strings.ToLower(name))
 
@@ -450,14 +445,14 @@ func (c *VSphereController) loginToVCenter(ctx context.Context, infra *ocpv1.Inf
 func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *ocpv1.Infrastructure) error {
 	klog.V(3).Infof("Creating vSphere connection")
 	cloudConfig := infra.Spec.CloudConfig
-	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
+	cloudConfigMap, err := c.configMapLister.ConfigMaps(utils.CloudConfigNamespace).Get(cloudConfig.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cloud config: %v", err)
 	}
 
 	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
 	if !ok {
-		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
+		return fmt.Errorf("cloud config %s/%s does not contain key %q", utils.CloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
 	cfg := new(vsphere.VSphereConfig)
 	err = gcfg.ReadStringInto(cfg, cfgString)
@@ -465,19 +460,19 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 		return err
 	}
 
-	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(secretName)
+	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(utils.SecretName)
 	if err != nil {
 		return err
 	}
 	userKey := cfg.Workspace.VCenterIP + "." + "username"
 	username, ok := secret.Data[userKey]
 	if !ok {
-		return fmt.Errorf("error parsing secret %q: key %q not found", secretName, userKey)
+		return fmt.Errorf("error parsing secret %q: key %q not found", utils.SecretName, userKey)
 	}
 	passwordKey := cfg.Workspace.VCenterIP + "." + "password"
 	password, ok := secret.Data[passwordKey]
 	if !ok {
-		return fmt.Errorf("error parsing secret %q: key %q not found", secretName, passwordKey)
+		return fmt.Errorf("error parsing secret %q: key %q not found", utils.SecretName, passwordKey)
 	}
 
 	vs := vclib.NewVSphereConnection(string(username), string(password), cfg)
@@ -534,7 +529,7 @@ func (c *VSphereController) updateConditions(
 }
 
 func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckResult checks.ClusterCheckResult) error {
-	adminGate, err := c.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
+	adminGate, err := c.managedConfigMapLister.ConfigMaps(utils.ManagedConfigNamespace).Get(utils.AdminGateConfigMap)
 	if err != nil {
 		return fmt.Errorf("failed to get admin-gate configmap: %v", err)
 	}
@@ -551,7 +546,7 @@ func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckRe
 }
 
 func (c *VSphereController) removeAdminAck(ctx context.Context) error {
-	adminGate, err := c.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
+	adminGate, err := c.managedConfigMapLister.ConfigMaps(utils.ManagedConfigNamespace).Get(utils.AdminGateConfigMap)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -616,14 +611,14 @@ func (c *VSphereController) createCSIConfigMap(
 	// this something we want to change? These operators are supposed to be deployed by CSO, which
 	// already does this checking for us.
 	cloudConfig := infra.Spec.CloudConfig
-	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
+	cloudConfigMap, err := c.configMapLister.ConfigMaps(utils.CloudConfigNamespace).Get(cloudConfig.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get cloud config: %w", err)
 	}
 
 	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
 	if !ok {
-		return fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
+		return fmt.Errorf("cloud config %s/%s does not contain key %q", utils.CloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
 	}
 
 	var cfg vsphere.VSphereConfig

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2017 VMware, Inc. All Rights Reserved.
+Copyright (c) 2017-2023 VMware, Inc. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import (
 
 type VirtualMachineSnapshot struct {
 	mo.VirtualMachineSnapshot
+	DataSets map[string]*DataSet
 }
 
 func (v *VirtualMachineSnapshot) createSnapshotFiles() types.BaseMethodFault {
@@ -123,9 +124,16 @@ func (v *VirtualMachineSnapshot) RemoveSnapshotTask(ctx *Context, req *types.Rem
 			rootSnapshots := removeSnapshotInTree(vm.Snapshot.RootSnapshotList, req.This, req.RemoveChildren)
 			changes = append(changes, types.PropertyChange{Name: "snapshot.rootSnapshotList", Val: rootSnapshots})
 
+			rootSnapshotRefs := make([]types.ManagedObjectReference, len(rootSnapshots))
+			for i, rs := range rootSnapshots {
+				rootSnapshotRefs[i] = rs.Snapshot
+			}
+			changes = append(changes, types.PropertyChange{Name: "rootSnapshot", Val: rootSnapshotRefs})
+
 			if len(rootSnapshots) == 0 {
 				changes = []types.PropertyChange{
 					{Name: "snapshot", Val: nil},
+					{Name: "rootSnapshot", Val: nil},
 				}
 			}
 
@@ -151,6 +159,7 @@ func (v *VirtualMachineSnapshot) RevertToSnapshotTask(ctx *Context, req *types.R
 		vm := ctx.Map.Get(v.Vm).(*VirtualMachine)
 
 		ctx.WithLock(vm, func() {
+			vm.DataSets = copyDataSetsForVmClone(v.DataSets)
 			ctx.Map.Update(vm, []types.PropertyChange{
 				{Name: "snapshot.currentSnapshot", Val: v.Self},
 			})

@@ -29,8 +29,8 @@ const (
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	kubeInformers := apiClients.KubeInformers
 	ocpConfigInformer := apiClients.ConfigInformers
-	configMapInformer := kubeInformers.InformersFor(cloudConfigNamespace).Core().V1().ConfigMaps()
-	managedConfigMapInformer := kubeInformers.InformersFor(managedConfigNamespace).Core().V1().ConfigMaps()
+	configMapInformer := kubeInformers.InformersFor(utils.CloudConfigNamespace).Core().V1().ConfigMaps()
+	managedConfigMapInformer := kubeInformers.InformersFor(utils.ManagedConfigNamespace).Core().V1().ConfigMaps()
 
 	infraInformer := ocpConfigInformer.Config().V1().Infrastructures()
 	scInformer := kubeInformers.InformersFor("").Storage().V1().StorageClasses()
@@ -542,7 +542,7 @@ func TestSync(t *testing.T) {
 				t.Fatalf("expected operandStarted to be %v, got %v", test.operandStarted, ctrl.operandControllerStarted)
 			}
 
-			cmap, err := ctrl.managedConfigMapLister.ConfigMaps(managedConfigNamespace).Get(adminGateConfigMap)
+			cmap, err := ctrl.managedConfigMapLister.ConfigMaps(utils.ManagedConfigNamespace).Get(utils.AdminGateConfigMap)
 			if err != nil {
 				if !apierrors.IsNotFound(err) {
 					t.Errorf("error getting admin-gate configmap: %v", err)
