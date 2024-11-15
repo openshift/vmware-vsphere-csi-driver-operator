@@ -543,7 +543,7 @@ func (c *VSphereController) addRequiresAdminAck(ctx context.Context, lastCheckRe
 
 	_, ok := adminGate.Data[migrationAck413]
 	if !ok {
-		adminGate.Data[migrationAck413] = "vSphere CSI migration will be enabled in Openshift-4.14. Your cluster appears to be using in-tree vSphere volumes and is on a vSphere version that has CSI migration related bugs. See - https://access.redhat.com/node/7011683 for more information, before upgrading to 4.14."
+		adminGate.Data[migrationAck413] = "vSphere CSI migration will be enabled in Openshift-4.14. Your cluster appears to be using in-tree vSphere volumes and is on a vSphere version that has CSI migration related bugs. See - https://docs.redhat.com/en/documentation/openshift_container_platform/4.14/html/storage/using-container-storage-interface-csi#new-installations-of-openshift-container-platform for more information, before upgrading to 4.14."
 
 	}
 	_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), c.eventRecorder, adminGate)
