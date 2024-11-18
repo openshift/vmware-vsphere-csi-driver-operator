@@ -134,7 +134,7 @@ func (c *VSphereController) createCSIDriver() {
 			driverConfigSecretName,
 			c.apiClients.SecretInformer,
 		),
-		csidrivercontrollerservicecontroller.WithReplicasHook(c.nodeLister),
+		csidrivercontrollerservicecontroller.WithReplicasHook(c.apiClients.ConfigInformers),
 	).WithCSIDriverNodeService(
 		"VMwareVSphereDriverNodeServiceController",
 		assets.ReadFile,
