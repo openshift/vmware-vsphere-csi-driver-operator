@@ -134,6 +134,7 @@ func ApplyDeploymentWithForce(ctx context.Context, client appsclientv1.Deploymen
 	if !modified && existingCopy.ObjectMeta.Generation == expectedGeneration && !forceRollout {
 		return existingCopy, false, nil
 	}
+	klog.Infof("Deployment %q generation is %d, expected generation is %d", required.Namespace+"/"+required.Name, existingCopy.ObjectMeta.Generation, expectedGeneration)
 
 	// at this point we know that we're going to perform a write.  We're just trying to get the object correct
 	toWrite := existingCopy // shallow copy so the code reads easier
@@ -221,6 +222,8 @@ func ApplyDaemonSetWithForce(ctx context.Context, client appsclientv1.DaemonSets
 	if !modified && existingCopy.ObjectMeta.Generation == expectedGeneration && !forceRollout {
 		return existingCopy, false, nil
 	}
+
+	klog.Infof("DaemonSet %q generation is %d, expected generation is %d", required.Namespace+"/"+required.Name, existingCopy.ObjectMeta.Generation, expectedGeneration)
 
 	// at this point we know that we're going to perform a write.  We're just trying to get the object correct
 	toWrite := existingCopy // shallow copy so the code reads easier
