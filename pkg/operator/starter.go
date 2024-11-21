@@ -66,8 +66,9 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 	clusterCSIDriverInformer := ocpOperatorInformer.Operator().V1().ClusterCSIDrivers()
 
 	// Create GenericOperatorclient. This is used by the library-go controllers created down below
+	operatorClock := clock.RealClock{}
 	operatorClient, dynamicInformers, err := goc.NewClusterScopedOperatorClientWithConfigName(
-		clock.RealClock{},
+		operatorClock,
 		controllerConfig.KubeConfig,
 		opv1.SchemeGroupVersion.WithResource("clustercsidrivers"),
 		opv1.SchemeGroupVersion.WithKind("ClusterCSIDriver"),
@@ -92,7 +93,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		desiredVersion, missingVersion,
 		configInformers.Config().V1().ClusterVersions(),
 		configInformers.Config().V1().FeatureGates(),
-		events.NewLoggingEventRecorder("vspherecontroller"),
+		events.NewLoggingEventRecorder("vspherecontroller", operatorClock),
 	)
 	go featureGateAccessor.Run(context.Background())
 	go configInformers.Start(context.Background().Done())

@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/clock"
 )
 
 const (
@@ -43,7 +44,7 @@ func newFakeStoragePolicyAPIFailure(ctx context.Context, connection *vclib.VSphe
 }
 
 func newStorageClassController(apiClients *utils.APIClient, storageclassfile string, storagePolicyAPIfailing bool) *StorageClassController {
-	rc := events.NewInMemoryRecorder(testScControllerName)
+	rc := events.NewInMemoryRecorder(testScControllerName, clock.RealClock{})
 	scBytes, err := testlib.ReadFile(storageclassfile)
 	if err != nil {
 		panic("unable to read storageclass file")

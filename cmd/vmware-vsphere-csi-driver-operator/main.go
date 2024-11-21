@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"k8s.io/component-base/cli"
+	"k8s.io/utils/clock"
 
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 
@@ -33,6 +34,7 @@ func NewOperatorCommand() *cobra.Command {
 		"vmware-vsphere-csi-driver-operator",
 		version.Get(),
 		operator.RunOperator,
+		clock.RealClock{},
 	).NewCommand()
 	ctrlCmd.Use = "start"
 	ctrlCmd.Short = "Start the VMware vSphere CSI Driver Operator"
