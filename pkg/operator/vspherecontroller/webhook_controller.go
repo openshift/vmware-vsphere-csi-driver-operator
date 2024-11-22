@@ -26,7 +26,7 @@ func (c *VSphereController) createWebHookController() {
 		nil, // optionalManifestHooks
 		WithSyncerImageHook("vsphere-webhook"),
 		csidrivercontrollerservicecontroller.WithControlPlaneTopologyHook(c.apiClients.ConfigInformers),
-		csidrivercontrollerservicecontroller.WithReplicasHook(c.apiClients.KubeInformers.InformersFor("").Core().V1().Nodes().Lister()),
+		csidrivercontrollerservicecontroller.WithReplicasHook(c.apiClients.ConfigInformers),
 		WithLogLevelDeploymentHook(),
 		csidrivercontrollerservicecontroller.WithSecretHashAnnotationHook(
 			defaultNamespace,

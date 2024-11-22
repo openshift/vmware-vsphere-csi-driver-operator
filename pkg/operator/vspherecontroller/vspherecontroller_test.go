@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/metrics/testutil"
+	"k8s.io/utils/clock"
 )
 
 const (
@@ -44,7 +45,7 @@ func newVsphereControllerWithGates(apiClients *utils.APIClient, gates featuregat
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
 	nodeLister := apiClients.NodeInformer.Lister()
-	rc := events.NewInMemoryRecorder(testControllerName)
+	rc := events.NewInMemoryRecorder(testControllerName, clock.RealClock{})
 
 	secretBytes, _ := assets.ReadFile("vsphere_cloud_config_secret.yaml")
 

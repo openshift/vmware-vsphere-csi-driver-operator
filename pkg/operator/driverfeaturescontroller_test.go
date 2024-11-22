@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/clock"
 )
 
 func setFeature(features map[string]string, name, value string) map[string]string {
@@ -167,7 +168,7 @@ func TestDriverFeaturesController_Sync(t *testing.T) {
 				t.Fatalf("failed to parse vsphere_features_config.yaml: %v", err)
 			}
 
-			recorder := events.NewInMemoryRecorder("test")
+			recorder := events.NewInMemoryRecorder("test", clock.RealClock{})
 			d := NewDriverFeaturesController(
 				"test",
 				cloudConfigNamespace,
