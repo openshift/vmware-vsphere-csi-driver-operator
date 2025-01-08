@@ -172,6 +172,9 @@ func DefaultNodes() []*v1.Node {
 	var nodes []*v1.Node
 	for _, vm := range DefaultVMs {
 		node := Node(vm.name, WithProviderID("vsphere://"+vm.uuid))
+		node.Labels = map[string]string{
+			"kubernetes.io/os": "linux",
+		}
 		nodes = append(nodes, node)
 	}
 	return nodes

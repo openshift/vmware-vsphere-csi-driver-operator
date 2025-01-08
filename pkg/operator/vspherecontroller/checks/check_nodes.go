@@ -173,7 +173,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 }
 
 func (n *NodeChecker) Check(ctx context.Context, checkOpts CheckArgs) []ClusterCheckResult {
-	nodes, err := checkOpts.apiClient.ListNodes()
+	nodes, err := checkOpts.apiClient.ListLinuxNodes()
 	if err != nil {
 		reason := fmt.Errorf("error listing node objects: %v", err)
 		return []ClusterCheckResult{MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)}
@@ -243,6 +243,7 @@ func (n *NodeChecker) getHost(ctx context.Context, checkOpts CheckArgs, hostRef 
 }
 
 func getVM(ctx context.Context, checkOpts CheckArgs, node *v1.Node) (*mo.VirtualMachine, error) {
+	klog.V(5).Infof("getVM: node.Name: %v", node.Name)
 	vmUUID := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(node.Spec.ProviderID, "vsphere://")))
 	for _, client := range checkOpts.vmConnection {
 		vmClient := client.Client.Client
