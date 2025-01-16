@@ -21,7 +21,7 @@ To build and run the operator locally:
 
 ```shell
 # Create only the resources the operator needs to run via CLI
-oc apply -f https://raw.githubusercontent.com/openshift/cluster-storage-operator/master/assets/csidriveroperators/vsphere/09_cr.yaml
+oc apply -f https://raw.githubusercontent.com/openshift/cluster-storage-operator/main/assets/csidriveroperators/vsphere/09_cr.yaml
 
 # Build the operator
 make

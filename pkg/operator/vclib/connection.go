@@ -160,7 +160,7 @@ func (connection *VSphereConnection) NewClient(ctx context.Context) error {
 	klog.V(4).Infof("Connecting to %s as %s, insecure %t", serverAddress, connection.Username, connection.Insecure)
 
 	// Set user to nil to prevent login during client creation.
-	// See https://github.com/vmware/govmomi/blob/master/client.go#L91
+	// See https://github.com/vmware/govmomi/blob/main/client.go#L91
 	serverURL.User = nil
 	client, err := govmomi.NewClient(tctx, serverURL, connection.Insecure)
 	if err != nil {
