@@ -829,12 +829,23 @@ func getUserAndPassword(namespace string, secretName string, vcenter string, inf
 
 	// The CSI driver expects a password with any quotation marks and backslashes escaped.
 	// xref: https://github.com/kubernetes-sigs/vsphere-csi-driver/issues/121
-	return username, escapeQuotesAndBackslashes(password), nil
+	// The username in the format "domainName\userName" must be converted to "domainName\\userName"
+	// xref: https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/3.0/vmware-vsphere-csp-getting-started/GUID-BFF39F1D-F70A-4360-ABC9-85BDAFBE8864.html
+	return escapeBackslashInUsername(username), escapeQuotesAndBackslashes(password), nil
 }
 
 // escapeQuotesAndBackslashes escapes double quotes and backslashes in the input string.
 func escapeQuotesAndBackslashes(input string) string {
 	return reEscape.ReplaceAllString(input, `\$0`)
+}
+
+// escapeBackslashInUsername escapes single backslash in the input string like "domainName\userName"
+func escapeBackslashInUsername(input string) string {
+	regex := `^[a-zA-Z0-9.-]+\\[a-zA-Z0-9._-]+$`
+	if match, _ := regexp.MatchString(regex, input); match {
+		return escapeQuotesAndBackslashes(input)
+	}
+	return input
 }
 
 func getvCenterName(infra *ocpv1.Infrastructure, configmapLister corelister.ConfigMapLister) (string, error) {
