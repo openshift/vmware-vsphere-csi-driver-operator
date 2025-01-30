@@ -182,6 +182,7 @@ spec:
             - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
             - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
             - --v=${LOG_LEVEL}
+            - --reconcile-sync=10m
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
