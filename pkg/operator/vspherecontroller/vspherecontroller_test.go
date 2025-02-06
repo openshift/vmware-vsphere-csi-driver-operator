@@ -1229,3 +1229,31 @@ func TestEscapeQuotesAndBackslashes(t *testing.T) {
 		})
 	}
 }
+
+func TestEscapeBackslashInUsername(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "The username format: userName@domain",
+			input:    `userName@domain`,
+			expected: `userName@domain`,
+		},
+		{
+			name:     "The username format: domainName\\userName",
+			input:    `domainName\userName`,
+			expected: `domainName\\userName`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := escapeQuotesAndBackslashes(tc.input)
+			if actual != tc.expected {
+				t.Fatalf("escapeQuotesAndBackslashes(%q) = %q; expected %q", tc.input, actual, tc.expected)
+			}
+		})
+	}
+}
