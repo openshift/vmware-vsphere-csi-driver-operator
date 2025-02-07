@@ -39,9 +39,6 @@ github.com/emicklei/go-restful/v3/log
 # github.com/evanphx/json-patch v5.9.0+incompatible
 ## explicit
 github.com/evanphx/json-patch
-# github.com/fatih/color v1.7.0
-## explicit
-github.com/fatih/color
 # github.com/felixge/fgprof v0.9.4
 ## explicit; go 1.14
 github.com/felixge/fgprof
@@ -174,12 +171,6 @@ github.com/kylelemons/godebug/diff
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
-# github.com/mattn/go-colorable v0.1.2
-## explicit
-github.com/mattn/go-colorable
-# github.com/mattn/go-isatty v0.0.8
-## explicit
-github.com/mattn/go-isatty
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 ## explicit
 github.com/modern-go/concurrent
@@ -1467,7 +1458,6 @@ k8s.io/utils/net
 k8s.io/utils/path
 k8s.io/utils/pointer
 k8s.io/utils/ptr
-k8s.io/utils/set
 k8s.io/utils/strings/slices
 k8s.io/utils/trace
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3

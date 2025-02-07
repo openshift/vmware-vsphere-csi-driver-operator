@@ -6,7 +6,6 @@ toolchain go1.22.8
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/fatih/color v1.7.0
 	github.com/google/go-cmp v0.6.0
 	github.com/openshift/api v0.0.0-20241121150700-ec9bf3faa1aa
 	github.com/openshift/build-machinery-go v0.0.0-20240613134303-8359781da660
@@ -68,8 +67,6 @@ require (
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/mattn/go-colorable v0.1.2 // indirect
-	github.com/mattn/go-isatty v0.0.8 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
