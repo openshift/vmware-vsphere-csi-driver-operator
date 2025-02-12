@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
 	"os"
+	"strconv"
 
 	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
@@ -150,6 +152,7 @@ func (c *VSphereController) createCSIDriver() {
 			c.apiClients.ConfigMapInformer,
 		),
 		WithSecretDaemonSetAnnotationHook(driverConfigSecretName, defaultNamespace, c.apiClients.SecretInformer),
+		WithVolumeLimitDaemonSetHook(c.clusterCSIDriverLister),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
@@ -242,6 +245,39 @@ func WithSecretDaemonSetAnnotationHook(secretName, namespace string, secretInfor
 		}
 
 		return addObjectHash(ds, inputHashes)
+	}
+}
+
+// WithVolumeLimitDaemonSetHook adds `MAX_VOLUMES_PER_NODE` to driver node pods based on `MaxAllowedBlockVolumesPerNode` value set in ClusterCSIDriver.
+// If `MaxAllowedBlockVolumesPerNode` is not set, we keep `MAX_VOLUMES_PER_NODE` environment variable in the DaemonSet asset unchanged.
+func WithVolumeLimitDaemonSetHook(clusterCSIDriverLister clustercsidriverlister.ClusterCSIDriverLister) csidrivernodeservicecontroller.DaemonSetHookFunc {
+	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
+		clusterCSIDriver, err := clusterCSIDriverLister.Get(utils.VSphereDriverName)
+		if err != nil {
+			return err
+		}
+		if clusterCSIDriver == nil {
+			return fmt.Errorf("invalid clusterCSIDriver: %v", clusterCSIDriver)
+		}
+		if clusterCSIDriver.Spec.DriverConfig.VSphere != nil {
+			maxVolumesPerNode := clusterCSIDriver.Spec.DriverConfig.VSphere.MaxAllowedBlockVolumesPerNode
+			containers := ds.Spec.Template.Spec.Containers
+			for i := range containers {
+				if containers[i].Name == "csi-driver" {
+					found := false
+					for j := range containers[i].Env {
+						if containers[i].Env[j].Name == "MAX_VOLUMES_PER_NODE" {
+							containers[i].Env[j].Value = strconv.FormatUint(uint64(maxVolumesPerNode), 10)
+							found = true
+						}
+					}
+					if !found {
+						containers[i].Env = append(containers[i].Env, v1.EnvVar{Name: "MAX_VOLUMES_PER_NODE", Value: strconv.FormatUint(uint64(maxVolumesPerNode), 10)})
+					}
+				}
+			}
+		}
+		return nil
 	}
 }
 
