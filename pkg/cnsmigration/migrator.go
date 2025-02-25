@@ -332,7 +332,10 @@ func (c *CNSVolumeMigrator) loginToVCenter(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
 	}
-	vs := vclib.NewVSphereConnection(string(username), string(password), vCenter, config)
+	vs, err := vclib.NewVSphereConnection(string(username), string(password), vCenter, config)
+	if err != nil {
+		return fmt.Errorf("error creating new vsphere connection: %v", err)
+	}
 	c.vSphereConnection = vs
 
 	if err = c.vSphereConnection.Connect(ctx); err != nil {
