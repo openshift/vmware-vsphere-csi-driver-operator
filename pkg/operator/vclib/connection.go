@@ -2,6 +2,7 @@ package vclib
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -71,13 +72,23 @@ func (c *VSphereConfig) LoadConfig(data string) error {
 }
 
 // GetVCenterHostname get the vcenter's hostname.
-func (c *VSphereConfig) GetVCenterHostname(vcenter string) string {
-	return c.Config.VirtualCenter[vcenter].VCenterIP
+func (c *VSphereConfig) GetVCenterHostname(vcenter string) (string, error) {
+	vcenterConfig, ok := c.Config.VirtualCenter[vcenter]
+	if ok {
+		return vcenterConfig.VCenterIP, nil
+	} else {
+		return "", errors.New("vcenter not found")
+	}
 }
 
 // IsInsecure returns true if the vcenter is configured to have an insecure connection.
-func (c *VSphereConfig) IsInsecure(vcenter string) bool {
-	return c.Config.VirtualCenter[vcenter].InsecureFlag
+func (c *VSphereConfig) IsInsecure(vcenter string) (bool, error) {
+	vcenterConfig, ok := c.Config.VirtualCenter[vcenter]
+	if ok {
+		return vcenterConfig.InsecureFlag, nil
+	} else {
+		return true, errors.New("vcenter not found")
+	}
 }
 
 // GetDatacenters gets the datacenters.  Falls back to legacy style ini lookup if vcenter not found in primary config.
@@ -111,14 +122,22 @@ func (c *VSphereConfig) ValidateConfig(featureGates featuregates.FeatureGate) er
 	return nil
 }
 
-func NewVSphereConnection(username, password, vcenter string, cfg *VSphereConfig) *VSphereConnection {
+func NewVSphereConnection(username, password, vcenter string, cfg *VSphereConfig) (*VSphereConnection, error) {
+	hostname, err := cfg.GetVCenterHostname(vcenter)
+	if err != nil {
+		return nil, err
+	}
+	isInsecure, err := cfg.IsInsecure(vcenter)
+	if err != nil {
+		return nil, err
+	}
 	return &VSphereConnection{
 		Username: username,
 		Password: password,
 		Config:   cfg,
-		Hostname: cfg.GetVCenterHostname(vcenter),
-		Insecure: cfg.IsInsecure(vcenter),
-	}
+		Hostname: hostname,
+		Insecure: isInsecure,
+	}, nil
 }
 
 // Connect makes connection to vCenter and sets VSphereConnection.Client.

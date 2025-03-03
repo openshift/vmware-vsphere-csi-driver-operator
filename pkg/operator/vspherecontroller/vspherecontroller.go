@@ -501,7 +501,10 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 			return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
 		}
 
-		vs := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, c.cloudConfig)
+		vs, err := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, c.cloudConfig)
+		if err != nil {
+			return fmt.Errorf("error creating new vsphere connection: %v", err)
+		}
 		c.vSphereConnections = append(c.vSphereConnections, vs)
 	}
 	return nil
