@@ -1,18 +1,6 @@
-/*
-Copyright (c) 2017-2024 VMware, Inc. All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// © Broadcom. All Rights Reserved.
+// The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: Apache-2.0
 
 package simulator
 
@@ -232,11 +220,13 @@ func (*Model) fmtName(prefix string, num int) string {
 
 // kinds maps managed object types to their vcsim wrapper types
 var kinds = map[string]reflect.Type{
+	"Alarm":                              reflect.TypeOf((*Alarm)(nil)).Elem(),
 	"AlarmManager":                       reflect.TypeOf((*AlarmManager)(nil)).Elem(),
 	"AuthorizationManager":               reflect.TypeOf((*AuthorizationManager)(nil)).Elem(),
 	"ClusterComputeResource":             reflect.TypeOf((*ClusterComputeResource)(nil)).Elem(),
 	"CustomFieldsManager":                reflect.TypeOf((*CustomFieldsManager)(nil)).Elem(),
 	"CustomizationSpecManager":           reflect.TypeOf((*CustomizationSpecManager)(nil)).Elem(),
+	"CryptoManagerKmip":                  reflect.TypeOf((*CryptoManagerKmip)(nil)).Elem(),
 	"Datacenter":                         reflect.TypeOf((*Datacenter)(nil)).Elem(),
 	"Datastore":                          reflect.TypeOf((*Datastore)(nil)).Elem(),
 	"DatastoreNamespaceManager":          reflect.TypeOf((*DatastoreNamespaceManager)(nil)).Elem(),
@@ -256,6 +246,7 @@ var kinds = map[string]reflect.Type{
 	"HostSystem":                         reflect.TypeOf((*HostSystem)(nil)).Elem(),
 	"IpPoolManager":                      reflect.TypeOf((*IpPoolManager)(nil)).Elem(),
 	"LicenseManager":                     reflect.TypeOf((*LicenseManager)(nil)).Elem(),
+	"LicenseAssignmentManager":           reflect.TypeOf((*LicenseAssignmentManager)(nil)).Elem(),
 	"OptionManager":                      reflect.TypeOf((*OptionManager)(nil)).Elem(),
 	"OvfManager":                         reflect.TypeOf((*OvfManager)(nil)).Elem(),
 	"PerformanceManager":                 reflect.TypeOf((*PerformanceManager)(nil)).Elem(),
