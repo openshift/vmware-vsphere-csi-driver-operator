@@ -41,7 +41,9 @@ var (
 type HostSystem struct {
 	mo.HostSystem
 
-	sh *simHost
+	sh  *simHost
+	mme *ManagedMethodExecuter
+	dtm *DynamicTypeManager
 
 	types.QueryTpmAttestationReportResponse
 }
@@ -595,8 +597,14 @@ func (h *HostSystem) ReconnectHostTask(ctx *Context, spec *types.ReconnectHost_T
 	}
 }
 
-func (s *HostSystem) QueryTpmAttestationReport(req *types.QueryTpmAttestationReport) soap.HasFault {
-	return &methods.QueryTpmAttestationReportBody{
-		Res: &s.QueryTpmAttestationReportResponse,
+func (s *HostSystem) QueryTpmAttestationReport(ctx *Context, req *types.QueryTpmAttestationReport) soap.HasFault {
+	body := new(methods.QueryTpmAttestationReportBody)
+
+	if ctx.Map.IsVPX() {
+		body.Res = &s.QueryTpmAttestationReportResponse
+	} else {
+		body.Fault_ = Fault("", new(types.NotSupported))
 	}
+
+	return body
 }
