@@ -72,6 +72,7 @@ func newStorageClassController(apiClients *utils.APIClient, storageclassfile str
 			recorder:             rc,
 			makeStoragePolicyAPI: spFunc,
 			scStateEvaluator:     evaluator,
+			connPolicyNames:      make(map[string]string),
 		},
 	}
 
