@@ -19,12 +19,13 @@ import (
 )
 
 const (
-	nodeCheckTimeout          = 5 * time.Minute
-	hardwareVersionPrefix     = "vmx-"
-	minHardwareVersion        = 15
-	minRequiredHostVersion    = "6.7.3"
-	minUpgradeableHostVersion = "7.0.2"
-	workerCount               = 10
+	nodeCheckTimeout                           = 5 * time.Minute
+	hardwareVersionPrefix                      = "vmx-"
+	minHardwareVersion                         = 15
+	minRequiredHostVersion                     = "6.7.3"
+	minRequiredHostVersionForIncreasedVolLimit = "8.0.0"
+	minUpgradeableHostVersion                  = "7.0.2"
+	workerCount                                = 10
 )
 
 var (
@@ -168,6 +169,23 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 	if !hasUpgradeableMinimum {
 		reason := fmt.Errorf("host %s is on ESXI version %s, which is below minimum required version %s for cluster upgrade", hostName, hostAPIVersion, minUpgradeableHostVersion)
 		return MakeClusterUnupgradeableError(CheckStatusDeprecatedESXIVersion, reason)
+	}
+
+	// Check for maxAllowedBlockVolumesPerNode and degrade if host is not on minimal required ESXI version
+	clusterCSIDriver, err := n.ClusterCSIDriverLister.Get(utils.VSphereDriverName)
+	if err != nil {
+		klog.Errorf("failed to get ClusterCSIDriver: %s", err)
+	}
+	currentMaxVolumesPerNode := utils.GetMaxVolumesPerNode(clusterCSIDriver)
+	if currentMaxVolumesPerNode > utils.MaxVolumesPerNodeVSphere7 {
+		hasRequiredMinimumForVolumesPerNode, err := utils.IsMinimumVersion(minRequiredHostVersionForIncreasedVolLimit, hostAPIVersion)
+		if err != nil {
+			klog.Errorf("error parsing host version for node %s and host %s: %v", node.Name, hostName, err)
+		}
+		if !hasRequiredMinimumForVolumesPerNode {
+			reason := fmt.Errorf("host %s is on ESXI version %s, which is below minimum required version %s for maxAllowedBlockVolumesPerNode set in clusterCSIDriver", hostName, hostAPIVersion, minRequiredHostVersionForIncreasedVolLimit)
+			return MakeClusterDegradedError(CheckStatusBlockVolumeLimitError, reason)
+		}
 	}
 
 	return MakeClusterCheckResultPass()
