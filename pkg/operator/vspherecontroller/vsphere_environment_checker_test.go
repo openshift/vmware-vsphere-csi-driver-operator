@@ -94,7 +94,7 @@ func TestEnvironmentCheck(t *testing.T) {
 			workingDir, _ := os.Getwd()
 			t.Logf("working directory is: %s", workingDir)
 
-			checker := newVSphereEnvironmentChecker()
+			checker := newVSphereEnvironmentChecker(commonApiClient.ClusterCSIDriverInformer.Lister())
 			connections, cleanUpFunc, connError := testlib.SetupSimulator(testlib.DefaultModel, test.infra)
 			if connError != nil {
 				t.Fatalf("unexpected error while connecting to simulator: %v", connError)

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	opv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -37,13 +38,13 @@ type nodeChannelWorkData struct {
 }
 
 type NodeChecker struct {
-	hostESXIVersions map[string]bool
-	wg               sync.WaitGroup
-	esxiVersionLock  sync.RWMutex
-
-	results     []ClusterCheckResult
-	resultLock  sync.RWMutex
-	workChannel chan nodeChannelWorkData
+	hostESXIVersions       map[string]bool
+	wg                     sync.WaitGroup
+	esxiVersionLock        sync.RWMutex
+	ClusterCSIDriverLister opv1.ClusterCSIDriverLister
+	results                []ClusterCheckResult
+	resultLock             sync.RWMutex
+	workChannel            chan nodeChannelWorkData
 }
 
 var _ CheckInterface = &NodeChecker{}
