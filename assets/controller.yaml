@@ -92,6 +92,8 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
         - name: driver-kube-rbac-proxy
           args:
@@ -112,6 +114,8 @@ spec:
             requests:
               memory: 20Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
           - mountPath: /etc/tls/private
             name: metrics-serving-cert
@@ -144,6 +148,8 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           # kube-rbac-proxy for external-provisioner container.
           # Provides https proxy for http-based external-provisioner metrics.
           terminationMessagePolicy: FallbackToLogsOnError
@@ -166,6 +172,8 @@ spec:
             requests:
               memory: 20Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
           - mountPath: /etc/tls/private
             name: metrics-serving-cert
@@ -193,6 +201,8 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
         - name: attacher-kube-rbac-proxy
           args:
@@ -213,6 +223,8 @@ spec:
             requests:
               memory: 20Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
           - mountPath: /etc/tls/private
             name: metrics-serving-cert
@@ -239,6 +251,8 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
         - name: resizer-kube-rbac-proxy
           args:
@@ -259,6 +273,8 @@ spec:
             requests:
               memory: 20Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
           - mountPath: /etc/tls/private
             name: metrics-serving-cert
@@ -286,6 +302,8 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
         - name: snapshotter-kube-rbac-proxy
           args:
@@ -306,6 +324,8 @@ spec:
             requests:
               memory: 20Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
           - mountPath: /etc/tls/private
             name: metrics-serving-cert
@@ -328,6 +348,8 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
         - name: vsphere-syncer
           image: ${VMWARE_VSPHERE_SYNCER_IMAGE}
@@ -357,6 +379,8 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           terminationMessagePolicy: FallbackToLogsOnError
         - name: syncer-kube-rbac-proxy
           args:
@@ -377,6 +401,8 @@ spec:
             requests:
               memory: 20Mi
               cpu: 10m
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
           - mountPath: /etc/tls/private
             name: metrics-serving-cert
