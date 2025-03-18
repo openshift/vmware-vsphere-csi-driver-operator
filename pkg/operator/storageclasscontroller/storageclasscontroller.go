@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 
-	"github.com/openshift/api/features"
 	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	csiscc "github.com/openshift/library-go/pkg/operator/csi/csistorageclasscontroller"
@@ -63,10 +62,11 @@ type AbstractStorageClass struct {
 	makeStoragePolicyAPI func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface
 	scStateEvaluator     *csiscc.StorageClassStateEvaluator
 
-	policyName string
-	backoff    wait.Backoff
-	nextCheck  time.Time
-	lastCheck  time.Time
+	policyName      string
+	connPolicyNames map[string]string // Key is vcenter name, value is policy name
+	backoff         wait.Backoff
+	nextCheck       time.Time
+	lastCheck       time.Time
 }
 
 type StorageClassController struct{ AbstractStorageClass }
@@ -107,14 +107,10 @@ func NewStorageClassController(
 		scStateEvaluator:     evaluator,
 		backoff:              defaultBackoff,
 		nextCheck:            time.Now(),
+		connPolicyNames:      make(map[string]string),
 	}
-	if featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
-		klog.V(2).Infof("Creating multi vcenter storage class controller")
-		c = makeMultiVCenterStorageClassController(scc)
-	} else {
-		klog.V(2).Infof("Creating single vcenter storage class controller")
-		c = makeStorageClassController(scc)
-	}
+
+	c = makeStorageClassController(scc)
 
 	return c
 }
@@ -124,16 +120,20 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 		sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
 		scState := c.scStateEvaluator.GetStorageClassState(sc.Provisioner)
 
-		// This storage class controller only handles single vCenter.  It will only use the first connection (there should never be
-		// more than 1)
-		policyName, syncResult := c.syncStoragePolicy(ctx, connections[0], apiDeps, scState)
-		if syncResult.CheckError != nil {
-			klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
-			clusterCondition := "storage_class_sync_failed"
-			utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
-			return syncResult, checks.ClusterCheckAllGood
+		// Iterate through each vcenter connection for storage policy.
+		for _, connection := range connections {
+			klog.V(4).Infof("Syncing %v", connection.Hostname)
+			policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps, scState)
+			if syncResult.CheckError != nil {
+				klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
+				clusterCondition := "storage_class_sync_failed"
+				utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
+				return syncResult, checks.ClusterCheckAllGood
+			}
+			klog.V(4).Infof("Synced policy %v", policyName)
+			c.connPolicyNames[connection.Hostname] = policyName
+			c.policyName = policyName // This is the global name of policy.  may need to make it more logical to not set in loop.
 		}
-		c.policyName = policyName
 
 		err := c.syncStorageClass(ctx, scState)
 		if err != nil {
@@ -157,14 +157,15 @@ func (c *AbstractStorageClass) SyncRemove(ctx context.Context) error {
 func (c *AbstractStorageClass) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
 	// if the SC is not managed, there is no need to sync the storage policy
 	if !c.scStateEvaluator.IsManaged(scState) {
+		klog.V(2).Info("sc is not managed")
 		return "", checks.MakeClusterCheckResultPass()
 	}
 
 	// if we are running the checks after creating the policy successfully
 	// then lets run checks less frequently.
-	if !time.Now().After(c.nextCheck) && len(c.policyName) > 0 {
+	if !time.Now().After(c.nextCheck) && len(c.connPolicyNames[connection.Hostname]) > 0 {
 		klog.V(4).Infof("Returning without running any checks")
-		return c.policyName, checks.MakeClusterCheckResultPass()
+		return c.connPolicyNames[connection.Hostname], checks.MakeClusterCheckResultPass()
 	}
 
 	infra := apiDeps.GetInfrastructure()
