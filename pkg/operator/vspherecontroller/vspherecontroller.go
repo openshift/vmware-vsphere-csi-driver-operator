@@ -131,7 +131,7 @@ func NewVSphereController(
 		nodeLister:              nodeLister,
 		apiClients:              apiClients,
 		eventRecorder:           rc,
-		vSphereChecker:          newVSphereEnvironmentChecker(),
+		vSphereChecker:          newVSphereEnvironmentChecker(apiClients.ClusterCSIDriverInformer.Lister()),
 		secretManifest:          secretManifest,
 		csiConfigManifest:       csiConfigManifest,
 		clusterCSIDriverLister:  apiClients.ClusterCSIDriverInformer.Lister(),

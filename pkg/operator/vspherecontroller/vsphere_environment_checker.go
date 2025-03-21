@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	opv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -37,7 +38,7 @@ type vSphereEnvironmentCheckerComposite struct {
 // make sure that vSphereEnvironmentCheckerComposite implements the vSphereEnvironmentCheckInterface
 var _ vSphereEnvironmentCheckInterface = &vSphereEnvironmentCheckerComposite{}
 
-func newVSphereEnvironmentChecker() *vSphereEnvironmentCheckerComposite {
+func newVSphereEnvironmentChecker(clusterCSIDriverLister opv1.ClusterCSIDriverLister) *vSphereEnvironmentCheckerComposite {
 	checker := &vSphereEnvironmentCheckerComposite{
 		backoff:   defaultBackoff,
 		nextCheck: time.Now(),
@@ -45,7 +46,9 @@ func newVSphereEnvironmentChecker() *vSphereEnvironmentCheckerComposite {
 	checker.checkers = []checks.CheckInterface{
 		&checks.CheckExistingDriver{},
 		&checks.VCenterChecker{},
-		&checks.NodeChecker{},
+		&checks.NodeChecker{
+			ClusterCSIDriverLister: clusterCSIDriverLister,
+		},
 	}
 	return checker
 }

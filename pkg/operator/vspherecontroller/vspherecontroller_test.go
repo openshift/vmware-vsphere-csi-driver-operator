@@ -67,7 +67,7 @@ func newVsphereControllerWithGates(apiClients *utils.APIClient, gates featuregat
 		apiClients:             *apiClients,
 		clusterCSIDriverLister: apiClients.ClusterCSIDriverInformer.Lister(),
 		eventRecorder:          rc,
-		vSphereChecker:         newVSphereEnvironmentChecker(),
+		vSphereChecker:         newVSphereEnvironmentChecker(apiClients.ClusterCSIDriverInformer.Lister()),
 		infraLister:            infraInformer.Lister(),
 		featureGates:           gates,
 	}

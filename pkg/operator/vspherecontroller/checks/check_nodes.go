@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	opv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -18,12 +19,14 @@ import (
 )
 
 const (
-	nodeCheckTimeout          = 5 * time.Minute
-	hardwareVersionPrefix     = "vmx-"
-	minHardwareVersion        = 15
-	minRequiredHostVersion    = "6.7.3"
-	minUpgradeableHostVersion = "7.0.2"
-	workerCount               = 10
+	nodeCheckTimeout                           = 5 * time.Minute
+	hardwareVersionPrefix                      = "vmx-"
+	minHardwareVersion                         = 15
+	minRequiredHostVersion                     = "6.7.3"
+	minRequiredHostVersionForIncreasedVolLimit = "8.0.0"
+	minUpgradeableHostVersion                  = "7.0.2"
+	workerCount                                = 10
+	maxVolumesPerNodeVSphere7                  = 59
 )
 
 var (
@@ -37,13 +40,13 @@ type nodeChannelWorkData struct {
 }
 
 type NodeChecker struct {
-	hostESXIVersions map[string]bool
-	wg               sync.WaitGroup
-	esxiVersionLock  sync.RWMutex
-
-	results     []ClusterCheckResult
-	resultLock  sync.RWMutex
-	workChannel chan nodeChannelWorkData
+	hostESXIVersions       map[string]bool
+	wg                     sync.WaitGroup
+	esxiVersionLock        sync.RWMutex
+	ClusterCSIDriverLister opv1.ClusterCSIDriverLister
+	results                []ClusterCheckResult
+	resultLock             sync.RWMutex
+	workChannel            chan nodeChannelWorkData
 }
 
 var _ CheckInterface = &NodeChecker{}
@@ -169,6 +172,22 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 		return MakeClusterUnupgradeableError(CheckStatusDeprecatedESXIVersion, reason)
 	}
 
+	// check for maxAllowedBlockVolumesPerNode and degrade if host is not on minimal required ESXI version
+	currentMaxVolumesPerNode, err := n.getMaxVolumeLimit()
+	if err != nil {
+		klog.Errorf("error getting max volume limit: %v", err)
+	}
+	if currentMaxVolumesPerNode > maxVolumesPerNodeVSphere7 {
+		hasRequiredMinimumForVolumesPerNode, err := utils.IsMinimumVersion(minRequiredHostVersionForIncreasedVolLimit, hostAPIVersion)
+		if err != nil {
+			klog.Errorf("error parsing host version for node %s and host %s: %v", node.Name, hostName, err)
+		}
+		if !hasRequiredMinimumForVolumesPerNode {
+			reason := fmt.Errorf("host %s is on ESXI version %s, which is below minimum required version %s for maxAllowedBlockVolumesPerNode set in clusterCSIDriver", hostName, hostAPIVersion, minRequiredHostVersionForIncreasedVolLimit)
+			return MakeClusterDegradedError(CheckStatusBlockVolumeLimitError, reason)
+		}
+	}
+
 	return MakeClusterCheckResultPass()
 }
 
@@ -240,6 +259,23 @@ func (n *NodeChecker) getHost(ctx context.Context, checkOpts CheckArgs, hostRef 
 		return o, fmt.Errorf("error getting ESXi host version %s: host.config is nil", hostName)
 	}
 	return o, nil
+}
+
+func (n *NodeChecker) getMaxVolumeLimit() (int, error) {
+	maxVolumesPerNode := maxVolumesPerNodeVSphere7
+
+	// Get ClusterCSIDriver object
+	clusterCSIDriver, err := n.ClusterCSIDriverLister.Get(utils.VSphereDriverName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get ClusterCSIDriver: %v", err)
+	}
+
+	// Check if a custom value is set in the ClusterCSIDriver
+	if clusterCSIDriver != nil && clusterCSIDriver.Spec.DriverConfig.VSphere != nil {
+		maxVolumesPerNode = int(clusterCSIDriver.Spec.DriverConfig.VSphere.MaxAllowedBlockVolumesPerNode)
+	}
+
+	return maxVolumesPerNode, nil
 }
 
 func getVM(ctx context.Context, checkOpts CheckArgs, node *v1.Node) (*mo.VirtualMachine, error) {
