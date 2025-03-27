@@ -1,4 +1,3 @@
-# TODO: make sure this is the ideal configuration
 StorageClass:
   FromExistingClassName: thin-csi
 SnapshotClass:
@@ -13,6 +12,7 @@ DriverInfo:
   SupportedSizeRange:
     Min: 1Gi
     Max: 64Ti
+  TopologyKeys: ["topology.csi.vmware.com/openshift-zone"]
   Capabilities:
     persistence: true
     fsGroup: true
@@ -22,6 +22,7 @@ DriverInfo:
     controllerExpansion: true
     nodeExpansion: true
     snapshotDataSource: false
+    topology: true
     multipods: false
     multiplePVsSameID: false
     readWriteOncePod: true
