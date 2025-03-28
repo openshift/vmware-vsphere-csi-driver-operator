@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/api/features"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
 	"github.com/vmware/govmomi/cns"
@@ -116,9 +115,7 @@ func (c *VSphereConfig) GetDefaultDatastore() string {
 
 // ValidateConfig validates if current loaded config is valid.
 func (c *VSphereConfig) ValidateConfig(featureGates featuregates.FeatureGate) error {
-	if len(c.Config.VirtualCenter) > 1 && !featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
-		return fmt.Errorf("cloud config must define a single VirtualCenter")
-	}
+	// Future feature gate check logic should go here.  Currently empty due to removal of multi vcenter feature gate.
 	return nil
 }
 

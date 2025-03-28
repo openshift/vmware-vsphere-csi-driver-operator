@@ -17,7 +17,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	ocpv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	operatorapi "github.com/openshift/api/operator/v1"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
@@ -814,10 +813,6 @@ func getUserAndPassword(namespace string, secretName string, vcenter string, inf
 	// }
 	// So we need to figure those keys out
 	var usernameKey, passwordKey string
-
-	if len(secret.Data) > 2 && !featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
-		klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
-	}
 
 	usernameKey = vcenter + ".username"
 	passwordKey = vcenter + ".password"

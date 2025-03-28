@@ -8,7 +8,6 @@ import (
 	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
 	opv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -31,7 +30,7 @@ const (
 )
 
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
-	gates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters})
+	gates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"})
 	return newVsphereControllerWithGates(apiClients, gates)
 }
 
@@ -791,7 +790,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 }
 
 func TestApplyClusterCSIDriver(t *testing.T) {
-	multiVCenterGateDisabled := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters})
+	multiVCenterGateDisabled := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"})
 
 	tests := []struct {
 		name                  string
@@ -828,28 +827,12 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			checkMigrationURL: true,
 		},
 		{
-			name:             "when configuration has more than one vcenter",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			configFileName:   "multiple_vc.ini",
-			secretData:       testlib.GetDCSecret(),
-			expectError:      true,
-		},
-		{
 			name:             "when configuration has more than one vcenter yaml",
 			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
 			operatorObj:      testlib.MakeFakeDriverInstance(),
 			configFileName:   "multiple_vc.yaml",
 			secretData:       testlib.GetMultiVCSecret(),
-			expectError:      true,
-		},
-		{
-			name:             "when configuration has more than one vcenter yaml gate enabled",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			configFileName:   "multiple_vc.yaml",
-			secretData:       testlib.GetMultiVCSecret(),
-			featureGates:     featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereMultiVCenters}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
+			featureGates:     featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
 			expectedDatacenterMap: map[string]string{
 				"foobar.lan": "Datacenter",
 				"foobaz.lan": "Datacenterb",
