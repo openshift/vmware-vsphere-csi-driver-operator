@@ -98,6 +98,9 @@ func (c *VSphereConfig) GetDatacenters(vcenter string) ([]string, error) {
 		datacenters = strings.Split(c.Config.VirtualCenter[vcenter].Datacenters, ",")
 	} else {
 		// If here, then legacy config may be in use.
+		if c.LegacyConfig == nil {
+			return nil, errors.New("legacy config not found")
+		}
 		datacenters = []string{c.LegacyConfig.Workspace.Datacenter}
 	}
 	klog.V(2).Infof("Gathered the following data centers: %v", datacenters)
@@ -105,13 +108,19 @@ func (c *VSphereConfig) GetDatacenters(vcenter string) ([]string, error) {
 }
 
 // GetWorkspaceDatacenter get the legacy datacenter from workspace config.
-func (c *VSphereConfig) GetWorkspaceDatacenter() string {
-	return c.LegacyConfig.Workspace.Datacenter
+func (c *VSphereConfig) GetWorkspaceDatacenter() (string, error) {
+	if c.LegacyConfig == nil {
+		return "", errors.New("legacy config not found")
+	}
+	return c.LegacyConfig.Workspace.Datacenter, nil
 }
 
 // GetDefaultDatastore get the default datastore.  This is primarily used with legacy ini config.
-func (c *VSphereConfig) GetDefaultDatastore() string {
-	return c.LegacyConfig.Workspace.DefaultDatastore
+func (c *VSphereConfig) GetDefaultDatastore() (string, error) {
+	if c.LegacyConfig == nil {
+		return "", errors.New("legacy config not found")
+	}
+	return c.LegacyConfig.Workspace.DefaultDatastore, nil
 }
 
 // ValidateConfig validates if current loaded config is valid.
@@ -247,7 +256,7 @@ func (connection *VSphereConnection) VimClient() *vim25.Client {
 
 // Return default datacenter configured in Config
 // TODO: Do we need to setup and handle multiple datacenters?
-func (connection *VSphereConnection) DefaultDatacenter() string {
+func (connection *VSphereConnection) DefaultDatacenter() (string, error) {
 	return connection.Config.GetWorkspaceDatacenter()
 }
 

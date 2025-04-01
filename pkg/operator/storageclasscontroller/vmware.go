@@ -101,11 +101,17 @@ func (v *storagePolicyAPI) GetDefaultDatastore(ctx context.Context, infra *v1.In
 		dcName = v.failureDomains[0].Topology.Datacenter
 		dsName = v.failureDomains[0].Topology.Datastore
 	} else {
-		if config != nil {
-			dcName = config.GetWorkspaceDatacenter()
-			dsName = config.GetDefaultDatastore()
-		} else {
+		if config == nil {
 			return nil, fmt.Errorf("unable to determine default datastore from current config")
+		}
+		var err error
+		dcName, err = config.GetWorkspaceDatacenter()
+		if err != nil {
+			return nil, fmt.Errorf("unable to determine default datacenter from current config: %v", err)
+		}
+		dsName, err = config.GetDefaultDatastore()
+		if err != nil {
+			return nil, fmt.Errorf("unable to determine default datastore from current config: %v", err)
 		}
 	}
 	dc, err := finder.Datacenter(ctx, dcName)
