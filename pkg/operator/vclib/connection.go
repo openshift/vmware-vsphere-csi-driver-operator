@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openshift/api/features"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/version"
 	"github.com/vmware/govmomi/cns"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -112,14 +110,6 @@ func (c *VSphereConfig) GetWorkspaceDatacenter() string {
 // GetDefaultDatastore get the default datastore.  This is primarily used with legacy ini config.
 func (c *VSphereConfig) GetDefaultDatastore() string {
 	return c.LegacyConfig.Workspace.DefaultDatastore
-}
-
-// ValidateConfig validates if current loaded config is valid.
-func (c *VSphereConfig) ValidateConfig(featureGates featuregates.FeatureGate) error {
-	if len(c.Config.VirtualCenter) > 1 && !featureGates.Enabled(features.FeatureGateVSphereMultiVCenters) {
-		return fmt.Errorf("cloud config must define a single VirtualCenter")
-	}
-	return nil
 }
 
 func NewVSphereConnection(username, password, vcenter string, cfg *VSphereConfig) (*VSphereConnection, error) {

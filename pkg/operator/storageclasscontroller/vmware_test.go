@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	v1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/features"
-	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"testing"
@@ -140,7 +138,6 @@ func TestZonalPolicyCreation(t *testing.T) {
 		name                 string
 		infra                *v1.Infrastructure
 		expectedApiCallCount map[string]int
-		featureGates         featuregates.FeatureGate
 	}{
 		{
 			name:  "when there multiple failure domains exist",
@@ -152,7 +149,6 @@ func TestZonalPolicyCreation(t *testing.T) {
 				attach_tag_api:      2,
 				create_profile_api:  1,
 			},
-			featureGates: featuregates.NewFeatureGate([]v1.FeatureGateName{"SomeEnabledFeatureGate"}, []v1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters}),
 		},
 		{
 			name:  "when one failure domain exists",
@@ -163,7 +159,6 @@ func TestZonalPolicyCreation(t *testing.T) {
 				attach_tag_api:      1,
 				create_profile_api:  1,
 			},
-			featureGates: featuregates.NewFeatureGate([]v1.FeatureGateName{"SomeEnabledFeatureGate"}, []v1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters}),
 		},
 		{
 			name:  "when multiple failure domain exists across multiple vcenters",
@@ -174,7 +169,6 @@ func TestZonalPolicyCreation(t *testing.T) {
 				attach_tag_api:      1,
 				create_profile_api:  1,
 			},
-			featureGates: featuregates.NewFeatureGate([]v1.FeatureGateName{"SomeEnabledFeatureGate"}, []v1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters}),
 		},
 	}
 
