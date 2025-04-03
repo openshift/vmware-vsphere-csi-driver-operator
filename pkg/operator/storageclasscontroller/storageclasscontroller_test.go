@@ -82,13 +82,15 @@ func getCheckAPIDependency(apiClients *utils.APIClient) checks.KubeAPIInterface 
 	kubeInformers := apiClients.KubeInformers
 
 	csiDriverLister := kubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
+	clusterCSIDriverLister := apiClients.ClusterCSIDriverInformer.Lister()
 	csiNodeLister := kubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
 	nodeLister := apiClients.NodeInformer.Lister()
 	i := &checks.KubeAPIInterfaceImpl{
-		Infrastructure:  testlib.GetInfraObject(),
-		CSINodeLister:   csiNodeLister,
-		CSIDriverLister: csiDriverLister,
-		NodeLister:      nodeLister,
+		Infrastructure:         testlib.GetInfraObject(),
+		CSINodeLister:          csiNodeLister,
+		CSIDriverLister:        csiDriverLister,
+		ClusterCSIDriverLister: clusterCSIDriverLister,
+		NodeLister:             nodeLister,
 	}
 
 	return i

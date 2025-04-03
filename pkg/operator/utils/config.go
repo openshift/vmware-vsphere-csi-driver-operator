@@ -12,6 +12,17 @@ func addOption(options map[string]string, name string, intValue *uint32) {
 	options[name] = strconv.FormatUint(uint64(*intValue), 10)
 }
 
+func GetMaxVolumesPerNode(clusterCSIDriver *opv1.ClusterCSIDriver) int {
+	maxVolumesPerNode := MaxVolumesPerNodeVSphere7
+
+	if clusterCSIDriver != nil && clusterCSIDriver.Spec.DriverConfig.VSphere != nil &&
+		clusterCSIDriver.Spec.DriverConfig.VSphere.MaxAllowedBlockVolumesPerNode > 0 {
+		maxVolumesPerNode = int(clusterCSIDriver.Spec.DriverConfig.VSphere.MaxAllowedBlockVolumesPerNode)
+	}
+
+	return maxVolumesPerNode
+}
+
 func GetSnapshotOptions(clusterCSIDriver *opv1.ClusterCSIDriver) map[string]string {
 	snapshotOptions := map[string]string{}
 	if clusterCSIDriver == nil || clusterCSIDriver.Spec.DriverConfig.VSphere == nil {
