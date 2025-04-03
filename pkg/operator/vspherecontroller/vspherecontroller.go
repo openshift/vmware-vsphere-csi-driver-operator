@@ -431,10 +431,11 @@ func (c *VSphereController) runClusterCheck(ctx context.Context, infra *ocpv1.In
 
 func (c *VSphereController) getCheckAPIDependency(infra *ocpv1.Infrastructure) checks.KubeAPIInterface {
 	checkerApiClient := &checks.KubeAPIInterfaceImpl{
-		Infrastructure:  infra,
-		CSINodeLister:   c.csiNodeLister,
-		CSIDriverLister: c.csiDriverLister,
-		NodeLister:      c.nodeLister,
+		Infrastructure:         infra,
+		CSINodeLister:          c.csiNodeLister,
+		CSIDriverLister:        c.csiDriverLister,
+		ClusterCSIDriverLister: c.clusterCSIDriverLister,
+		NodeLister:             c.nodeLister,
 	}
 	return checkerApiClient
 }
