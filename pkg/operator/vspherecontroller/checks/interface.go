@@ -9,12 +9,14 @@ import (
 type CheckArgs struct {
 	vmConnection []*check.VSphereConnection
 	apiClient    KubeAPIInterface
+	featureGate  featuregates.FeatureGate
 }
 
 func NewCheckArgs(connection []*check.VSphereConnection, apiClient KubeAPIInterface, gates featuregates.FeatureGate) CheckArgs {
 	return CheckArgs{
 		vmConnection: connection,
 		apiClient:    apiClient,
+		featureGate:  gates,
 	}
 }
 
