@@ -20,6 +20,7 @@ const (
 	CheckStatusDeprecatedESXIVersion   CheckStatusType = "check_deprecated_esxi_version"
 	CheckStatusVcenterAPIError         CheckStatusType = "vcenter_api_error"
 	CheckStatusGenericError            CheckStatusType = "generic_error"
+	CheckStatusBlockVolumeLimitError   CheckStatusType = "block_volume_limit_error"
 )
 
 type ClusterCheckStatus string

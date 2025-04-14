@@ -115,14 +115,16 @@ func TestEnvironmentCheck(t *testing.T) {
 				}
 			}
 			csiDriverLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSIDrivers().Lister()
+			clusterCSIDriverLister := commonApiClient.ClusterCSIDriverInformer.Lister()
 			csiNodeLister := commonApiClient.KubeInformers.InformersFor("").Storage().V1().CSINodes().Lister()
 			nodeLister := commonApiClient.NodeInformer.Lister()
 
 			checkerApiClient := &checks.KubeAPIInterfaceImpl{
-				Infrastructure:  testlib.GetInfraObject(),
-				CSINodeLister:   csiNodeLister,
-				CSIDriverLister: csiDriverLister,
-				NodeLister:      nodeLister,
+				Infrastructure:         testlib.GetInfraObject(),
+				CSINodeLister:          csiNodeLister,
+				CSIDriverLister:        csiDriverLister,
+				ClusterCSIDriverLister: clusterCSIDriverLister,
+				NodeLister:             nodeLister,
 			}
 
 			fg := featuregates.NewFeatureGate([]v1.FeatureGateName{}, []v1.FeatureGateName{})

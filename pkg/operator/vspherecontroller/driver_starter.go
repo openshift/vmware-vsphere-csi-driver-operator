@@ -4,13 +4,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/openshift/api/features"
 	"os"
+	"strconv"
 
 	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/csi/csicontrollerset"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivercontrollerservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivernodeservicecontroller"
@@ -23,6 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1informers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/klog/v2"
+
+	operatorlistersv1 "github.com/openshift/client-go/operator/listers/operator/v1"
 )
 
 func (c *VSphereController) createCSIDriver() {
@@ -150,6 +155,7 @@ func (c *VSphereController) createCSIDriver() {
 			c.apiClients.ConfigMapInformer,
 		),
 		WithSecretDaemonSetAnnotationHook(driverConfigSecretName, defaultNamespace, c.apiClients.SecretInformer),
+		WithMaxVolumesPerNodeDaemonSetHook(c.apiClients.ClusterCSIDriverInformer.Lister(), c.featureGates),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
@@ -323,4 +329,47 @@ func getOperatorSyncState(operatorClient v1helpers.OperatorClientWithFinalizers)
 		klog.Infof("Operator is not managed, the management state is %v", opSpec.ManagementState)
 	}
 	return opSpec.ManagementState
+}
+
+// WithMaxVolumesPerNodeDaemonSetHook sets the MAX_VOLUMES_PER_NODE environment variable in the DaemonSet container specifications.
+func WithMaxVolumesPerNodeDaemonSetHook(clusterCSIDriverLister operatorlistersv1.ClusterCSIDriverLister, featureGate featuregates.FeatureGate) csidrivernodeservicecontroller.DaemonSetHookFunc {
+	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
+		if !featureGate.Enabled(features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode) {
+			return nil
+		}
+
+		// Get ClusterCSIDriver object
+		clusterCSIDriver, err := clusterCSIDriverLister.Get(utils.VSphereDriverName)
+		if err != nil {
+			return fmt.Errorf("failed to get ClusterCSIDriver: %v", err)
+		}
+
+		// Get the maximum volume limit
+		maxVolumesPerNode := utils.GetMaxVolumesPerNode(clusterCSIDriver)
+
+		// Set the environment variable in all containers
+		containers := ds.Spec.Template.Spec.Containers
+		for i := range containers {
+			container := &containers[i]
+
+			// Find and update existing MAX_VOLUMES_PER_NODE env var if it exists
+			envVarFound := false
+			for j := range container.Env {
+				if container.Env[j].Name == "MAX_VOLUMES_PER_NODE" {
+					container.Env[j].Value = strconv.FormatInt(int64(maxVolumesPerNode), 10)
+					envVarFound = true
+					break
+				}
+			}
+
+			// If not found, append it
+			if !envVarFound {
+				container.Env = append(container.Env, v1.EnvVar{
+					Name:  "MAX_VOLUMES_PER_NODE",
+					Value: strconv.FormatInt(int64(maxVolumesPerNode), 10),
+				})
+			}
+		}
+		return nil
+	}
 }
