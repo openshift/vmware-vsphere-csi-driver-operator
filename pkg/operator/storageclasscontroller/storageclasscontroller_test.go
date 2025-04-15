@@ -62,17 +62,16 @@ func newStorageClassController(apiClients *utils.APIClient, storageclassfile str
 	)
 
 	c := &StorageClassController{
-		AbstractStorageClass{
-			name:                 testScControllerName,
-			targetNamespace:      testScControllerNamespace,
-			manifest:             scBytes,
-			kubeClient:           apiClients.KubeClient,
-			operatorClient:       apiClients.OperatorClient,
-			storageClassLister:   apiClients.KubeInformers.InformersFor("").Storage().V1().StorageClasses().Lister(),
-			recorder:             rc,
-			makeStoragePolicyAPI: spFunc,
-			scStateEvaluator:     evaluator,
-		},
+		name:                 testScControllerName,
+		targetNamespace:      testScControllerNamespace,
+		manifest:             scBytes,
+		kubeClient:           apiClients.KubeClient,
+		operatorClient:       apiClients.OperatorClient,
+		storageClassLister:   apiClients.KubeInformers.InformersFor("").Storage().V1().StorageClasses().Lister(),
+		recorder:             rc,
+		makeStoragePolicyAPI: spFunc,
+		scStateEvaluator:     evaluator,
+		vCenterStoragePolicy: make(map[string]string),
 	}
 
 	return c
@@ -233,7 +232,7 @@ func TestSyncMultiple(t *testing.T) {
 
 			// err will be nil on even on failure, need to check conditions instead
 			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), &conn, apiDeps, opv1.ManagedStorageClass)
-			scController.policyName = policyName
+			scController.sharedPolicyName = policyName
 
 			if test.expectError {
 				if clusterCheckResult.CheckError == nil {

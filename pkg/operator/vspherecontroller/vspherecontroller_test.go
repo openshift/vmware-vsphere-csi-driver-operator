@@ -33,7 +33,7 @@ const (
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	gates := featuregates.NewFeatureGate(
 		[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode},
-		[]configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters},
+		[]configv1.FeatureGateName{"SomeDisabledFeatureGate"},
 	)
 	return newVsphereControllerWithGates(apiClients, gates)
 }
@@ -794,7 +794,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 }
 
 func TestApplyClusterCSIDriver(t *testing.T) {
-	multiVCenterGateDisabled := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMultiVCenters})
+	featureGates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"})
 
 	tests := []struct {
 		name                  string
@@ -803,7 +803,6 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 		expectedTopology      string
 		configFileName        string
 		secretData            runtime.Object
-		featureGates          featuregates.FeatureGate
 		checkMigrationURL     bool
 		expectedDatacenterMap map[string]string
 		expectError           bool
@@ -831,28 +830,11 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			checkMigrationURL: true,
 		},
 		{
-			name:             "when configuration has more than one vcenter",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			configFileName:   "multiple_vc.ini",
-			secretData:       testlib.GetDCSecret(),
-			expectError:      true,
-		},
-		{
 			name:             "when configuration has more than one vcenter yaml",
 			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
 			operatorObj:      testlib.MakeFakeDriverInstance(),
 			configFileName:   "multiple_vc.yaml",
 			secretData:       testlib.GetMultiVCSecret(),
-			expectError:      true,
-		},
-		{
-			name:             "when configuration has more than one vcenter yaml gate enabled",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			configFileName:   "multiple_vc.yaml",
-			secretData:       testlib.GetMultiVCSecret(),
-			featureGates:     featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereMultiVCenters}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
 			expectedDatacenterMap: map[string]string{
 				"foobar.lan": "Datacenter",
 				"foobaz.lan": "Datacenterb",
@@ -901,13 +883,8 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 				t.Fatalf("error adding initial objects: %v", err)
 			}
 
-			gates := tc.featureGates
-			if gates == nil {
-				gates = multiVCenterGateDisabled
-			}
-
 			testlib.WaitForSync(commonApiClient, stopCh)
-			ctrl := newVsphereControllerWithGates(commonApiClient, gates)
+			ctrl := newVsphereControllerWithGates(commonApiClient, featureGates)
 
 			vsphereConfig, err := testlib.GetVSphereConfig(tc.configFileName)
 			if err != nil {
