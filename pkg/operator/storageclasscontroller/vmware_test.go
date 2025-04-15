@@ -3,10 +3,12 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	v1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/testlib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
-	"testing"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCreateStoragePolicyOnce(t *testing.T) {
@@ -238,6 +240,68 @@ func TestZonalPolicyCreation(t *testing.T) {
 		})
 	}
 
+}
+
+func TestGetDefaultDatastore(t *testing.T) {
+	tests := []struct {
+		name                  string
+		infra                 *v1.Infrastructure
+		expectedDatastoreName string
+		expectedErr           error
+		config                string
+		configErr             error
+	}{
+		{
+			name:                  "test with no failure domains",
+			infra:                 testlib.GetInfraObject(),
+			config:                "no_failure_domains_config.ini",
+			configErr:             nil,
+			expectedDatastoreName: "LocalDS_0",
+			expectedErr:           nil,
+		},
+		{
+			name:                  "test with empty legacy config",
+			infra:                 testlib.GetInfraObjectWithEmptyPlatformSpec(),
+			config:                "empty_config.ini",
+			configErr:             fmt.Errorf("Invalid YAML/INI file"),
+			expectedDatastoreName: "",
+			expectedErr:           fmt.Errorf("unable to determine default datacenter from current config: legacy config not found"),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			connections, cleanUpFunc, connError := testlib.SetupSimulator(testlib.DefaultModel, test.infra)
+			defer func() {
+				if cleanUpFunc != nil {
+					cleanUpFunc()
+				}
+			}()
+			assert.NoErrorf(t, connError, "error connecting to vcenter: %v", connError)
+
+			config, err := testlib.GetVSphereConfig(test.config)
+			assert.Equalf(t, test.configErr, err, "expected error: %v, actual error: %v", test.configErr, err)
+
+			for _, conn := range connections {
+				conn.Config = config
+
+				storagePolicyAPIClient := &storagePolicyAPI{
+					vcenterApiConnection: conn,
+					infra:                test.infra,
+					categoryName:         fmt.Sprintf(categoryNameTemplate, test.infra.Status.InfrastructureName),
+					policyName:           fmt.Sprintf(policyNameTemplate, test.infra.Status.InfrastructureName),
+					tagName:              test.infra.Status.InfrastructureName,
+					apiTestInfo:          map[string]int{},
+				}
+
+				datastore, err := storagePolicyAPIClient.GetDefaultDatastore(context.TODO(), test.infra)
+				if datastore != nil {
+					datastoreName := datastore.Info.GetDatastoreInfo().Name
+					assert.Equal(t, test.expectedDatastoreName, datastoreName)
+				}
+				assert.Equalf(t, test.expectedErr, err, "expected error: %v, actual error: %v", test.expectedErr, err)
+			}
+		})
+	}
 }
 
 func validateAPICallCount(t *testing.T, vmwareAPI *storagePolicyAPI, expectedMap map[string]int) {
