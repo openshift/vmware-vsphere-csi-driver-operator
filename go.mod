@@ -11,6 +11,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20250325143551-78a24021cf40
 	github.com/prometheus/client_golang v1.21.1
 	github.com/spf13/cobra v1.9.1
+	github.com/stretchr/testify v1.10.0
 	github.com/vmware/govmomi v0.48.1
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/ini.v1 v1.67.0
@@ -70,6 +71,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/profile v1.7.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
