@@ -117,6 +117,15 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 	nodeCheckContext, cancel := context.WithTimeout(workInfo.ctx, nodeCheckTimeout)
 	defer cancel()
 
+	// If node is not a vSphere node, we'll ignore and return a special check result
+	if workInfo.checkOpts.featureGate.Enabled(features.FeatureGateVSphereMixedNodeEnv) {
+		instanceType, hasKey := node.Labels["node.kubernetes.io/instance-type"]
+		if !hasKey || instanceType == "" {
+			// Returning happy result for now.  Maybe update to be custom "Not A vSphere Node" result that can be processed and ignored or logged.
+			return MakeClusterCheckResultPass()
+		}
+	}
+
 	vm, err := getVM(nodeCheckContext, checkOpts, node)
 	if err != nil {
 		return makeDeprecatedEnvironmentError(CheckStatusVcenterAPIError, err)
