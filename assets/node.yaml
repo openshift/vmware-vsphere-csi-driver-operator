@@ -31,6 +31,13 @@ spec:
         - operator: Exists
       nodeSelector:
         kubernetes.io/os: linux
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.kubernetes.io/instance-type
+                    operator: Exists
       containers:
         - name: csi-driver
           securityContext:

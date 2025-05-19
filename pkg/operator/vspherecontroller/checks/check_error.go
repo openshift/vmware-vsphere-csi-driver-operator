@@ -168,6 +168,8 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 	case CheckActionBlockUpgradeDriverInstall:
 		return ClusterCheckBlockUpgradeDriverInstall, result
 
+	// TODO: Maybe add a case here for the not a vSphere node.
+
 	default:
 		return ClusterCheckAllGood, result
 	}

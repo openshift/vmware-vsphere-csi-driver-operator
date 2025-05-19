@@ -128,3 +128,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/openshift/api => github.com/vr4manta/api v0.0.0-20250513181033-072c8adf46ba
