@@ -16,6 +16,9 @@ spec:
     metadata:
       labels:
         app: vmware-vsphere-csi-driver-webhook
+        openshift.storage.network-policy.api-server: allow
+        openshift.storage.network-policy.dns: allow
+        openshift.storage.network-policy.operator-metrics-range: allow # webhook pods listen on 8443, and NP "allow-ingress-to-operator-metrics-range" allows traffic for that
       annotations:
         openshift.io/required-scc: restricted-v2
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
