@@ -5,7 +5,7 @@ go 1.23.4
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/google/go-cmp v0.7.0
-	github.com/openshift/api v0.0.0-20250327202946-4521905c611e
+	github.com/openshift/api v0.0.0-20250527072845-f5e205b58365
 	github.com/openshift/build-machinery-go v0.0.0-20250102153059-e85a1a7ecb5c
 	github.com/openshift/client-go v0.0.0-20250330132942-bc2e3c2af6e1
 	github.com/openshift/library-go v0.0.0-20250325143551-78a24021cf40
