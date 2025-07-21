@@ -740,12 +740,57 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			storageClassCreated: true,
 		},
 		{
+			name:                         "when all configuration is right and bm node present and mixed env is disabled",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetBareMetalNode()},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
 			name:                         "when all configuration is right and mixed env is enabled",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			vcenterVersion:               "7.0.2",
 			hostVersion:                  "7.0.2",
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
 			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			featureGates: featuregates.NewFeatureGate(
+				[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode, features.FeatureGateVSphereMixedNodeEnv},
+				[]configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when all configuration is right and bm node present and mixed env is enabled",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetBareMetalNode()},
 			infra:                        testlib.GetInfraObject(),
 			expectedConditions: []opv1.OperatorCondition{
 				{

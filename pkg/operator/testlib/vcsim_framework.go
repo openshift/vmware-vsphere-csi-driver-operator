@@ -188,6 +188,14 @@ func DefaultNodes() []*v1.Node {
 	return nodes
 }
 
+func GetBareMetalNode() *v1.Node {
+	node := Node("bm-node")
+	node.Labels = map[string]string{
+		"kubernetes.io/os": "linux",
+	}
+	return node
+}
+
 func simulatorConfig() *vclib.VSphereConfig {
 	var cfg vclib.VSphereConfig
 	data := cloudProviderConfig()
