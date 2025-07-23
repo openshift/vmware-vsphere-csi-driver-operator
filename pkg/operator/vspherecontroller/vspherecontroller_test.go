@@ -704,7 +704,8 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			var cleanUpFunc func()
 			var connections []*vclib.VSphereConnection
 			var connError error
-			connections, cleanUpFunc, connError = testlib.SetupSimulator(testlib.DefaultModel, test.infra)
+			var simCtx context.Context
+			connections, cleanUpFunc, simCtx, connError = testlib.SetupSimulator(testlib.DefaultModel, test.infra)
 
 			for _, conn := range connections {
 				if test.vcenterVersion != "" {
@@ -725,7 +726,7 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 				if hostVersion == "" {
 					hostVersion = "7.0.2"
 				}
-				err = testlib.CustomizeHostVersion(testlib.DefaultHostId, hostVersion)
+				err = testlib.CustomizeHostVersion(simCtx, testlib.DefaultHostId, hostVersion)
 				if err != nil {
 					t.Fatalf("Failed to customize host: %s", err)
 				}

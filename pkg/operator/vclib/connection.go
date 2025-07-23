@@ -194,16 +194,16 @@ func (connection *VSphereConnection) NewClient(ctx context.Context) error {
 	err = client.Login(ctx, userInfo)
 	if err != nil {
 		msg := fmt.Sprintf("error logging into vcenter: %v", err)
-		klog.Error(msg)
-		return fmt.Errorf(msg)
+		klog.Errorf("%s", msg)
+		return fmt.Errorf("%s", msg)
 	}
 	connection.Client = client
 	restClient := rest.NewClient(client.Client)
 	err = restClient.Login(ctx, userInfo)
 	if err != nil {
 		msg := fmt.Sprintf("error logging into vcenter RESTful services: %v", err)
-		klog.Error(msg)
-		return fmt.Errorf(msg)
+		klog.Errorf("%s", msg)
+		return fmt.Errorf("%s", msg)
 	}
 	connection.RestClient = restClient
 	return nil

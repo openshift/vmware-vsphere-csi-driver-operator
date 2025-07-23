@@ -188,7 +188,7 @@ func (c *StorageClassController) updateConditions(ctx context.Context, lastCheck
 	switch clusterStatus {
 	case checks.ClusterCheckDegrade:
 		degradedMessage := fmt.Sprintf("Marking cluster degraded because %s", lastCheckResult.Reason)
-		klog.Warningf(degradedMessage)
+		klog.Warningf("%s", degradedMessage)
 		c.recorder.Warningf(string(lastCheckResult.CheckStatus), "Marking cluster degraded because %s", lastCheckResult.Reason)
 		degradedCondition.Status = operatorapi.ConditionTrue
 		degradedCondition.Message = lastCheckResult.Reason
