@@ -139,7 +139,7 @@ func CheckClusterStatus(result ClusterCheckResult, apiDependencies KubeAPIInterf
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
 				reason := fmt.Errorf("vsphere driver install failed with %s, unable to verify CSIDriver status: %v", result.Reason, err)
-				klog.Errorf(reason.Error())
+				klog.Errorf("%s", reason.Error())
 				return ClusterCheckDegrade, MakeClusterDegradedError(CheckStatusOpenshiftAPIError, reason)
 			}
 		} else {

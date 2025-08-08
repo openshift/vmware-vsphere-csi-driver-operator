@@ -95,7 +95,7 @@ func TestEnvironmentCheck(t *testing.T) {
 			t.Logf("working directory is: %s", workingDir)
 
 			checker := newVSphereEnvironmentChecker()
-			connections, cleanUpFunc, connError := testlib.SetupSimulator(testlib.DefaultModel, test.infra)
+			connections, cleanUpFunc, _, connError := testlib.SetupSimulator(testlib.DefaultModel, test.infra)
 			if connError != nil {
 				t.Fatalf("unexpected error while connecting to simulator: %v", connError)
 			}

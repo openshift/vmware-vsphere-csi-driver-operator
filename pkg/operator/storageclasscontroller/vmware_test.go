@@ -18,7 +18,7 @@ func TestCreateStoragePolicyOnce(t *testing.T) {
 
 	infra := testlib.GetInfraObject()
 
-	connections, cleanUpFunc, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
+	connections, cleanUpFunc, _, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
 	defer func() {
 		if cleanUpFunc != nil {
 			cleanUpFunc()
@@ -77,7 +77,7 @@ func TestDuplicatePolicyCreation(t *testing.T) {
 
 	infra := testlib.GetInfraObject()
 
-	connections, cleanUpFunc, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
+	connections, cleanUpFunc, _, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
 	defer func() {
 		if cleanUpFunc != nil {
 			cleanUpFunc()
@@ -183,7 +183,7 @@ func TestZonalPolicyCreation(t *testing.T) {
 
 			infra := tc.infra
 
-			connections, cleanUpFunc, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
+			connections, cleanUpFunc, _, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
 			defer func() {
 				if cleanUpFunc != nil {
 					cleanUpFunc()
@@ -270,7 +270,7 @@ func TestGetDefaultDatastore(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			connections, cleanUpFunc, connError := testlib.SetupSimulator(testlib.DefaultModel, test.infra)
+			connections, cleanUpFunc, _, connError := testlib.SetupSimulator(testlib.DefaultModel, test.infra)
 			defer func() {
 				if cleanUpFunc != nil {
 					cleanUpFunc()

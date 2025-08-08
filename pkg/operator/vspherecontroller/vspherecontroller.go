@@ -357,7 +357,7 @@ func (c *VSphereController) driverAlreadyStarted(ctx context.Context) (bool, err
 			return false, nil
 		}
 		reason := fmt.Errorf("vsphere driver sync failed, unable to verify CSIDriver status: %v", err)
-		klog.Errorf(reason.Error())
+		klog.Errorf("%s", reason.Error())
 		return false, reason
 	}
 	annotations := csiDriver.GetAnnotations()
@@ -606,7 +606,7 @@ func (c *VSphereController) updateConditions(
 	})
 
 	if len(blockUpgradeMessage) > 0 {
-		klog.Warningf(blockUpgradeMessage)
+		klog.Warningf("%s", blockUpgradeMessage)
 	}
 
 	if conditionChanged && upgradeStatus != operatorapi.ConditionTrue {

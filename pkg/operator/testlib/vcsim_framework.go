@@ -53,7 +53,7 @@ func init() {
 	}
 }
 
-func SetupSimulator(modelDir string, infra *ocpv1.Infrastructure) ([]*vclib.VSphereConnection, func(), error) {
+func SetupSimulator(modelDir string, infra *ocpv1.Infrastructure) ([]*vclib.VSphereConnection, func(), context.Context, error) {
 	var connections []*vclib.VSphereConnection
 	var servers []*simulator.Server
 	var models []*simulator.Model
@@ -65,7 +65,7 @@ func SetupSimulator(modelDir string, infra *ocpv1.Infrastructure) ([]*vclib.VSph
 			if createdVCs[fd.Server] == nil {
 				conn, server, model, err := createConnection(modelDir, fd.Server)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, nil, err
 				}
 				connections = append(connections, conn)
 				servers = append(servers, server)
@@ -77,7 +77,7 @@ func SetupSimulator(modelDir string, infra *ocpv1.Infrastructure) ([]*vclib.VSph
 		fmt.Printf("Adding connections via NON FD\n")
 		conn, server, model, err := createConnection(modelDir, "foobar.lan")
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		connections = append(connections, conn)
 		servers = append(servers, server)
@@ -92,7 +92,14 @@ func SetupSimulator(modelDir string, infra *ocpv1.Infrastructure) ([]*vclib.VSph
 			model.Remove()
 		}
 	}
-	return connections, cleanup, nil
+
+	var simCtx context.Context
+	if len(models) > 0 {
+		simCtx = models[0].Service.Context
+	} else {
+		simCtx = nil
+	}
+	return connections, cleanup, simCtx, nil
 }
 
 func createConnection(modelDir, server string) (*vclib.VSphereConnection, *simulator.Server, *simulator.Model, error) {
@@ -113,7 +120,7 @@ func createConnection(modelDir, server string) (*vclib.VSphereConnection, *simul
 	}
 
 	// setup VAPI handlers to provide APIs for tags and categories
-	patterns, handlers := vapisimulator.New(client.URL(), simulator.Map)
+	patterns, handlers := vapisimulator.New(client.URL(), simulator.Map(model.Service.Context))
 	for _, p := range patterns {
 		model.Service.Handle(p, handlers)
 	}
@@ -240,8 +247,8 @@ func CustomizeVM(conn *vclib.VSphereConnection, node *v1.Node, spec *types.Virtu
 	return err
 }
 
-func CustomizeHostVersion(hostSystemId string, version string) error {
-	hsRef := simulator.Map.Get(types.ManagedObjectReference{
+func CustomizeHostVersion(ctx context.Context, hostSystemId string, version string) error {
+	hsRef := simulator.Map(ctx).Get(types.ManagedObjectReference{
 		Type:  "HostSystem",
 		Value: hostSystemId,
 	})

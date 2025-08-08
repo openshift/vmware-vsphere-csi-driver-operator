@@ -357,7 +357,7 @@ func (v *storagePolicyAPI) createStorageProfile(ctx context.Context) error {
 	if err != nil {
 		msg := fmt.Sprintf("error creating pbm client: %v", err)
 		klog.Error(msg)
-		return fmt.Errorf(msg)
+		return fmt.Errorf("%s", msg)
 	}
 
 	var policySpec types.PbmCapabilityProfileCreateSpec
@@ -392,8 +392,8 @@ func (v *storagePolicyAPI) createStorageProfile(ctx context.Context) error {
 	pid, err := pbmClient.CreateProfile(ctx, policySpec)
 	if err != nil {
 		msg := fmt.Sprintf("error creating profile: %v", err)
-		klog.Errorf(msg)
-		return fmt.Errorf(msg)
+		klog.Errorf("%s", msg)
+		return fmt.Errorf("%s", msg)
 	}
 	klog.V(2).Infof("Successfully created profile %s", pid.UniqueId)
 	return nil
@@ -409,22 +409,22 @@ func (v *storagePolicyAPI) checkForExistingPolicy(ctx context.Context) (bool, er
 	pbmClient, err := pbm.NewClient(ctx, v.vcenterApiConnection.Client.Client)
 	if err != nil {
 		msg := fmt.Sprintf("error creating pbm client: %v", err)
-		klog.Error(msg)
-		return false, fmt.Errorf(msg)
+		klog.Errorf("%s", msg)
+		return false, fmt.Errorf("%s", msg)
 	}
 
 	ids, err := pbmClient.QueryProfile(ctx, rtype, string(category))
 	if err != nil {
 		msg := fmt.Sprintf("error querying profiles: %v", err)
-		klog.Errorf(msg)
-		return false, fmt.Errorf(msg)
+		klog.Errorf("%s", msg)
+		return false, fmt.Errorf("%s", msg)
 	}
 
 	profiles, err := pbmClient.RetrieveContent(ctx, ids)
 	if err != nil {
 		msg := fmt.Sprintf("error fetching policy profiles: %v", err)
-		klog.Errorf(msg)
-		return false, fmt.Errorf(msg)
+		klog.Errorf("%s", msg)
+		return false, fmt.Errorf("%s", msg)
 	}
 
 	for _, p := range profiles {
