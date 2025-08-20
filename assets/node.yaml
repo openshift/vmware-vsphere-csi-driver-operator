@@ -35,6 +35,7 @@ spec:
         - name: csi-driver
           securityContext:
             privileged: true
+            readOnlyRootFilesystem: true
           image: ${DRIVER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -93,6 +94,7 @@ spec:
         - name: csi-node-driver-registrar
           securityContext:
             privileged: true
+            readOnlyRootFilesystem: true
           image: ${NODE_DRIVER_REGISTRAR_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -135,6 +137,8 @@ spec:
             failureThreshold: 5
           terminationMessagePolicy: FallbackToLogsOnError
         - name: csi-liveness-probe
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${LIVENESS_PROBE_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
