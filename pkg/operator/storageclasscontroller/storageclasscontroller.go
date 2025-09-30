@@ -115,7 +115,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 				klog.Errorf("error syncing storage policy for %v: %v", connection.Hostname, syncResult.Reason)
 				clusterCondition := "storage_class_sync_failed"
 				utils.InstallErrorMetric.WithLabelValues(string(syncResult.CheckStatus), clusterCondition).Set(1)
-				return syncResult, checks.ClusterCheckAllGood
+				return syncResult, checks.ClusterCheckDegrade
 			}
 			klog.V(4).Infof("Synced policy %v", policyName)
 			c.vCenterStoragePolicy[connection.Hostname] = policyName

@@ -132,7 +132,7 @@ func TestSync(t *testing.T) {
 			},
 		},
 		{
-			name:                   "sync does not degrade on storage policy api error",
+			name:                   "sync degrades on storage policy api error",
 			clusterCSIDriverObject: testlib.MakeFakeDriverInstance(),
 			initialObjects:         []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
 			configObjects:          runtime.Object(testlib.GetInfraObject()),
@@ -141,11 +141,11 @@ func TestSync(t *testing.T) {
 			expectedConditions: []opv1.OperatorCondition{
 				{
 					Type:   testScControllerName + opv1.OperatorStatusTypeAvailable,
-					Status: opv1.ConditionTrue,
+					Status: opv1.ConditionFalse,
 				},
 				{
 					Type:   testScControllerName + opv1.OperatorStatusTypeDegraded,
-					Status: opv1.ConditionFalse,
+					Status: opv1.ConditionTrue,
 				},
 			},
 		},
