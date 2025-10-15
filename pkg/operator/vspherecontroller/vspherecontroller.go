@@ -725,7 +725,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		vcenterStr := string(csiVCenterConfigBytes)
 		vcenter := config.VirtualCenter[vcenterKey]
 
-		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, infra, c.configMapLister, c.apiClients.SecretInformer, c.featureGates)
+		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, c.apiClients.SecretInformer)
 		if err != nil {
 			return nil, err
 		}
@@ -792,8 +792,7 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 	return storageClassController
 }
 
-func getUserAndPassword(namespace string, secretName string, vcenter string, infra *ocpv1.Infrastructure, configMapLister corelister.ConfigMapLister, secretInformer corev1informers.SecretInformer, featureGates featuregates.FeatureGate,
-) (string, string, error) {
+func getUserAndPassword(namespace string, secretName string, vcenter string, secretInformer corev1informers.SecretInformer) (string, string, error) {
 	secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
 	if err != nil {
 		return "", "", err
