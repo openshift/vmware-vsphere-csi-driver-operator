@@ -1200,6 +1200,11 @@ func TestEscapeQuotesAndBackslashes(t *testing.T) {
 			input:    `\\\\\`,
 			expected: `\\\\\\\\\\`,
 		},
+		{
+			name:     "quote, blackslash, double quote and backtick",
+			input:    "xx'xxx\\23\"4`5",
+			expected: "xx'xxx\\\\23\\\"4`5",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1235,6 +1240,249 @@ func TestEscapeBackslashInUsername(t *testing.T) {
 			actual := escapeQuotesAndBackslashes(tc.input)
 			if actual != tc.expected {
 				t.Fatalf("escapeQuotesAndBackslashes(%q) = %q; expected %q", tc.input, actual, tc.expected)
+			}
+		})
+	}
+}
+
+// TestPasswordSerializationDeserialization tests that passwords with special characters
+// can be correctly serialized into an INI file embedded in a secret and then deserialized.
+// This specifically tests passwords containing backslashes, backticks, single quotes, and double quotes.
+func TestPasswordSerializationDeserialization(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+	}{
+		{
+			name:     "password with backslashes",
+			password: `Pass\word\123`,
+		},
+		{
+			name:     "password with backticks",
+			password: "Pass`word`123",
+		},
+		{
+			name:     "password with single quotes",
+			password: `Pass'word'123`,
+		},
+		{
+			name:     "password with double quotes",
+			password: `Pass"word"123`,
+		},
+		{
+			name:     "password with all special characters",
+			password: `Pass\word"123'abc` + "`def",
+		},
+		{
+			name:     "password with only backslashes",
+			password: `\\\\\`,
+		},
+		{
+			name:     "password with only double quotes",
+			password: `"""""`,
+		},
+		{
+			name:     "password with only backticks",
+			password: "``````",
+		},
+		{
+			name:     "password with only single quotes",
+			password: `''''''`,
+		},
+		{
+			name:     "password with mixed escaping sequences",
+			password: `P@ss\"w0rd\\123'abc"def` + "`ghi",
+		},
+		{
+			name:     "password with backslash at end",
+			password: `Password123\`,
+		},
+		{
+			name:     "password with quote at end",
+			password: `Password123"`,
+		},
+		{
+			name:     "password with backtick at end",
+			password: "Password123`",
+		},
+		{
+			name:     "complex realistic password",
+			password: `P@ssw0rd!"#$%&'()*+,-./:;<=>?@[\]^_` + "`{|}~",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Step 1: Escape the password as the code does
+			escapedPassword := escapeQuotesAndBackslashes(tc.password)
+
+			// Step 2: Create an INI configuration string with the escaped password
+			// This simulates what happens in applyClusterCSIDriverChange
+			iniContent := fmt.Sprintf(`[VirtualCenter "test-vcenter.example.com"]
+insecure-flag = true
+datacenters = DC1
+password = "%s"
+user = "testuser"
+
+[Global]
+cluster-id = test-cluster
+`, escapedPassword)
+
+			// Step 3: Serialize this into a secret (simulating cloud.conf in the secret)
+			secretData := map[string][]byte{
+				"cloud.conf": []byte(iniContent),
+			}
+
+			// Step 4: Deserialize the INI from the secret (simulating what newINIConfig does)
+			configString := string(secretData["cloud.conf"])
+			cfg, err := newINIConfig(configString)
+			if err != nil {
+				t.Fatalf("Failed to deserialize INI config: %v", err)
+			}
+
+			// Step 5: Read the password back from the deserialized INI
+			section := cfg.file.Section(`VirtualCenter "test-vcenter.example.com"`)
+			if section == nil {
+				t.Fatalf("VirtualCenter section not found in deserialized config")
+			}
+
+			passwordKey := section.Key("password")
+			if passwordKey == nil {
+				t.Fatalf("password key not found in VirtualCenter section")
+			}
+
+			deserializedPassword := passwordKey.String()
+
+			// Step 6: Verify the deserialized password matches the original escaped password
+			// Note: PreserveSurroundedQuote: true means quotes are preserved in the value
+			expectedWithQuotes := fmt.Sprintf(`"%s"`, escapedPassword)
+			if deserializedPassword != expectedWithQuotes {
+				t.Errorf("Password mismatch after deserialization:\n  Original escaped: %q\n  Expected with quotes: %q\n  Deserialized:     %q", escapedPassword, expectedWithQuotes, deserializedPassword)
+			}
+
+			// Additional verification: ensure the INI can be re-serialized
+			var b strings.Builder
+			_, err = cfg.file.WriteTo(&b)
+			if err != nil {
+				t.Fatalf("Failed to re-serialize INI config: %v", err)
+			}
+
+			// Deserialize again to ensure round-trip works
+			cfg2, err := newINIConfig(b.String())
+			if err != nil {
+				t.Fatalf("Failed to deserialize re-serialized INI config: %v", err)
+			}
+
+			section2 := cfg2.file.Section(`VirtualCenter "test-vcenter.example.com"`)
+			if section2 == nil {
+				t.Fatalf("VirtualCenter section not found in re-deserialized config")
+			}
+
+			passwordKey2 := section2.Key("password")
+			if passwordKey2 == nil {
+				t.Fatalf("password key not found in re-deserialized VirtualCenter section")
+			}
+
+			deserializedPassword2 := passwordKey2.String()
+			if deserializedPassword2 != expectedWithQuotes {
+				t.Errorf("Password mismatch after round-trip:\n  Original escaped: %q\n  Expected with quotes: %q\n  Round-trip:       %q", escapedPassword, expectedWithQuotes, deserializedPassword2)
+			}
+		})
+	}
+}
+
+// TestUserPasswordSerializationInSecret tests the full flow of serializing user/password
+// into a secret's cloud.conf and deserializing it back, similar to what happens in production.
+func TestUserPasswordSerializationInSecret(t *testing.T) {
+	tests := []struct {
+		name     string
+		username string
+		password string
+	}{
+		{
+			name:     "domain username with backslash and complex password",
+			username: `DOMAIN\username`,
+			password: `P@ss\word"123'` + "`abc",
+		},
+		{
+			name:     "email username with special password",
+			username: `user@domain.com`,
+			password: `Pas\"s\\word123`,
+		},
+		{
+			name:     "simple username with backslash password",
+			username: `admin`,
+			password: `\\\password\\\`,
+		},
+		{
+			name:     "username with quotes in password",
+			password: `"quoted"password"`,
+			username: `serviceaccount`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Process username and password as the code does
+			processedUser := escapeBackslashInUsername(tc.username)
+			processedPassword := escapeQuotesAndBackslashes(tc.password)
+
+			// Create INI content similar to what applyClusterCSIDriverChange creates
+			iniTemplate := `[Global]
+cluster-id = test-cluster-id
+
+[VirtualCenter "vcenter1.example.com"]
+insecure-flag = true
+datacenters = DC1,DC2
+password = "%s"
+user = "%s"
+`
+			iniContent := fmt.Sprintf(iniTemplate, processedPassword, processedUser)
+
+			// Simulate storing in secret
+			secret := &v1.Secret{
+				Data: map[string][]byte{
+					"cloud.conf": []byte(iniContent),
+				},
+			}
+
+			// Simulate reading from secret and deserializing
+			cloudConf := string(secret.Data["cloud.conf"])
+			cfg, err := newINIConfig(cloudConf)
+			if err != nil {
+				t.Fatalf("Failed to deserialize cloud.conf from secret: %v", err)
+			}
+
+			// Verify we can read back the values correctly
+			vcSection := cfg.file.Section(`VirtualCenter "vcenter1.example.com"`)
+			if vcSection == nil {
+				t.Fatalf("VirtualCenter section not found")
+			}
+
+			readUser := vcSection.Key("user").String()
+			readPassword := vcSection.Key("password").String()
+
+			// Note: PreserveSurroundedQuote: true means quotes are preserved in the value
+			expectedUser := fmt.Sprintf(`"%s"`, processedUser)
+			expectedPassword := fmt.Sprintf(`"%s"`, processedPassword)
+
+			if readUser != expectedUser {
+				t.Errorf("Username mismatch:\n  Expected: %q\n  Got:      %q", expectedUser, readUser)
+			}
+
+			if readPassword != expectedPassword {
+				t.Errorf("Password mismatch:\n  Expected: %q\n  Got:      %q", expectedPassword, readPassword)
+			}
+
+			// Verify the Global section is also readable
+			globalSection := cfg.file.Section("Global")
+			if globalSection == nil {
+				t.Fatalf("Global section not found")
+			}
+
+			clusterID := globalSection.Key("cluster-id").String()
+			if clusterID != "test-cluster-id" {
+				t.Errorf("cluster-id mismatch: expected %q, got %q", "test-cluster-id", clusterID)
 			}
 		})
 	}
