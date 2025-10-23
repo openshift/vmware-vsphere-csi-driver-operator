@@ -1280,7 +1280,7 @@ func TestEscapeQuotesAndBackslashes(t *testing.T) {
 		{
 			name:     "Already escaped",
 			input:    `Pass\"word\\1234\"`,
-			expected: `Pass\"word\\1234\"`,
+			expected: `Pass\\\"word\\\\1234\\\"`,
 		},
 		{
 			name:     "Only quotes",
@@ -1301,10 +1301,7 @@ func TestEscapeQuotesAndBackslashes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, err := escapeQuotesAndBackslashes(tc.input)
-			if err != nil {
-				t.Fatalf("escapeQuotesAndBackslashes(%q) failed with error: %v", tc.input, err)
-			}
+			actual := escapeQuotesAndBackslashes(tc.input)
 			if actual != tc.expected {
 				t.Fatalf("escapeQuotesAndBackslashes(%q) = %q; expected %q", tc.input, actual, tc.expected)
 			}
@@ -1332,10 +1329,7 @@ func TestEscapeBackslashInUsername(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, err := escapeQuotesAndBackslashes(tc.input)
-			if err != nil {
-				t.Fatalf("escapeQuotesAndBackslashes(%q) failed with error: %v", tc.input, err)
-			}
+			actual := escapeBackslashInUsername(tc.input)
 			if actual != tc.expected {
 				t.Fatalf("escapeQuotesAndBackslashes(%q) = %q; expected %q", tc.input, actual, tc.expected)
 			}

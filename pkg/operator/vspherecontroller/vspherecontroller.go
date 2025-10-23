@@ -1,9 +1,7 @@
 package vspherecontroller
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -88,6 +86,8 @@ const (
 	storageClassControllerName        = "VMwareVSphereDriverStorageClassController"
 	storageClassName                  = "thin-csi"
 )
+
+var reEscape = regexp.MustCompile(`["\\]`)
 
 type conditionalControllerInterface interface {
 	Run(ctx context.Context, workers int)
@@ -730,10 +730,7 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 			return nil, fmt.Errorf("error getting user and password: %v", err)
 		}
 
-		escapedUser, escapedPassword, err := escapeUserAndPassword(user, password)
-		if err != nil {
-			return nil, err
-		}
+		escapedUser, escapedPassword := escapeUserAndPassword(user, password)
 
 		for pattern, value := range map[string]string{
 			"${VCENTER}":     vcenter.VCenterIP,
@@ -826,57 +823,24 @@ func getUserAndPassword(vcenter string, secretInformer corev1informers.SecretInf
 // xref: https://github.com/kubernetes-sigs/vsphere-csi-driver/issues/121
 // The username in the format "domainName\userName" must be converted to "domainName\\userName"
 // xref: https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/3.0/vmware-vsphere-csp-getting-started/GUID-BFF39F1D-F70A-4360-ABC9-85BDAFBE8864.html
-func escapeUserAndPassword(username, password string) (string, string, error) {
-	escapedUserName, err := escapeBackslashInUsername(username)
-	if err != nil {
-		return "", "", fmt.Errorf("error escaping username: %v", err)
-	}
-	escapedPassword, err := escapeQuotesAndBackslashes(password)
-	if err != nil {
-		return "", "", fmt.Errorf("error escaping password: %v", err)
-	}
-	return escapedUserName, escapedPassword, nil
+func escapeUserAndPassword(username, password string) (string, string) {
+	escapedUserName := escapeBackslashInUsername(username)
+	escapedPassword := escapeQuotesAndBackslashes(password)
+	return escapedUserName, escapedPassword
 }
 
 // escapeQuotesAndBackslashes escapes double quotes and backslashes in the input string.
-func escapeQuotesAndBackslashes(data string) (string, error) {
-	var js json.RawMessage
-	data = strings.ReplaceAll(data, "\n", " ")
-	jsonString := createJsonString(data)
-	byteValue := []byte(jsonString)
-	//escape special characters only if json unmarshall results in an error
-	if err := json.Unmarshal(byteValue, &js); err != nil {
-		var buf bytes.Buffer
-		encoder := json.NewEncoder(&buf)
-		// Disable HTML escaping to avoid conversion of &, >, < etc to unicode char sequences
-		encoder.SetEscapeHTML(false)
-		// encoder.Encode will escape special characters
-		err = encoder.Encode(data)
-		if err != nil {
-			klog.Errorf("json marshalling failed with error : %v", err)
-			return data, fmt.Errorf("json marshalling failed with error : %v", err)
-		}
-		escapedData := buf.String()
-		// remove double quotes from the beginning and end. Also remove the trailing newline.
-		return string(escapedData[1 : len(escapedData)-2]), nil
-	}
-	return data, nil
-}
-
-func createJsonString(data string) string {
-	jsonString := `{"key":"`
-	endJson := `"}`
-	jsonString = jsonString + data + endJson
-	return jsonString
+func escapeQuotesAndBackslashes(input string) string {
+	return reEscape.ReplaceAllString(input, `\$0`)
 }
 
 // escapeBackslashInUsername escapes single backslash in the input string like "domainName\userName"
-func escapeBackslashInUsername(input string) (string, error) {
+func escapeBackslashInUsername(input string) string {
 	regex := `^[a-zA-Z0-9.-]+\\[a-zA-Z0-9._-]+$`
 	if match, _ := regexp.MatchString(regex, input); match {
 		return escapeQuotesAndBackslashes(input)
 	}
-	return input, nil
+	return input
 }
 
 func getvCenterName(infra *ocpv1.Infrastructure, configmapLister corelister.ConfigMapLister) (string, error) {
