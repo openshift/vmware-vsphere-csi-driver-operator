@@ -1,4 +1,4 @@
-# Allow kube-rbac-proxies to create tokenreviews to check Prometheus identity when scraping metrics.
+# Allow kube-rbac-proxies to create tokenreviews and subjectaccessreviews to check Prometheus identity when scraping metrics.
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -8,5 +8,11 @@ rules:
     - "authentication.k8s.io"
     resources:
     - "tokenreviews"
+    verbs:
+    - "create"
+  - apiGroups:
+    - "authorization.k8s.io"
+    resources:
+    - "subjectaccessreviews"
     verbs:
     - "create"
