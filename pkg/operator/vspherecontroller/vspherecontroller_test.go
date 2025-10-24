@@ -18,11 +18,13 @@ import (
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vclib"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/vspherecontroller/checks"
+	"gopkg.in/gcfg.v1"
 	iniv1 "gopkg.in/ini.v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/metrics/testutil"
+	legacy "k8s.io/legacy-cloud-providers/vsphere"
 	"k8s.io/utils/clock"
 )
 
@@ -798,15 +800,16 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 	featureGates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"})
 
 	tests := []struct {
-		name                  string
-		clusterCSIDriver      *opv1.ClusterCSIDriver
-		operatorObj           *testlib.FakeDriverInstance
-		expectedTopology      string
-		configFileName        string
-		secretData            runtime.Object
-		checkMigrationURL     bool
-		expectedDatacenterMap map[string]string
-		expectError           bool
+		name                    string
+		clusterCSIDriver        *opv1.ClusterCSIDriver
+		operatorObj             *testlib.FakeDriverInstance
+		expectedTopology        string
+		configFileName          string
+		secretData              runtime.Object
+		checkMigrationURL       bool
+		expectedDatacenterMap   map[string]string
+		expectError             bool
+		expectedSnapshotOptions map[string]string
 	}{
 		{
 			name:             "when driver does not have topology enabled",
@@ -866,6 +869,64 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			},
 			expectedTopology:  "k8s-zone,k8s-region",
 			checkMigrationURL: true,
+		},
+		{
+			name: "when driver has snapshot options configured - all options",
+			clusterCSIDriver: func() *opv1.ClusterCSIDriver {
+				driver := testlib.GetClusterCSIDriver(false)
+				globalMax := uint32(10)
+				vsanMax := uint32(5)
+				vvolMax := uint32(3)
+				driver.Spec.DriverConfig.VSphere = &opv1.VSphereCSIDriverConfigSpec{
+					GlobalMaxSnapshotsPerBlockVolume:         &globalMax,
+					GranularMaxSnapshotsPerBlockVolumeInVSAN: &vsanMax,
+					GranularMaxSnapshotsPerBlockVolumeInVVOL: &vvolMax,
+				}
+				return driver
+			}(),
+			operatorObj: testlib.MakeFakeDriverInstance(),
+			secretData:  testlib.GetDCSecret(),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacenter",
+			},
+			expectedTopology:  "",
+			checkMigrationURL: true,
+			expectedSnapshotOptions: map[string]string{
+				"global-max-snapshots-per-block-volume":        "10",
+				"granular-max-snapshots-per-block-volume-vsan": "5",
+				"granular-max-snapshots-per-block-volume-vvol": "3",
+			},
+		},
+		{
+			name: "when driver has snapshot options configured - partial options",
+			clusterCSIDriver: func() *opv1.ClusterCSIDriver {
+				driver := testlib.GetClusterCSIDriver(true)
+				globalMax := uint32(20)
+				driver.Spec.DriverConfig.VSphere.GlobalMaxSnapshotsPerBlockVolume = &globalMax
+				return driver
+			}(),
+			operatorObj: testlib.MakeFakeDriverInstance(),
+			secretData:  testlib.GetDCSecret(),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacenter",
+			},
+			expectedTopology:  "k8s-zone,k8s-region",
+			checkMigrationURL: true,
+			expectedSnapshotOptions: map[string]string{
+				"global-max-snapshots-per-block-volume": "20",
+			},
+		},
+		{
+			name:             "when driver has no snapshot options",
+			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
+			operatorObj:      testlib.MakeFakeDriverInstance(),
+			secretData:       testlib.GetDCSecret(),
+			expectedDatacenterMap: map[string]string{
+				"foobar.lan": "Datacenter",
+			},
+			expectedTopology:        "k8s-zone,k8s-region",
+			checkMigrationURL:       true,
+			expectedSnapshotOptions: nil,
 		},
 	}
 
@@ -944,6 +1005,38 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 				}
 				if datastoreURL.String() != "foobar" {
 					t.Fatalf("expected datastoreURL to be %s got %s", "foobar", datastoreURL)
+				}
+			}
+
+			// Verify snapshot options
+			snapshotSection := csiConfig.Section("Snapshot")
+			if tc.expectedSnapshotOptions == nil {
+				// If no snapshot options expected, verify section doesn't exist or is empty
+				if snapshotSection != nil && len(snapshotSection.Keys()) > 0 {
+					t.Fatalf("unexpected snapshot section found with keys: %v", snapshotSection.KeyStrings())
+				}
+			} else {
+				// Verify snapshot section exists
+				if snapshotSection == nil {
+					t.Fatalf("expected Snapshot section not found in config")
+				}
+
+				// Verify each expected snapshot option
+				for expectedKey, expectedValue := range tc.expectedSnapshotOptions {
+					key, err := snapshotSection.GetKey(expectedKey)
+					if err != nil {
+						t.Fatalf("expected snapshot option %q not found: %v", expectedKey, err)
+					}
+					actualValue := key.String()
+					if actualValue != expectedValue {
+						t.Fatalf("snapshot option %q: expected value %q, got %q", expectedKey, expectedValue, actualValue)
+					}
+				}
+
+				// Verify no unexpected keys in snapshot section
+				actualKeys := snapshotSection.KeyStrings()
+				if len(actualKeys) != len(tc.expectedSnapshotOptions) {
+					t.Fatalf("expected %d snapshot options, found %d: %v", len(tc.expectedSnapshotOptions), len(actualKeys), actualKeys)
 				}
 			}
 		})
@@ -1200,6 +1293,11 @@ func TestEscapeQuotesAndBackslashes(t *testing.T) {
 			input:    `\\\\\`,
 			expected: `\\\\\\\\\\`,
 		},
+		{
+			name:     "quote, blackslash, double quote and backtick",
+			input:    "xx'xxx\\23\"4`5",
+			expected: "xx'xxx\\\\23\\\"4`5",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1232,9 +1330,189 @@ func TestEscapeBackslashInUsername(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := escapeQuotesAndBackslashes(tc.input)
+			actual := escapeBackslashInUsername(tc.input)
 			if actual != tc.expected {
 				t.Fatalf("escapeQuotesAndBackslashes(%q) = %q; expected %q", tc.input, actual, tc.expected)
+			}
+		})
+	}
+}
+
+// TestPasswordSerializationDeserialization tests that passwords with special characters
+// can be correctly serialized into an INI file embedded in a secret and then deserialized using gcfg.
+// This test uses the actual production code path via applyClusterCSIDriverChange.
+func TestPasswordSerializationDeserialization(t *testing.T) {
+	featureGates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"})
+
+	tests := []struct {
+		name     string
+		password string
+		username string
+	}{
+		{
+			name:     "password with backslashes",
+			password: `Pass\word\123`,
+			username: "admin",
+		},
+		{
+			name:     "password with backticks",
+			password: "Pass`word`123",
+			username: "user1",
+		},
+		{
+			name:     "password with single quotes",
+			password: `Pass'word'123`,
+			username: "testuser",
+		},
+		{
+			name:     "password with double quotes",
+			password: `Pas/s"word"123`,
+			username: "admin@vsphere.local",
+		},
+		{
+			name:     "password with all special characters",
+			password: `Pass\word"123'abc` + "`def",
+			username: "svc-account",
+		},
+		{
+			name:     "password with only backslashes",
+			password: `\\\\\`,
+			username: "testuser",
+		},
+		{
+			name:     "password with only double quotes",
+			password: `"""""`,
+			username: "admin",
+		},
+		{
+			name:     "password with only backticks",
+			password: "``````",
+			username: "user@domain",
+		},
+		{
+			name:     "password with only single quotes",
+			password: `''''''`,
+			username: "testaccount",
+		},
+		{
+			name:     "password with mixed escaping sequences",
+			password: `P@ss\"w0rd\\123'abc"def` + "`ghi",
+			username: "complexuser",
+		},
+		{
+			name:     "password with backslash at end",
+			password: `Password123\`,
+			username: "admin",
+		},
+		{
+			name:     "password with quote at end",
+			password: `Password123"`,
+			username: "testuser",
+		},
+		{
+			name:     "password with backtick at end",
+			password: "Password123`",
+			username: "user1",
+		},
+		{
+			name:     "complex realistic password",
+			password: `P@ssw0rd!"#$%&'()*+,-./:;<=>?@[\]^_` + "`{|}~",
+			username: "administrator@vsphere.local",
+		},
+		{
+			name:     "quote, blackslash, double quote and backtick",
+			password: "xx'xxx\\23\"4`5",
+			username: "svc-user",
+		},
+		{
+			name:     "quote, blackslash, double quote with byte format",
+			password: `xx'xxx23"4`,
+			username: "testuser",
+		},
+		{
+			name:     "with simple password",
+			password: "Password123",
+			username: "admin",
+		},
+		{
+			name:     "domain user with backslash and complex password",
+			username: `DOMAIN\username`,
+			password: `P@ss\word"123'` + "`abc",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a secret with the test password
+			secretData := testlib.GetSecretWithPassword(tc.username, tc.password)
+			infra := testlib.GetInfraObject()
+			clusterCSIDriver := testlib.GetClusterCSIDriver(false)
+
+			initialObjects := []runtime.Object{secretData}
+			commonApiClient := testlib.NewFakeClients(initialObjects, testlib.MakeFakeDriverInstance(), infra)
+			testlib.AddClusterCSIDriverClient(commonApiClient, clusterCSIDriver)
+
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			go testlib.StartFakeInformer(commonApiClient, stopCh)
+			if err := testlib.AddInitialObjects(append(initialObjects, clusterCSIDriver), commonApiClient); err != nil {
+				t.Fatalf("error adding initial objects: %v", err)
+			}
+
+			testlib.WaitForSync(commonApiClient, stopCh)
+			ctrl := newVsphereControllerWithGates(commonApiClient, featureGates)
+
+			vsphereConfig, err := testlib.GetVSphereConfig("")
+			if err != nil {
+				t.Fatalf("error loading vsphere config: %v", err)
+			}
+
+			// Call the actual production function
+			secret, err := ctrl.applyClusterCSIDriverChange(infra, vsphereConfig, clusterCSIDriver, "foobar")
+			if err != nil {
+				t.Fatalf("applyClusterCSIDriverChange failed: %v", err)
+			}
+
+			// Verify the secret was created
+			if secret == nil {
+				t.Fatal("expected secret to be created, got nil")
+			}
+
+			cloudConf := string(secret.Data["cloud.conf"])
+			if cloudConf == "" {
+				t.Fatal("cloud.conf is empty in secret")
+			}
+
+			// Parse with gcfg library (production code path - what the CSI driver does)
+			// Use FatalOnly to ignore warnings about unknown fields
+			var gcfgConfig legacy.VSphereConfig
+			err = gcfg.FatalOnly(gcfg.ReadStringInto(&gcfgConfig, cloudConf))
+			if err != nil {
+				t.Fatalf("Failed to deserialize cloud.conf with gcfg: %v\nConfig content:\n%s", err, cloudConf)
+			}
+
+			// Verify the VirtualCenter section was parsed
+			vcConfig, ok := gcfgConfig.VirtualCenter["foobar.lan"]
+			if !ok {
+				t.Fatalf("VirtualCenter section 'foobar.lan' not found in deserialized config")
+			}
+
+			// Verify the deserialized password matches the original password
+			// gcfg automatically unescapes the password, so it should match the original
+			if vcConfig.Password != tc.password {
+				t.Errorf("Password mismatch after production flow:\n  Original password: %q\n  Deserialized:      %q",
+					tc.password, vcConfig.Password)
+			}
+
+			// Verify the username matches
+			if vcConfig.User != tc.username {
+				t.Errorf("Username mismatch:\n  Expected: %q\n  Got:      %q", tc.username, vcConfig.User)
+			}
+
+			// Verify other fields are present
+			if vcConfig.Datacenters == "" {
+				t.Error("Datacenters field is empty")
 			}
 		})
 	}

@@ -513,6 +513,20 @@ func GetMultiVCSecret() *v1.Secret {
 	}
 }
 
+// GetSecretWithPassword creates a secret with custom username and password for testing
+func GetSecretWithPassword(username, password string) *v1.Secret {
+	return &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: defaultNamespace,
+		},
+		Data: map[string][]byte{
+			"foobar.lan.password": []byte(password),
+			"foobar.lan.username": []byte(username),
+		},
+	}
+}
+
 func GetTestClusterResult(statusType checks.CheckStatusType) checks.ClusterCheckResult {
 	return checks.ClusterCheckResult{
 		CheckError:  fmt.Errorf("some error"),
