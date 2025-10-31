@@ -105,7 +105,7 @@ spec:
           - --tls-private-key-file=/etc/tls/private/tls.key
           - --tls-cipher-suites=${TLS_CIPHER_SUITES}
           - --tls-min-version=${TLS_MIN_VERSION}
-          - --logtostderr=true
+          - --v=${LOG_LEVEL}
           image: ${KUBE_RBAC_PROXY_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
@@ -159,7 +159,7 @@ spec:
           - --tls-private-key-file=/etc/tls/private/tls.key
           - --tls-cipher-suites=${TLS_CIPHER_SUITES}
           - --tls-min-version=${TLS_MIN_VERSION}
-          - --logtostderr=true
+          - --v=${LOG_LEVEL}
           image: ${KUBE_RBAC_PROXY_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
@@ -206,7 +206,7 @@ spec:
           - --tls-private-key-file=/etc/tls/private/tls.key
           - --tls-cipher-suites=${TLS_CIPHER_SUITES}
           - --tls-min-version=${TLS_MIN_VERSION}
-          - --logtostderr=true
+          - --v=${LOG_LEVEL}
           image: ${KUBE_RBAC_PROXY_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
@@ -252,7 +252,7 @@ spec:
           - --tls-private-key-file=/etc/tls/private/tls.key
           - --tls-cipher-suites=${TLS_CIPHER_SUITES}
           - --tls-min-version=${TLS_MIN_VERSION}
-          - --logtostderr=true
+          - --v=${LOG_LEVEL}
           image: ${KUBE_RBAC_PROXY_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
@@ -299,7 +299,7 @@ spec:
           - --tls-private-key-file=/etc/tls/private/tls.key
           - --tls-cipher-suites=${TLS_CIPHER_SUITES}
           - --tls-min-version=${TLS_MIN_VERSION}
-          - --logtostderr=true
+          - --v=${LOG_LEVEL}
           image: ${KUBE_RBAC_PROXY_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
@@ -370,7 +370,7 @@ spec:
           - --tls-private-key-file=/etc/tls/private/tls.key
           - --tls-cipher-suites=${TLS_CIPHER_SUITES}
           - --tls-min-version=${TLS_MIN_VERSION}
-          - --logtostderr=true
+          - --v=${LOG_LEVEL}
           image: ${KUBE_RBAC_PROXY_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
