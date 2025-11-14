@@ -25,7 +25,7 @@ spec:
         cluster-autoscaler.kubernetes.io/enable-ds-eviction: "false"
     spec:
       hostNetwork: true
-      serviceAccount: vmware-vsphere-csi-driver-node-sa
+      serviceAccountName: vmware-vsphere-csi-driver-node-sa
       priorityClassName: system-node-critical
       tolerations:
         - operator: Exists

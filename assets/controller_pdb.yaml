@@ -8,4 +8,4 @@ spec:
   selector:
     matchLabels:
       app: vmware-vsphere-csi-driver-controller
-  unhealthyEvictionPolicy: AlwaysAllow
+  unhealthyPodEvictionPolicy: AlwaysAllow
