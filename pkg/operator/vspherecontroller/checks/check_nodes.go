@@ -29,7 +29,8 @@ const (
 )
 
 var (
-	nodeProperties = []string{"config.extraConfig", "config.flags", "config.version", "runtime.host"}
+	nodeProperties          = []string{"config.extraConfig", "config.flags", "config.version", "runtime.host"}
+	vSphereProviderIDPrefix = "vsphere://"
 )
 
 type nodeChannelWorkData struct {
@@ -110,9 +111,26 @@ func (n *NodeChecker) getResultCount() int {
 	return len(n.results)
 }
 
+// isVSphereNode checks if a node has a valid vSphere providerID
+// It could take upto a minute or two for `providerID` to be populated on the node objects.
+//
+// TODO: Update this check to use `platform-type` label when `platform-type`
+// label is generally available.
+func isVSphereNode(node *v1.Node) bool {
+	if node.Spec.ProviderID == "" {
+		return false
+	}
+	return strings.HasPrefix(node.Spec.ProviderID, vSphereProviderIDPrefix)
+}
+
 func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResult {
 	checkOpts := workInfo.checkOpts
 	node := workInfo.node
+
+	if !isVSphereNode(node) {
+		reason := fmt.Errorf("node %s is not a vSphere node: providerID %q does not have the expected vSphere prefix %q", node.Name, node.Spec.ProviderID, vSphereProviderIDPrefix)
+		return MakeClusterDegradedError(CheckStatusNonVSphereNode, reason)
+	}
 
 	nodeCheckContext, cancel := context.WithTimeout(workInfo.ctx, nodeCheckTimeout)
 	defer cancel()

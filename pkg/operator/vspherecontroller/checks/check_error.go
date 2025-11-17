@@ -21,6 +21,7 @@ const (
 	CheckStatusVcenterAPIError         CheckStatusType = "vcenter_api_error"
 	CheckStatusGenericError            CheckStatusType = "generic_error"
 	CheckStatusBlockVolumeLimitError   CheckStatusType = "block_volume_limit_error"
+	CheckStatusNonVSphereNode          CheckStatusType = "non_vsphere_node"
 )
 
 type ClusterCheckStatus string
