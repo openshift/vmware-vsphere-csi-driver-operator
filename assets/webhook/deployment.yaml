@@ -36,6 +36,8 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: vsphere-webhook
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${VMWARE_VSPHERE_SYNCER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
