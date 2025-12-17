@@ -48,6 +48,8 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: csi-driver
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${DRIVER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -98,6 +100,8 @@ spec:
               cpu: 10m
           terminationMessagePolicy: FallbackToLogsOnError
         - name: driver-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
           args:
           - --secure-listen-address=0.0.0.0:9201
           - --upstream=http://127.0.0.1:2112/
@@ -121,6 +125,8 @@ spec:
             name: metrics-serving-cert
           terminationMessagePolicy: FallbackToLogsOnError
         - name: csi-provisioner
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${PROVISIONER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -152,6 +158,8 @@ spec:
           # Provides https proxy for http-based external-provisioner metrics.
           terminationMessagePolicy: FallbackToLogsOnError
         - name: provisioner-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
           args:
           - --secure-listen-address=0.0.0.0:9202
           - --upstream=http://127.0.0.1:8202/
@@ -175,6 +183,8 @@ spec:
             name: metrics-serving-cert
           terminationMessagePolicy: FallbackToLogsOnError
         - name: csi-attacher
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${ATTACHER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -199,6 +209,8 @@ spec:
               cpu: 10m
           terminationMessagePolicy: FallbackToLogsOnError
         - name: attacher-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
           args:
           - --secure-listen-address=0.0.0.0:9203
           - --upstream=http://127.0.0.1:8203/
@@ -222,6 +234,8 @@ spec:
             name: metrics-serving-cert
           terminationMessagePolicy: FallbackToLogsOnError
         - name: csi-resizer
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${RESIZER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -245,6 +259,8 @@ spec:
               cpu: 10m
           terminationMessagePolicy: FallbackToLogsOnError
         - name: resizer-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
           args:
           - --secure-listen-address=0.0.0.0:9204
           - --upstream=http://127.0.0.1:8204/
@@ -269,6 +285,8 @@ spec:
           terminationMessagePolicy: FallbackToLogsOnError
         # external-snapshotter container
         - name: csi-snapshotter
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${SNAPSHOTTER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -292,6 +310,8 @@ spec:
               cpu: 10m
           terminationMessagePolicy: FallbackToLogsOnError
         - name: snapshotter-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
           args:
           - --secure-listen-address=0.0.0.0:9206
           - --upstream=http://127.0.0.1:8205/
@@ -315,6 +335,8 @@ spec:
             name: metrics-serving-cert
           terminationMessagePolicy: FallbackToLogsOnError
         - name: csi-liveness-probe
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${LIVENESS_PROBE_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -334,6 +356,8 @@ spec:
               cpu: 10m
           terminationMessagePolicy: FallbackToLogsOnError
         - name: vsphere-syncer
+          securityContext:
+            readOnlyRootFilesystem: true
           image: ${VMWARE_VSPHERE_SYNCER_IMAGE}
           imagePullPolicy: IfNotPresent
           args:
@@ -363,6 +387,8 @@ spec:
               cpu: 10m
           terminationMessagePolicy: FallbackToLogsOnError
         - name: syncer-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
           args:
           - --secure-listen-address=0.0.0.0:9205
           - --upstream=http://127.0.0.1:2113/
