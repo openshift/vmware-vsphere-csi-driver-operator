@@ -135,6 +135,18 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 	nodeCheckContext, cancel := context.WithTimeout(workInfo.ctx, nodeCheckTimeout)
 	defer cancel()
 
+	// If node is not a vSphere node, we'll ignore and return result pass.
+	if workInfo.checkOpts.featureGate.Enabled(features.FeatureGateVSphereMixedNodeEnv) {
+		// In the future, we may want to modify this to look for more information if we start to support other IPI style
+		// nodes in a cluster (such as Nutanix with vSphere).  In this case, vSphere CCM will set platform-type, and we
+		// only support vSphere with bare metal (platform=none) nodes.
+		platformType, hasKey := node.Labels["node.openshift.io/platform-type"]
+		if !hasKey || platformType != "vsphere" {
+			klog.V(2).InfoS("Detected non vsphere node", "Name", node.Name, "PlatformType", platformType)
+			return MakeClusterCheckResultPass()
+		}
+	}
+
 	vm, err := getVM(nodeCheckContext, checkOpts, node)
 	if err != nil {
 		return makeDeprecatedEnvironmentError(CheckStatusVcenterAPIError, err)
