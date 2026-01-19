@@ -21,7 +21,8 @@ DriverInfo:
     volumeLimits: false
     controllerExpansion: true
     nodeExpansion: true
-    snapshotDataSource: false
+    snapshotDataSource: true
+    FSResizeFromSourceNotSupported: true
     topology: true
     multipods: false
     multiplePVsSameID: false
