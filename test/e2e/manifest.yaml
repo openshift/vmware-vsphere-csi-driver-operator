@@ -26,3 +26,4 @@ DriverInfo:
     multipods: false
     multiplePVsSameID: false
     readWriteOncePod: true
+    RWX: false
