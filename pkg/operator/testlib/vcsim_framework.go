@@ -180,11 +180,20 @@ func DefaultNodes() []*v1.Node {
 	for _, vm := range DefaultVMs {
 		node := Node(vm.name, WithProviderID("vsphere://"+vm.uuid))
 		node.Labels = map[string]string{
-			"kubernetes.io/os": "linux",
+			"kubernetes.io/os":                "linux",
+			"node.openshift.io/platform-type": "vsphere",
 		}
 		nodes = append(nodes, node)
 	}
 	return nodes
+}
+
+func GetBareMetalNode() *v1.Node {
+	node := Node("bm-node")
+	node.Labels = map[string]string{
+		"kubernetes.io/os": "linux",
+	}
+	return node
 }
 
 func simulatorConfig() *vclib.VSphereConfig {

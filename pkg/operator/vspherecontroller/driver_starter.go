@@ -4,13 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/openshift/api/features"
 	"os"
 	"strconv"
 
 	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 
+	"github.com/openshift/api/features"
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -156,6 +156,7 @@ func (c *VSphereController) createCSIDriver() {
 		),
 		WithSecretDaemonSetAnnotationHook(driverConfigSecretName, defaultNamespace, c.apiClients.SecretInformer),
 		WithMaxVolumesPerNodeDaemonSetHook(c.apiClients.ClusterCSIDriverInformer.Lister(), c.featureGates),
+		WithMixedEnvironmentHook(c.featureGates),
 	).WithServiceMonitorController(
 		"VMWareVSphereDriverServiceMonitorController",
 		c.apiClients.DynamicClient,
@@ -329,6 +330,18 @@ func getOperatorSyncState(operatorClient v1helpers.OperatorClientWithFinalizers)
 		klog.Infof("Operator is not managed, the management state is %v", opSpec.ManagementState)
 	}
 	return opSpec.ManagementState
+}
+
+// WithMixedEnvironmentHook adds nodeSelector to the daemonset when the FeatureGateVSphereMixedNodeEnv feature gate is enabled.
+// The nodeSelector will prevent the daemonset from adding pods to nodes that are not vSphere nodes using the "node.kubernetes.io/platform-type".
+func WithMixedEnvironmentHook(featureGate featuregates.FeatureGate) csidrivernodeservicecontroller.DaemonSetHookFunc {
+	return func(opSpec *operatorapi.OperatorSpec, ds *appsv1.DaemonSet) error {
+		if !featureGate.Enabled(features.FeatureGateVSphereMixedNodeEnv) {
+			return nil
+		}
+		ds.Spec.Template.Spec.NodeSelector["node.openshift.io/platform-type"] = "vsphere"
+		return nil
+	}
 }
 
 // WithMaxVolumesPerNodeDaemonSetHook sets the MAX_VOLUMES_PER_NODE environment variable in the DaemonSet container specifications.

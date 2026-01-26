@@ -35,7 +35,7 @@ const (
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	gates := featuregates.NewFeatureGate(
 		[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode},
-		[]configv1.FeatureGateName{"SomeDisabledFeatureGate"},
+		[]configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMixedNodeEnv},
 	)
 	return newVsphereControllerWithGates(apiClients, gates)
 }
@@ -118,6 +118,7 @@ func TestSync(t *testing.T) {
 		failVCenterConnection        bool
 		operandStarted               bool
 		storageClassCreated          bool
+		featureGates                 featuregates.FeatureGate
 	}{
 		{
 			name:                         "when all configuration is right",
@@ -606,6 +607,30 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			storageClassCreated: true,
 		},
 		{
+			name:                         "when vcenter version is 7.0.1 and csi driver exists and mixed env, mark upgradeable: false",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.1", // Minimum for upgrade is 7.0.2
+			hostVersion:                  "7.0.2",
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			featureGates: featuregates.NewFeatureGate(
+				[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode, features.FeatureGateVSphereMixedNodeEnv},
+				[]configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
 			name:                         "when vcenter version is 7.0.1 and csi driver exists, mark upgradeable: false YAML",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
@@ -623,6 +648,30 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 					Status: opv1.ConditionFalse,
 				},
 			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when vcenter version is 7.0.1 and csi driver exists and mixed env, mark upgradeable: false YAML",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.1", // Minimum for upgrade is 7.0.2
+			hostVersion:                  "7.0.2",
+			initialObjects:               []runtime.Object{testlib.GetNewConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			featureGates: featuregates.NewFeatureGate(
+				[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode, features.FeatureGateVSphereMixedNodeEnv},
+				[]configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
 			operandStarted:      true,
 			storageClassCreated: true,
 		},
@@ -648,6 +697,30 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 			storageClassCreated: true,
 		},
 		{
+			name:                         "when host version is 7.0.1 and csi driver exists and mixed env, mark upgradeable: false",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.1", // Minimum for upgrade is 7.0.2
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetCSIDriver(true)},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			featureGates: featuregates.NewFeatureGate(
+				[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode, features.FeatureGateVSphereMixedNodeEnv},
+				[]configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
 			name:                         "when host version is 7.0.1 and csi driver exists, mark upgradeable: false YAML",
 			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
 			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
@@ -665,6 +738,75 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 					Status: opv1.ConditionFalse,
 				},
 			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when all configuration is right and bm node present and mixed env is disabled",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetBareMetalNode()},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionFalse,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when all configuration is right and mixed env is enabled",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			featureGates: featuregates.NewFeatureGate(
+				[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode, features.FeatureGateVSphereMixedNodeEnv},
+				[]configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
+			operandStarted:      true,
+			storageClassCreated: true,
+		},
+		{
+			name:                         "when all configuration is right and bm node present and mixed env is enabled",
+			clusterCSIDriverObject:       testlib.MakeFakeDriverInstance(),
+			vcenterVersion:               "7.0.2",
+			hostVersion:                  "7.0.2",
+			startingNodeHardwareVersions: []string{"vmx-15", "vmx-15"},
+			initialObjects:               []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret(), testlib.GetBareMetalNode()},
+			infra:                        testlib.GetInfraObject(),
+			expectedConditions: []opv1.OperatorCondition{
+				{
+					Type:   testControllerName + opv1.OperatorStatusTypeUpgradeable,
+					Status: opv1.ConditionTrue,
+				},
+				{
+					Type:   "VMwareVSphereOperatorCheck" + opv1.OperatorStatusTypeDegraded,
+					Status: opv1.ConditionFalse,
+				},
+			},
+			featureGates: featuregates.NewFeatureGate(
+				[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode, features.FeatureGateVSphereMixedNodeEnv},
+				[]configv1.FeatureGateName{"SomeDisabledFeatureGate"}),
 			operandStarted:      true,
 			storageClassCreated: true,
 		},
@@ -700,7 +842,13 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 
 			testlib.WaitForSync(commonApiClient, stopCh)
 
-			ctrl := newVsphereController(commonApiClient)
+			var ctrl *VSphereController
+			if test.featureGates == nil {
+				ctrl = newVsphereController(commonApiClient)
+			} else {
+				fmt.Println("SETTING TEST VERSION")
+				ctrl = newVsphereControllerWithGates(commonApiClient, test.featureGates)
+			}
 			scController := ctrl.storageClassController.(*dummyStorageClassController)
 
 			var cleanUpFunc func()
