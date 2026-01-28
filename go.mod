@@ -7,10 +7,10 @@ toolchain go1.24.4
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/google/go-cmp v0.7.0
-	github.com/openshift/api v0.0.0-20251111193948-50e2ece149d7
+	github.com/openshift/api v0.0.0-20260126183958-606bd613f9f7
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
-	github.com/openshift/client-go v0.0.0-20251015124057-db0dee36e235
-	github.com/openshift/library-go v0.0.0-20251107090138-0de9712313a5
+	github.com/openshift/client-go v0.0.0-20260108185524-48f4ccfc4e13
+	github.com/openshift/library-go v0.0.0-20260128103731-28a799f65388
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
@@ -103,7 +103,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.44.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/oauth2 v0.33.0 // indirect
