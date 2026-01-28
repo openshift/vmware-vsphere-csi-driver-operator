@@ -762,8 +762,8 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	snapshotOptions := utils.GetSnapshotOptions(clusterCSIDriver)
 	if len(snapshotOptions) > 0 {
 		csiConfigString = fmt.Sprintf("%v\n[Snapshot]", csiConfigString)
-		for k, v := range snapshotOptions {
-			csiConfigString = fmt.Sprintf("%v\n%v = %v", csiConfigString, k, v)
+		for _, opt := range snapshotOptions {
+			csiConfigString = fmt.Sprintf("%v\n%v = %v", csiConfigString, opt.Key, opt.Value)
 		}
 	}
 	csiConfigString = fmt.Sprintf("%v\n", csiConfigString)
