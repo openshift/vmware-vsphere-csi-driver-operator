@@ -40,27 +40,27 @@ func TestSnapshotConfiguration(t *testing.T) {
 	tests := []struct {
 		name             string
 		clusterCSIDriver *opv1.ClusterCSIDriver
-		expectedResult   map[string]string
+		expectedResult   []SnapshotOption
 	}{
 		{
 			name:             "no configuration",
 			clusterCSIDriver: emptyClusterCSIDriver,
-			expectedResult:   map[string]string{},
+			expectedResult:   nil,
 		},
 		{
 			name:             "only global max snapshot limit configured",
 			clusterCSIDriver: globalMaxSnapshotClusterCSIDriver,
-			expectedResult: map[string]string{
-				"global-max-snapshots-per-block-volume": "5",
+			expectedResult: []SnapshotOption{
+				{Key: "global-max-snapshots-per-block-volume", Value: "5"},
 			},
 		},
 		{
 			name:             "all snapshot options configured",
 			clusterCSIDriver: allSnapshotOptionsClusterCSIDriver,
-			expectedResult: map[string]string{
-				"global-max-snapshots-per-block-volume":        "5",
-				"granular-max-snapshots-per-block-volume-vsan": "10",
-				"granular-max-snapshots-per-block-volume-vvol": "15",
+			expectedResult: []SnapshotOption{
+				{Key: "global-max-snapshots-per-block-volume", Value: "5"},
+				{Key: "granular-max-snapshots-per-block-volume-vsan", Value: "10"},
+				{Key: "granular-max-snapshots-per-block-volume-vvol", Value: "15"},
 			},
 		},
 	}
@@ -68,7 +68,7 @@ func TestSnapshotConfiguration(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			result := GetSnapshotOptions(test.clusterCSIDriver)
 			if !reflect.DeepEqual(result, test.expectedResult) {
-				t.Errorf("Unexpected result: %s\nExpected: %s", result, test.expectedResult)
+				t.Errorf("Unexpected result: %v\nExpected: %v", result, test.expectedResult)
 			}
 		})
 	}
