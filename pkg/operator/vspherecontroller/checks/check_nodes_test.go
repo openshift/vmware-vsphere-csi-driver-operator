@@ -46,7 +46,7 @@ func TestIsVSphereNode(t *testing.T) {
 				},
 			}
 
-			result := isVSphereNode(node)
+			result := isVSphereNode(node, featuregates.NewFeatureGate(nil, nil))
 			if result != tt.expected {
 				t.Errorf("isVSphereNode() = %v, want %v for providerID %q", result, tt.expected, tt.providerID)
 			}

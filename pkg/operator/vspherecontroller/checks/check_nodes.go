@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openshift/api/features"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -116,7 +117,13 @@ func (n *NodeChecker) getResultCount() int {
 //
 // TODO: Update this check to use `platform-type` label when `platform-type`
 // label is generally available.
-func isVSphereNode(node *v1.Node) bool {
+func isVSphereNode(node *v1.Node, featureGate featuregates.FeatureGate) bool {
+	if featureGate.Enabled(features.FeatureGateVSphereMixedNodeEnv) {
+		if node.ObjectMeta.Labels["platform-type"] == "vsphere" {
+			return true
+		}
+		return false
+	}
 	if node.Spec.ProviderID == "" {
 		return false
 	}
@@ -127,7 +134,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 	checkOpts := workInfo.checkOpts
 	node := workInfo.node
 
-	if !isVSphereNode(node) {
+	if !isVSphereNode(node, checkOpts.featureGate) {
 		reason := fmt.Errorf("node %s is not a vSphere node: providerID %q does not have the expected vSphere prefix %q", node.Name, node.Spec.ProviderID, vSphereProviderIDPrefix)
 		return MakeClusterDegradedError(CheckStatusNonVSphereNode, reason)
 	}
