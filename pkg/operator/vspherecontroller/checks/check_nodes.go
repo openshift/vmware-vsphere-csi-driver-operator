@@ -115,28 +115,30 @@ func (n *NodeChecker) getResultCount() int {
 // isVSphereNode checks if a node has a valid vSphere providerID
 // It could take upto a minute or two for `providerID` to be populated on the node objects.
 //
-// TODO: Update this check to use `platform-type` label when `platform-type`
-// label is generally available.
-func isVSphereNode(node *v1.Node, featureGate featuregates.FeatureGate) bool {
+// TODO: Stop checking for featureGate when `platform-type` label is generally available.
+func isVSphereNode(node *v1.Node, featureGate featuregates.FeatureGate) error {
 	if featureGate.Enabled(features.FeatureGateVSphereMixedNodeEnv) {
 		if node.ObjectMeta.Labels["platform-type"] == "vsphere" {
-			return true
+			return nil
 		}
-		return false
+		return fmt.Errorf("node %s is not a vSphere node: platform-type label is not set to vsphere", node.Name)
 	}
 	if node.Spec.ProviderID == "" {
-		return false
+		return fmt.Errorf("node %s is not a vSphere node: providerID is empty", node.Name)
 	}
-	return strings.HasPrefix(node.Spec.ProviderID, vSphereProviderIDPrefix)
+	if strings.HasPrefix(node.Spec.ProviderID, vSphereProviderIDPrefix) {
+		return nil
+	}
+	return fmt.Errorf("node %s is not a vSphere node: providerID %q does not have the expected vSphere prefix %q", node.Name, node.Spec.ProviderID, vSphereProviderIDPrefix)
 }
 
 func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResult {
 	checkOpts := workInfo.checkOpts
 	node := workInfo.node
 
-	if !isVSphereNode(node, checkOpts.featureGate) {
-		reason := fmt.Errorf("node %s is not a vSphere node: providerID %q does not have the expected vSphere prefix %q", node.Name, node.Spec.ProviderID, vSphereProviderIDPrefix)
-		return MakeClusterDegradedError(CheckStatusNonVSphereNode, reason)
+	err := isVSphereNode(node, checkOpts.featureGate)
+	if err != nil {
+		return MakeClusterDegradedError(CheckStatusNonVSphereNode, err)
 	}
 
 	nodeCheckContext, cancel := context.WithTimeout(workInfo.ctx, nodeCheckTimeout)
