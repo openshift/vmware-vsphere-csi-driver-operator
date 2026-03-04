@@ -123,13 +123,10 @@ func isVSphereNode(node *v1.Node, featureGate featuregates.FeatureGate) error {
 		}
 		return fmt.Errorf("node %s is not a vSphere node: platform-type label is not set to vsphere", node.Name)
 	}
-	if node.Spec.ProviderID == "" {
-		return fmt.Errorf("node %s is not a vSphere node: providerID is empty", node.Name)
+	if node.Spec.ProviderID == "" || !strings.HasPrefix(node.Spec.ProviderID, vSphereProviderIDPrefix) {
+		return fmt.Errorf("node %s is not a vSphere node: providerID %q does not have the expected vSphere prefix %q", node.Name, node.Spec.ProviderID, vSphereProviderIDPrefix)
 	}
-	if strings.HasPrefix(node.Spec.ProviderID, vSphereProviderIDPrefix) {
-		return nil
-	}
-	return fmt.Errorf("node %s is not a vSphere node: providerID %q does not have the expected vSphere prefix %q", node.Name, node.Spec.ProviderID, vSphereProviderIDPrefix)
+	return nil
 }
 
 func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResult {

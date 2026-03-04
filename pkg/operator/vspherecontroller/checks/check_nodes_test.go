@@ -21,23 +21,23 @@ func TestIsVSphereNode(t *testing.T) {
 	}{
 		{
 			name:          "valid vSphere providerID",
-			providerID:    "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: nil,
 		},
 		{
 			name:          "empty providerID",
 			providerID:    "",
-			expectedError: fmt.Errorf("node test-node is not a vSphere node: providerID is empty"),
+			expectedError: fmt.Errorf("node test-node is not a vSphere node: providerID %q does not have the expected vSphere prefix %q", "", vSphereProviderIDPrefix),
 		},
 		{
 			name:          "AWS providerID",
 			providerID:    "aws:///us-east-1a/i-1234567890abcdef0",
-			expectedError: fmt.Errorf("node test-node is not a vSphere node: providerID \"aws:///us-east-1a/i-1234567890abcdef0\" does not have the expected vSphere prefix \"vsphere://\""),
+			expectedError: fmt.Errorf("node test-node is not a vSphere node: providerID \"aws:///us-east-1a/i-1234567890abcdef0\" does not have the expected vSphere prefix %q", vSphereProviderIDPrefix),
 		},
 		{
 			name:          "GCE providerID",
 			providerID:    "gce://my-project/us-central1-a/my-instance",
-			expectedError: fmt.Errorf("node test-node is not a vSphere node: providerID \"gce://my-project/us-central1-a/my-instance\" does not have the expected vSphere prefix \"vsphere://\""),
+			expectedError: fmt.Errorf("node test-node is not a vSphere node: providerID \"gce://my-project/us-central1-a/my-instance\" does not have the expected vSphere prefix %q", vSphereProviderIDPrefix),
 		},
 	}
 
@@ -81,7 +81,7 @@ func TestIsVSphereNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 		{
 			name:          "platform-type=vsphere label, vsphere providerID",
 			labels:        map[string]string{"platform-type": "vsphere"},
-			providerID:    "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: nil,
 		},
 		{
@@ -93,19 +93,19 @@ func TestIsVSphereNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 		{
 			name:          "no platform-type label, vsphere providerID",
 			labels:        nil,
-			providerID:    "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: platformTypeErr,
 		},
 		{
 			name:          "platform-type=other, vsphere providerID",
 			labels:        map[string]string{"platform-type": "aws"},
-			providerID:    "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: platformTypeErr,
 		},
 		{
 			name:          "empty platform-type, vsphere providerID",
 			labels:        map[string]string{"platform-type": ""},
-			providerID:    "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: platformTypeErr,
 		},
 	}
@@ -196,11 +196,11 @@ func TestNodeChecker_CheckOnNode_ValidVSphereProviderID(t *testing.T) {
 	}{
 		{
 			name:       "valid vSphere providerID",
-			providerID: "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID: vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 		},
 		{
 			name:       "valid vSphere providerID with different UUID",
-			providerID: "vsphere://12345678-1234-1234-1234-123456789abc",
+			providerID: vSphereProviderIDPrefix + "12345678-1234-1234-1234-123456789abc",
 		},
 	}
 
@@ -264,14 +264,14 @@ func TestNodeChecker_CheckOnNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 		{
 			name:                   "no platform-type label, vsphere providerID fails with gate on",
 			labels:                 nil,
-			providerID:             "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID:             vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError:          platformTypeErr,
 			expectNonVSphereStatus: true,
 		},
 		{
 			name:                   "platform-type=aws, vsphere providerID fails with gate on",
 			labels:                 map[string]string{"platform-type": "aws"},
-			providerID:             "vsphere://42290e77-dc1d-10ef-380c-26ed0ab90cb9",
+			providerID:             vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError:          platformTypeErr,
 			expectNonVSphereStatus: true,
 		},
