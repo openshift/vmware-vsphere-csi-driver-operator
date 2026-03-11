@@ -53,7 +53,7 @@ func TestIsVSphereNode(t *testing.T) {
 			}
 
 			fg := featuregates.NewFeatureGate(nil, []configv1.FeatureGateName{features.FeatureGateVSphereMixedNodeEnv})
-			err := isVSphereNode(node, fg)
+			err := validateVsphereNode(node, fg)
 			assert.Equalf(t, tt.expectedError, err, "providerID %q", tt.providerID)
 		})
 	}
@@ -121,7 +121,7 @@ func TestIsVSphereNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 					ProviderID: tt.providerID,
 				},
 			}
-			err := isVSphereNode(node, featureGateEnabled)
+			err := validateVsphereNode(node, featureGateEnabled)
 			assert.Equalf(t, tt.expectedError, err, "labels=%v providerID=%q", tt.labels, tt.providerID)
 		})
 	}
@@ -288,7 +288,7 @@ func TestNodeChecker_CheckOnNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 					ProviderID: tt.providerID,
 				},
 			}
-			err := isVSphereNode(node, featureGateEnabled)
+			err := validateVsphereNode(node, featureGateEnabled)
 			assert.Equalf(t, tt.expectedError, err, "labels=%v providerID=%q", tt.labels, tt.providerID)
 
 			checker := &NodeChecker{}

@@ -112,13 +112,13 @@ func (n *NodeChecker) getResultCount() int {
 	return len(n.results)
 }
 
-// isVSphereNode checks if a node has a valid vSphere providerID
+// validateVsphereNode checks if a node has a valid vSphere providerID
 // It could take upto a minute or two for `providerID` to be populated on the node objects.
 //
 // TODO: Stop checking for featureGate when `platform-type` label is generally available.
-func isVSphereNode(node *v1.Node, featureGate featuregates.FeatureGate) error {
+func validateVsphereNode(node *v1.Node, featureGate featuregates.FeatureGate) error {
 	if featureGate.Enabled(features.FeatureGateVSphereMixedNodeEnv) {
-		if node.ObjectMeta.Labels["platform-type"] == "vsphere" {
+		if v, ok := node.Labels["node.openshift.io/platform-type"]; ok && v == "vsphere" {
 			return nil
 		}
 		return fmt.Errorf("node %s is not a vSphere node: platform-type label is not set to vsphere", node.Name)
@@ -133,7 +133,7 @@ func (n *NodeChecker) checkOnNode(workInfo nodeChannelWorkData) ClusterCheckResu
 	checkOpts := workInfo.checkOpts
 	node := workInfo.node
 
-	err := isVSphereNode(node, checkOpts.featureGate)
+	err := validateVsphereNode(node, checkOpts.featureGate)
 	if err != nil {
 		return MakeClusterDegradedError(CheckStatusNonVSphereNode, err)
 	}
