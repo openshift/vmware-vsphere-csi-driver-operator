@@ -74,19 +74,19 @@ func TestIsVSphereNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 	}{
 		{
 			name:          "platform-type=vsphere label, empty providerID",
-			labels:        map[string]string{"platform-type": "vsphere"},
+			labels:        map[string]string{"node.openshift.io/platform-type": "vsphere"},
 			providerID:    "",
 			expectedError: nil,
 		},
 		{
 			name:          "platform-type=vsphere label, vsphere providerID",
-			labels:        map[string]string{"platform-type": "vsphere"},
+			labels:        map[string]string{"node.openshift.io/platform-type": "vsphere"},
 			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: nil,
 		},
 		{
 			name:          "platform-type=vsphere label, non-vsphere providerID",
-			labels:        map[string]string{"platform-type": "vsphere"},
+			labels:        map[string]string{"node.openshift.io/platform-type": "vsphere"},
 			providerID:    "aws:///us-east-1a/i-1234567890abcdef0",
 			expectedError: nil,
 		},
@@ -98,13 +98,13 @@ func TestIsVSphereNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 		},
 		{
 			name:          "platform-type=other, vsphere providerID",
-			labels:        map[string]string{"platform-type": "aws"},
+			labels:        map[string]string{"node.openshift.io/platform-type": "aws"},
 			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: platformTypeErr,
 		},
 		{
 			name:          "empty platform-type, vsphere providerID",
-			labels:        map[string]string{"platform-type": ""},
+			labels:        map[string]string{"node.openshift.io/platform-type": ""},
 			providerID:    vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError: platformTypeErr,
 		},
@@ -256,7 +256,7 @@ func TestNodeChecker_CheckOnNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 	}{
 		{
 			name:                   "platform-type=vsphere, empty providerID passes node check",
-			labels:                 map[string]string{"platform-type": "vsphere"},
+			labels:                 map[string]string{"node.openshift.io/platform-type": "vsphere"},
 			providerID:             "",
 			expectedError:          nil,
 			expectNonVSphereStatus: false,
@@ -270,7 +270,7 @@ func TestNodeChecker_CheckOnNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 		},
 		{
 			name:                   "platform-type=aws, vsphere providerID fails with gate on",
-			labels:                 map[string]string{"platform-type": "aws"},
+			labels:                 map[string]string{"node.openshift.io/platform-type": "aws"},
 			providerID:             vSphereProviderIDPrefix + "42290e77-dc1d-10ef-380c-26ed0ab90cb9",
 			expectedError:          platformTypeErr,
 			expectNonVSphereStatus: true,
