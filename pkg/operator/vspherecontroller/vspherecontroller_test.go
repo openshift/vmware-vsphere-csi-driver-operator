@@ -35,7 +35,7 @@ const (
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	gates := featuregates.NewFeatureGate(
 		[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode},
-		[]configv1.FeatureGateName{"SomeDisabledFeatureGate"},
+		[]configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMixedNodeEnv},
 	)
 	return newVsphereControllerWithGates(apiClients, gates)
 }
@@ -797,7 +797,10 @@ vsphere_csi_driver_error{condition="upgrade_blocked",failure_reason="existing_dr
 }
 
 func TestApplyClusterCSIDriver(t *testing.T) {
-	featureGates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"})
+	featureGates := featuregates.NewFeatureGate(
+		[]configv1.FeatureGateName{"SomeEnabledFeatureGate"},
+		[]configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMixedNodeEnv},
+	)
 
 	tests := []struct {
 		name                    string
@@ -1342,7 +1345,10 @@ func TestEscapeBackslashInUsername(t *testing.T) {
 // can be correctly serialized into an INI file embedded in a secret and then deserialized using gcfg.
 // This test uses the actual production code path via applyClusterCSIDriverChange.
 func TestPasswordSerializationDeserialization(t *testing.T) {
-	featureGates := featuregates.NewFeatureGate([]configv1.FeatureGateName{"SomeEnabledFeatureGate"}, []configv1.FeatureGateName{"SomeDisabledFeatureGate"})
+	featureGates := featuregates.NewFeatureGate(
+		[]configv1.FeatureGateName{"SomeEnabledFeatureGate"},
+		[]configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMixedNodeEnv},
+	)
 
 	tests := []struct {
 		name     string
