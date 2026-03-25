@@ -15,12 +15,12 @@ require (
 	github.com/vmware/govmomi v0.53.0
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/ini.v1 v1.67.1
-	k8s.io/api v0.35.2
+	k8s.io/api v0.36.0-alpha.0
 	k8s.io/apiextensions-apiserver v0.35.2
-	k8s.io/apimachinery v0.35.3
-	k8s.io/client-go v0.35.2
+	k8s.io/apimachinery v0.36.0-alpha.0
+	k8s.io/client-go v0.36.0-alpha.0
 	k8s.io/cloud-provider-vsphere v1.35.0-rc.0
-	k8s.io/component-base v0.35.2
+	k8s.io/component-base v0.36.0-alpha.0
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/legacy-cloud-providers v0.29.1
 	k8s.io/utils v0.0.0-20260319190234-28399d86e0b5
@@ -119,10 +119,10 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiserver v0.35.2 // indirect
+	k8s.io/apiserver v0.36.0-alpha.0 // indirect
 	k8s.io/cloud-provider v0.35.2 // indirect
-	k8s.io/component-helpers v0.35.2 // indirect
-	k8s.io/kms v0.35.3 // indirect
+	k8s.io/component-helpers v0.36.0-alpha.0 // indirect
+	k8s.io/kms v0.36.0-alpha.0 // indirect
 	k8s.io/kube-aggregator v0.35.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20260319004828-5883c5ee87b9 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.34.0 // indirect
@@ -132,3 +132,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace k8s.io/cloud-provider-vsphere => github.com/openshift/cloud-provider-vsphere v1.19.1-0.20260307101216-854aeeabab63

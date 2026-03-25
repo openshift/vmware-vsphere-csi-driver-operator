@@ -79,7 +79,7 @@ type ReflectorStore interface {
 // TransformingStore is an optional interface that can be implemented by the provided store.
 // If implemented on the provided store reflector will use the same transformer in its internal stores.
 type TransformingStore interface {
-	ReflectorStore
+	Store
 	Transformer() TransformFunc
 }
 
@@ -426,10 +426,7 @@ func (r *Reflector) ListAndWatchWithContext(ctx context.Context) error {
 			return nil
 		}
 		if err != nil {
-			logger.V(4).Info(
-				"Data couldn't be fetched in watchlist mode. Falling back to regular list. This is expected if watchlist is not supported or disabled in kube-apiserver.",
-				"err", err,
-			)
+			logger.Error(err, "The watchlist request ended with an error, falling back to the standard LIST/WATCH semantics because making progress is better than deadlocking")
 			fallbackToList = true
 			// ensure that we won't accidentally pass some garbage down the watch.
 			w = nil
@@ -736,11 +733,9 @@ func (r *Reflector) watchList(ctx context.Context) (watch.Interface, error) {
 		return false
 	}
 
-	var transformer TransformFunc
 	storeOpts := []StoreOption{}
 	if tr, ok := r.store.(TransformingStore); ok && tr.Transformer() != nil {
-		transformer = tr.Transformer()
-		storeOpts = append(storeOpts, WithTransformer(transformer))
+		storeOpts = append(storeOpts, WithTransformer(tr.Transformer()))
 	}
 
 	initTrace := trace.New("Reflector WatchList", trace.Field{Key: "name", Value: r.name})
@@ -800,7 +795,7 @@ func (r *Reflector) watchList(ctx context.Context) (watch.Interface, error) {
 	// we utilize the temporaryStore to ensure independence from the current store implementation.
 	// as of today, the store is implemented as a queue and will be drained by the higher-level
 	// component as soon as it finishes replacing the content.
-	checkWatchListDataConsistencyIfRequested(ctx, r.name, resourceVersion, r.listerWatcher.ListWithContext, transformer, temporaryStore.List)
+	checkWatchListDataConsistencyIfRequested(ctx, r.name, resourceVersion, r.listerWatcher.ListWithContext, temporaryStore.List)
 
 	if err := r.store.Replace(temporaryStore.List(), resourceVersion); err != nil {
 		return nil, fmt.Errorf("unable to sync watch-list result: %w", err)
