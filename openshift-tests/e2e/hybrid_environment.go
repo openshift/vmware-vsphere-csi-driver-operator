@@ -38,6 +38,102 @@ const (
 	operatorDegradationTimeout         = 5 * time.Minute
 )
 
+// Helper function to categorize nodes by platform type
+func categorizeNodesByPlatform(ctx context.Context, kubeClient *kubernetes.Clientset, verbose bool) (nodesWithVSphere, nodesWithoutLabel []string, err error) {
+	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(nodes.Items) == 0 {
+		return nil, nil, fmt.Errorf("no nodes found in the cluster")
+	}
+
+	if verbose {
+		GinkgoWriter.Printf("Found %d nodes in the cluster\n", len(nodes.Items))
+	}
+
+	for _, node := range nodes.Items {
+		platformType, hasLabel := node.Labels[platformTypeLabelKey]
+
+		if hasLabel && platformType == vSpherePlatformType {
+			nodesWithVSphere = append(nodesWithVSphere, node.Name)
+			if verbose {
+				GinkgoWriter.Printf("✓ Node %s has vSphere platform-type label\n", node.Name)
+			}
+		} else {
+			nodesWithoutLabel = append(nodesWithoutLabel, node.Name)
+			if verbose {
+				if !hasLabel {
+					GinkgoWriter.Printf("⚠ Node %s is missing the %s label (assuming bare metal node)\n",
+						node.Name, platformTypeLabelKey)
+				} else {
+					GinkgoWriter.Printf("⚠ Node %s has platform-type=%s (non-vSphere)\n", node.Name, platformType)
+				}
+			}
+		}
+	}
+
+	return nodesWithVSphere, nodesWithoutLabel, nil
+}
+
+// Helper function to check if environment is hybrid
+func isHybridEnvironment(nodesWithVSphere, nodesWithoutLabel []string) bool {
+	return len(nodesWithVSphere) > 0 && len(nodesWithoutLabel) > 0
+}
+
+// Helper function to verify ClusterCSIDriver management state
+func verifyClusterCSIDriverState(ctx context.Context, operatorClient *operatorclient.Clientset, expectedState operatorapi.ManagementState, description string) {
+	clusterCSIDriver, err := operatorClient.OperatorV1().ClusterCSIDrivers().Get(ctx, csiDriverName, metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred(), "Failed to get ClusterCSIDriver")
+
+	managementState := clusterCSIDriver.Spec.ManagementState
+	GinkgoWriter.Printf("ClusterCSIDriver %s has managementState: %s\n", csiDriverName, managementState)
+
+	Expect(managementState).To(Equal(expectedState), description)
+	GinkgoWriter.Printf("✓ ClusterCSIDriver is correctly set to %s\n", expectedState)
+}
+
+// Helper function to update ClusterCSIDriver management state
+func updateClusterCSIDriverState(ctx context.Context, operatorClient *operatorclient.Clientset, targetState operatorapi.ManagementState) {
+	Eventually(func() error {
+		clusterCSIDriver, err := operatorClient.OperatorV1().ClusterCSIDrivers().Get(ctx, csiDriverName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if clusterCSIDriver.Spec.ManagementState == targetState {
+			return nil
+		}
+		clusterCSIDriver.Spec.ManagementState = targetState
+		_, err = operatorClient.OperatorV1().ClusterCSIDrivers().Update(ctx, clusterCSIDriver, metav1.UpdateOptions{})
+		return err
+	}, clusterCSIDriverUpdateTimeout, clusterCSIDriverUpdatePollInterval).Should(Succeed())
+}
+
+// Helper function to wait for operator health
+func waitForOperatorHealth(ctx context.Context, configClient *configclient.Clientset) {
+	Eventually(func() bool {
+		clusterOperator, err := configClient.ConfigV1().ClusterOperators().Get(ctx, storageCOName, metav1.GetOptions{})
+		if err != nil {
+			GinkgoWriter.Printf("Failed to get ClusterOperator during health check: %v\n", err)
+			return false
+		}
+
+		conditions := clusterOperator.Status.Conditions
+		available := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorAvailable, configv1.ConditionTrue)
+		progressing := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorProgressing, configv1.ConditionTrue)
+		degraded := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorDegraded, configv1.ConditionTrue)
+
+		isHealthy := available && !progressing && !degraded
+		if !isHealthy {
+			GinkgoWriter.Printf("Waiting for healthy state - Available: %v, Progressing: %v, Degraded: %v\n",
+				available, progressing, degraded)
+		}
+
+		return isHealthy
+	}, operatorHealthTimeout, operatorHealthPollInterval).Should(BeTrue(), "Storage operator should be healthy")
+}
+
 // [OCPFeatureGate:VSphereMixedNodeEnv]
 var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsphere] vSphere Hybrid Environment", Label("vSphere", "Conformance"), func() {
 	var (
@@ -74,71 +170,28 @@ var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsp
 
 	Context("when VSphereMixedNodeEnv feature gate is enabled", func() {
 		It("should validate node labels and verify appropriate operator state [Suite:openshift/conformance/parallel]", ginkgo.Informing(), func() {
-			By("Listing all nodes in the cluster")
-			nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-			Expect(err).NotTo(HaveOccurred(), "Failed to list nodes")
-			Expect(nodes.Items).NotTo(BeEmpty(), "Expected to find at least one node in the cluster")
+			By("Checking node platform types")
+			nodesWithVSphereLabel, nodesWithoutLabel, err := categorizeNodesByPlatform(ctx, kubeClient, true)
+			Expect(err).NotTo(HaveOccurred(), "Failed to categorize nodes by platform")
 
-			GinkgoWriter.Printf("Found %d nodes in the cluster\n", len(nodes.Items))
-
-			By("Checking each node for the vSphere platform-type label")
-			var nodesWithoutLabel []string
-			var nodesWithVSphereLabel []string
-
-			for _, node := range nodes.Items {
-				platformType, hasLabel := node.Labels[platformTypeLabelKey]
-
-				if !hasLabel {
-					nodesWithoutLabel = append(nodesWithoutLabel, node.Name)
-					GinkgoWriter.Printf("⚠ Node %s is missing the %s label (assuming bare metal node)\n",
-						node.Name, platformTypeLabelKey)
-				} else if platformType == vSpherePlatformType {
-					nodesWithVSphereLabel = append(nodesWithVSphereLabel, node.Name)
-					GinkgoWriter.Printf("✓ Node %s has vSphere platform-type label\n", node.Name)
-				} else {
-					GinkgoWriter.Printf("⚠ Node %s has platform-type=%s\n", node.Name, platformType)
-				}
-			}
-
-			allNodesAreVSphere := len(nodesWithoutLabel) == 0 && len(nodesWithVSphereLabel) == len(nodes.Items)
-			isHybridEnvironment := len(nodesWithVSphereLabel) > 0 && len(nodesWithoutLabel) > 0
+			totalNodes := len(nodesWithVSphereLabel) + len(nodesWithoutLabel)
+			allNodesAreVSphere := len(nodesWithoutLabel) == 0 && len(nodesWithVSphereLabel) > 0
+			hybridEnv := isHybridEnvironment(nodesWithVSphereLabel, nodesWithoutLabel)
 
 			if allNodesAreVSphere {
-				GinkgoWriter.Printf("✓ All %d nodes have vSphere platform-type label\n", len(nodes.Items))
+				GinkgoWriter.Printf("✓ All %d nodes have vSphere platform-type label\n", totalNodes)
 
-				By("Verifying storage operator is healthy (all nodes are vSphere)")
-				clusterOperator, err := configClient.ConfigV1().ClusterOperators().Get(ctx, storageCOName, metav1.GetOptions{})
-				Expect(err).NotTo(HaveOccurred(), "Failed to get ClusterOperator/storage")
+				By("Verifying ClusterCSIDriver is set to Managed (all nodes are vSphere)")
+				verifyClusterCSIDriverState(ctx, operatorClient, operatorapi.Managed,
+					"ClusterCSIDriver should have managementState=Managed when all nodes are vSphere")
 
-				conditions := clusterOperator.Status.Conditions
-				available := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorAvailable, configv1.ConditionTrue)
-				progressing := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorProgressing, configv1.ConditionTrue)
-				degraded := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorDegraded, configv1.ConditionTrue)
-
-				GinkgoWriter.Printf("Storage ClusterOperator status - Available: %v, Progressing: %v, Degraded: %v\n",
-					available, progressing, degraded)
-
-				Expect(available).To(BeTrue(), "Storage operator should be Available")
-				Expect(progressing).To(BeFalse(), "Storage operator should not be Progressing")
-				Expect(degraded).To(BeFalse(), "Storage operator should not be Degraded")
-
-				GinkgoWriter.Printf("✓ Storage operator is healthy\n")
-
-			} else if isHybridEnvironment {
+			} else if hybridEnv {
 				GinkgoWriter.Printf("⚠ Hybrid environment detected: %d vSphere nodes, %d bare metal nodes\n",
 					len(nodesWithVSphereLabel), len(nodesWithoutLabel))
 
 				By("Verifying ClusterCSIDriver is set to Removed (hybrid environment with bare metal nodes)")
-				clusterCSIDriver, err := operatorClient.OperatorV1().ClusterCSIDrivers().Get(ctx, csiDriverName, metav1.GetOptions{})
-				Expect(err).NotTo(HaveOccurred(), "Failed to get ClusterCSIDriver")
-
-				managementState := clusterCSIDriver.Spec.ManagementState
-				GinkgoWriter.Printf("ClusterCSIDriver %s has managementState: %s\n", csiDriverName, managementState)
-
-				Expect(managementState).To(Equal(operatorapi.Removed),
+				verifyClusterCSIDriverState(ctx, operatorClient, operatorapi.Removed,
 					"ClusterCSIDriver should have managementState=Removed in hybrid environment with bare metal nodes")
-
-				GinkgoWriter.Printf("✓ ClusterCSIDriver is correctly set to Removed\n")
 
 			} else {
 				// Neither all vSphere nor hybrid - this is a failure on a vSphere platform
@@ -148,27 +201,12 @@ var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsp
 		})
 
 		It("should degrade when ClusterCSIDriver is set to Managed in hybrid environment [Suite:openshift/conformance/serial]", Label("Serial"), ginkgo.Informing(), func() {
-			By("Listing all nodes in the cluster")
-			nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-			Expect(err).NotTo(HaveOccurred(), "Failed to list nodes")
-			Expect(nodes.Items).NotTo(BeEmpty(), "Expected to find at least one node in the cluster")
-
 			By("Checking if this is a hybrid environment")
-			var nodesWithoutLabel []string
-			var nodesWithVSphereLabel []string
+			nodesWithVSphereLabel, nodesWithoutLabel, err := categorizeNodesByPlatform(ctx, kubeClient, false)
+			Expect(err).NotTo(HaveOccurred(), "Failed to categorize nodes by platform")
 
-			for _, node := range nodes.Items {
-				platformType, hasLabel := node.Labels[platformTypeLabelKey]
-				if !hasLabel {
-					nodesWithoutLabel = append(nodesWithoutLabel, node.Name)
-				} else if platformType == vSpherePlatformType {
-					nodesWithVSphereLabel = append(nodesWithVSphereLabel, node.Name)
-				}
-			}
-
-			isHybridEnvironment := len(nodesWithoutLabel) > 0 && len(nodesWithVSphereLabel) > 0
-
-			if !isHybridEnvironment {
+			hybridEnv := isHybridEnvironment(nodesWithVSphereLabel, nodesWithoutLabel)
+			if !hybridEnv {
 				Skip("Skipping test - not a hybrid environment (needs both vSphere and bare metal nodes)")
 			}
 
@@ -186,60 +224,16 @@ var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsp
 				restoreCtx, restoreCancel := context.WithTimeout(context.Background(), restoreContextTimeout)
 				defer restoreCancel()
 
-				Eventually(func() error {
-					currentCSIDriver, err := operatorClient.OperatorV1().ClusterCSIDrivers().Get(restoreCtx, csiDriverName, metav1.GetOptions{})
-					if err != nil {
-						return err
-					}
-					if currentCSIDriver.Spec.ManagementState == originalManagementState {
-						return nil
-					}
-					currentCSIDriver.Spec.ManagementState = originalManagementState
-					_, err = operatorClient.OperatorV1().ClusterCSIDrivers().Update(restoreCtx, currentCSIDriver, metav1.UpdateOptions{})
-					return err
-				}, clusterCSIDriverUpdateTimeout, clusterCSIDriverUpdatePollInterval).Should(Succeed(), "Failed to restore ClusterCSIDriver to original state")
-
+				updateClusterCSIDriverState(restoreCtx, operatorClient, originalManagementState)
 				GinkgoWriter.Printf("✓ ClusterCSIDriver restored to %s\n", originalManagementState)
 
 				By("Waiting for storage operator to return to healthy state")
-				Eventually(func() bool {
-					clusterOperator, err := configClient.ConfigV1().ClusterOperators().Get(restoreCtx, storageCOName, metav1.GetOptions{})
-					if err != nil {
-						GinkgoWriter.Printf("Failed to get ClusterOperator during cleanup: %v\n", err)
-						return false
-					}
-
-					conditions := clusterOperator.Status.Conditions
-					available := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorAvailable, configv1.ConditionTrue)
-					progressing := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorProgressing, configv1.ConditionTrue)
-					degraded := clusteroperatorhelpers.IsStatusConditionPresentAndEqual(conditions, configv1.OperatorDegraded, configv1.ConditionTrue)
-
-					isHealthy := available && !progressing && !degraded
-					if !isHealthy {
-						GinkgoWriter.Printf("Waiting for healthy state - Available: %v, Progressing: %v, Degraded: %v\n",
-							available, progressing, degraded)
-					}
-
-					return isHealthy
-				}, operatorHealthTimeout, operatorHealthPollInterval).Should(BeTrue(), "Storage operator should return to healthy state after restoration")
-
+				waitForOperatorHealth(restoreCtx, configClient)
 				GinkgoWriter.Printf("✓ Storage operator is healthy again\n")
 			}()
 
 			By("Setting ClusterCSIDriver to Managed (should cause degradation)")
-			Eventually(func() error {
-				clusterCSIDriver, err := operatorClient.OperatorV1().ClusterCSIDrivers().Get(ctx, csiDriverName, metav1.GetOptions{})
-				if err != nil {
-					return err
-				}
-				if clusterCSIDriver.Spec.ManagementState == operatorapi.Managed {
-					return nil
-				}
-				clusterCSIDriver.Spec.ManagementState = operatorapi.Managed
-				_, err = operatorClient.OperatorV1().ClusterCSIDrivers().Update(ctx, clusterCSIDriver, metav1.UpdateOptions{})
-				return err
-			}, clusterCSIDriverUpdateTimeout, clusterCSIDriverUpdatePollInterval).Should(Succeed(), "Failed to set ClusterCSIDriver to Managed")
-
+			updateClusterCSIDriverState(ctx, operatorClient, operatorapi.Managed)
 			GinkgoWriter.Printf("✓ ClusterCSIDriver set to Managed\n")
 
 			By("Waiting for storage operator to report degraded or non-upgradeable state")
