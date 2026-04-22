@@ -3,11 +3,11 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorapi "github.com/openshift/api/operator/v1"
@@ -16,17 +16,12 @@ import (
 	clusteroperatorhelpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/clientcmd/api"
 )
 
 const (
 	vSpherePlatformType  = "vsphere"
 	platformTypeLabelKey = "node.openshift.io/platform-type"
 	hybridTestClient     = "vsphere-hybrid-e2e"
-	storageCOName        = "storage"
-	csiDriverName        = "csi.vsphere.vmware.com"
 
 	// Timeout constants
 	testContextTimeout                 = 10 * time.Minute
@@ -145,18 +140,13 @@ var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsp
 	)
 
 	BeforeEach(func() {
-		// Create Kubernetes client
-		loader := clientcmd.NewDefaultClientConfigLoadingRules()
-		clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			loader,
-			&clientcmd.ConfigOverrides{ClusterInfo: api.Cluster{InsecureSkipTLSVerify: true}},
-		)
-		config, err := clientConfig.ClientConfig()
-		Expect(err).NotTo(HaveOccurred(), "Failed to get kubeconfig")
+		// Create Kubernetes and OpenShift clients
+		clients, err := NewClients(hybridTestClient)
+		Expect(err).NotTo(HaveOccurred(), "Failed to create clients")
 
-		kubeClient = kubernetes.NewForConfigOrDie(rest.AddUserAgent(config, hybridTestClient))
-		configClient = configclient.NewForConfigOrDie(rest.AddUserAgent(config, hybridTestClient))
-		operatorClient = operatorclient.NewForConfigOrDie(rest.AddUserAgent(config, hybridTestClient))
+		kubeClient = clients.KubeClient
+		configClient = clients.ConfigClient
+		operatorClient = clients.OperatorClient
 
 		// Create context with timeout
 		ctx, cancel = context.WithTimeout(context.Background(), testContextTimeout)
@@ -200,7 +190,7 @@ var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsp
 			}
 		})
 
-		It("should degrade when ClusterCSIDriver is set to Managed in hybrid environment [Suite:openshift/conformance/serial]", Label("Serial"), ginkgo.Informing(), func() {
+		It("should degrade when ClusterCSIDriver is set to Managed in hybrid environment [Serial][Disruptive][Suite:openshift/conformance/serial]", Label("Serial"), ginkgo.Informing(), func() {
 			By("Checking if this is a hybrid environment")
 			nodesWithVSphereLabel, nodesWithoutLabel, err := categorizeNodesByPlatform(ctx, kubeClient, false)
 			Expect(err).NotTo(HaveOccurred(), "Failed to categorize nodes by platform")
