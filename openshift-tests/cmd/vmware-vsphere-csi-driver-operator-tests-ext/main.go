@@ -45,6 +45,11 @@ func main() {
 		Qualifiers: []string{`labels.exists(l, l == "Serial") && labels.exists(l, l == "Conformance")`},
 	})
 
+	kubeTestsExtension.AddSuite(extension.Suite{
+		Name:       "vvcdo/conformance",
+		Qualifiers: []string{`labels.exists(l, l == "Conformance")`},
+	})
+
 	// Build our specs from ginkgo
 	specs, err := ginkgo.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()
 	if err != nil {
