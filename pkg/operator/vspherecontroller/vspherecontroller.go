@@ -725,21 +725,23 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		vcenterStr := string(csiVCenterConfigBytes)
 		vcenter := config.VirtualCenter[vcenterKey]
 
-		user, password, err := getUserAndPassword(defaultNamespace, cloudCredSecretName, vcenter.VCenterIP, infra, c.configMapLister, c.apiClients.SecretInformer, c.featureGates)
+		user, password, err := getUserAndPassword(vcenter.VCenterIP, c.apiClients.SecretInformer)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error getting user and password: %v", err)
 		}
+
+		escapedUser, escapedPassword := escapeUserAndPassword(user, password)
 
 		for pattern, value := range map[string]string{
 			"${VCENTER}":     vcenter.VCenterIP,
 			"${DATACENTERS}": vcenter.Datacenters,
-			"${PASSWORD}":    password,
-			"${USER}":        user,
+			"${PASSWORD}":    escapedPassword,
+			"${USER}":        escapedUser,
 		} {
 			vcenterStr = strings.ReplaceAll(vcenterStr, pattern, value)
 		}
 		if len(vCenterKeys) < 2 {
-			vcenterStr = fmt.Sprintf("%v\nmigration-datastore-url = %v", vcenterStr, datastoreURL)
+			vcenterStr = fmt.Sprintf("%v\nmigration-datastore-url = \"%v\"", vcenterStr, datastoreURL)
 		}
 		vcenters = vcenters + "\n" + vcenterStr
 	}
@@ -751,26 +753,23 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 		csiConfigString = strings.ReplaceAll(csiConfigString, pattern, value)
 	}
 
-	csiConfig, err := newINIConfig(csiConfigString)
-	if err != nil {
-		return nil, err
-	}
-
 	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
 	if len(topologyCategories) > 0 {
 		topologyCategoryString := strings.Join(topologyCategories, ",")
-		csiConfig.Set("Labels", "topology-categories", topologyCategoryString)
+		csiConfigString = fmt.Sprintf("%v\n[Labels]\ntopology-categories = \"%v\"", csiConfigString, topologyCategoryString)
 	}
 
 	snapshotOptions := utils.GetSnapshotOptions(clusterCSIDriver)
 	if len(snapshotOptions) > 0 {
+		csiConfigString = fmt.Sprintf("%v\n[Snapshot]", csiConfigString)
 		for k, v := range snapshotOptions {
-			csiConfig.Set("Snapshot", k, v)
+			csiConfigString = fmt.Sprintf("%v\n%v = %v", csiConfigString, k, v)
 		}
 	}
+	csiConfigString = fmt.Sprintf("%v\n", csiConfigString)
 
 	requiredSecret := resourceread.ReadSecretV1OrDie(c.secretManifest)
-	requiredSecret.Data["cloud.conf"] = []byte(csiConfig.String())
+	requiredSecret.Data["cloud.conf"] = []byte(csiConfigString)
 	return requiredSecret, nil
 }
 
@@ -792,9 +791,8 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 	return storageClassController
 }
 
-func getUserAndPassword(namespace string, secretName string, vcenter string, infra *ocpv1.Infrastructure, configMapLister corelister.ConfigMapLister, secretInformer corev1informers.SecretInformer, featureGates featuregates.FeatureGate,
-) (string, string, error) {
-	secret, err := secretInformer.Lister().Secrets(namespace).Get(secretName)
+func getUserAndPassword(vcenter string, secretInformer corev1informers.SecretInformer) (string, string, error) {
+	secret, err := secretInformer.Lister().Secrets(defaultNamespace).Get(cloudCredSecretName)
 	if err != nil {
 		return "", "", err
 	}
@@ -818,12 +816,17 @@ func getUserAndPassword(namespace string, secretName string, vcenter string, inf
 	// Get username and pass from secret created by CCO
 	username := string(secret.Data[usernameKey])
 	password := string(secret.Data[passwordKey])
+	return username, password, nil
+}
 
-	// The CSI driver expects a password with any quotation marks and backslashes escaped.
-	// xref: https://github.com/kubernetes-sigs/vsphere-csi-driver/issues/121
-	// The username in the format "domainName\userName" must be converted to "domainName\\userName"
-	// xref: https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/3.0/vmware-vsphere-csp-getting-started/GUID-BFF39F1D-F70A-4360-ABC9-85BDAFBE8864.html
-	return escapeBackslashInUsername(username), escapeQuotesAndBackslashes(password), nil
+// The CSI driver expects a password with any quotation marks and backslashes escaped.
+// xref: https://github.com/kubernetes-sigs/vsphere-csi-driver/issues/121
+// The username in the format "domainName\userName" must be converted to "domainName\\userName"
+// xref: https://docs.vmware.com/en/VMware-vSphere-Container-Storage-Plug-in/3.0/vmware-vsphere-csp-getting-started/GUID-BFF39F1D-F70A-4360-ABC9-85BDAFBE8864.html
+func escapeUserAndPassword(username, password string) (string, string) {
+	escapedUserName := escapeBackslashInUsername(username)
+	escapedPassword := escapeQuotesAndBackslashes(password)
+	return escapedUserName, escapedPassword
 }
 
 // escapeQuotesAndBackslashes escapes double quotes and backslashes in the input string.
