@@ -227,6 +227,7 @@ func waitForStorageAvailable(ctx context.Context, configClient *configclient.Cli
 				GinkgoWriter.Printf("Error checking disabled condition: %v\n", err)
 				return false
 			}
+			GinkgoWriter.Printf("Disabled condition status: %v\n", disableConditionStatusVar)
 			done = disableConditionStatusVar == operatorEnabled
 		}
 
@@ -236,6 +237,7 @@ func waitForStorageAvailable(ctx context.Context, configClient *configclient.Cli
 				GinkgoWriter.Printf("Error checking deployment: %v\n", err)
 				return false
 			}
+			GinkgoWriter.Printf("Deployment created: %v\n", deploymentCreated)
 			done = deploymentCreated
 		}
 
@@ -245,6 +247,7 @@ func waitForStorageAvailable(ctx context.Context, configClient *configclient.Cli
 				GinkgoWriter.Printf("Error checking daemonset: %v\n", err)
 				return false
 			}
+			GinkgoWriter.Printf("Daemonset created: %v\n", daemonsetCreated)
 			done = daemonsetCreated
 		}
 		GinkgoWriter.Printf("ClusterOperator/storage: Available: %v  Progressing: %v  Degraded: %v\n", available, !notProgressing, !notDegraded)
