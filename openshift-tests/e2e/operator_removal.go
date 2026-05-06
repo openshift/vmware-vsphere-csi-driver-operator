@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -96,6 +97,12 @@ func checkDisabledCondition(ctx context.Context, operatorClient *operatorclient.
 		return clusterCSIDriverNotFound, err
 	}
 	disabledCondition := v1helpers.FindOperatorCondition(clusterCSIDriver.Status.Conditions, disabledConditionName)
+	obj, err := json.MarshalIndent(clusterCSIDriver, "", "  ")
+	if err != nil {
+		GinkgoWriter.Printf("Unable to marshal ClusterCSIDriver: %v\n", err)
+		return clusterCSIDriverNotFound, err
+	}
+	GinkgoWriter.Printf("JSAF ClusterCSIDriver: %s\n", string(obj))
 	if disabledCondition != nil && disabledCondition.Status == operatorapi.ConditionTrue {
 		return operatorDisabled, nil
 	}
