@@ -200,7 +200,7 @@ var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsp
 			}
 		})
 
-		It("should degrade when ClusterCSIDriver is set to Managed in hybrid environment [Suite:openshift/conformance/serial]", Label("Serial"), ginkgo.Informing(), func() {
+		It("should degrade when ClusterCSIDriver is set to Managed in hybrid environment [Serial][Disruptive][Suite:openshift/conformance/serial]", Label("Serial"), ginkgo.Informing(), func() {
 			By("Checking if this is a hybrid environment")
 			nodesWithVSphereLabel, nodesWithoutLabel, err := categorizeNodesByPlatform(ctx, kubeClient, false)
 			Expect(err).NotTo(HaveOccurred(), "Failed to categorize nodes by platform")
