@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	v1 "github.com/openshift/api/config/v1"
 	opv1 "github.com/openshift/api/operator/v1"
@@ -40,6 +41,17 @@ func newFakeStoragePolicyAPISuccess(ctx context.Context, connection *vclib.VSphe
 func newFakeStoragePolicyAPIFailure(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure) vCenterInterface {
 	fakeStoragePolicyAPI := &fakeStoragePolicyAPI{ret: "fake-return-value", err: fmt.Errorf("fake-error")}
 	return fakeStoragePolicyAPI
+}
+
+// newTestConnectionManager creates a minimal connection manager for testing.
+// The connection has a nil Client, which is fine because the storage policy API
+// is faked in tests and never actually connects to vCenter.
+func newTestConnectionManager() *vclib.VSphereConnectionManager {
+	connMgr := vclib.NewVSphereConnectionManager()
+	conn := &vclib.VSphereConnection{Hostname: "test-vcenter.example.com"}
+	connMgr.AddConnection("test-vcenter.example.com", conn)
+	connMgr.SetPrimary("test-vcenter.example.com")
+	return connMgr
 }
 
 func newStorageClassController(apiClients *utils.APIClient, storageclassfile string, storagePolicyAPIfailing bool) *StorageClassController {
@@ -160,14 +172,14 @@ func TestSync(t *testing.T) {
 			commonApiClient := testlib.NewFakeClients(test.initialObjects, test.clusterCSIDriverObject, test.configObjects)
 
 			apiDeps := getCheckAPIDependency(commonApiClient)
-			var conn *vclib.VSphereConnection
+			connMgr := newTestConnectionManager()
 			scController := newStorageClassController(commonApiClient, test.storageClass, test.StoragePolicyAPIfails)
 
 			if test.shouldPanic {
 				defer assertPanic(t)
 			}
 			// err will be nil on even on failure, need to check conditions instead
-			err := scController.Sync(context.TODO(), conn, apiDeps)
+			err := scController.Sync(context.TODO(), connMgr, apiDeps)
 			if err != nil {
 				t.Errorf("failed to sync controller: %+v", err)
 			}
@@ -219,12 +231,12 @@ func TestSyncMultiple(t *testing.T) {
 			commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
 			storageClass := "storageclass1.yaml"
 			apiDeps := getCheckAPIDependency(commonApiClient)
-			var conn *vclib.VSphereConnection
+			connMgr := newTestConnectionManager()
 			scController := newStorageClassController(commonApiClient, storageClass, test.storagePolicySyncFails)
 			scController.backoff = defaultBackoff
 
 			// err will be nil on even on failure, need to check conditions instead
-			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), connMgr, apiDeps, opv1.ManagedStorageClass)
 			scController.policyName = policyName
 
 			if test.expectError {
@@ -244,7 +256,7 @@ func TestSyncMultiple(t *testing.T) {
 				scController.makeStoragePolicyAPI = nil
 			}
 
-			policyName, clusterCheckResult = scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+			policyName, clusterCheckResult = scController.syncStoragePolicy(context.TODO(), connMgr, apiDeps, opv1.ManagedStorageClass)
 			if test.expectError {
 				if clusterCheckResult.CheckError == nil {
 					t.Errorf("Expected error got none")
@@ -255,6 +267,90 @@ func TestSyncMultiple(t *testing.T) {
 			} else {
 				if clusterCheckResult.CheckError != nil {
 					t.Errorf("Expected no error got: %v", clusterCheckResult.CheckError)
+				}
+			}
+		})
+	}
+}
+
+func TestBackoffReset(t *testing.T) {
+	tests := []struct {
+		name string
+		// sequence of sync results: true=success, false=failure
+		syncSequence []bool
+		// expected backoff duration after each sync (approximate, considering jitter)
+		expectedDurations []time.Duration
+	}{
+		{
+			name:         "success resets backoff to initial duration",
+			syncSequence: []bool{true, true, true},
+			// After each success, backoff resets to defaultBackoff, so Step() returns ~1min each time
+			expectedDurations: []time.Duration{time.Minute, time.Minute, time.Minute},
+		},
+		{
+			name:         "fail 3x then succeed resets backoff",
+			syncSequence: []bool{false, false, false, true, false},
+			// fail: 1m, fail: 2m, fail: 4m, success: 8m (then reset), fail: 1m (reset took effect)
+			expectedDurations: []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, time.Minute},
+		},
+		{
+			name:         "continuous failure caps at 30 minutes",
+			syncSequence: []bool{false, false, false, false, false, false, false},
+			// 1m, 2m, 4m, 8m, 16m, 30m (cap), 30m (cap)
+			expectedDurations: []time.Duration{
+				time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute,
+				16 * time.Minute, 30 * time.Minute, 30 * time.Minute,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+			clusterCSIDriverObject := testlib.MakeFakeDriverInstance()
+			configObjects := runtime.Object(testlib.GetInfraObject())
+			commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
+			apiDeps := getCheckAPIDependency(commonApiClient)
+			connMgr := newTestConnectionManager()
+
+			// Start with a success-producing controller
+			scController := newStorageClassController(commonApiClient, "storageclass1.yaml", false)
+			scController.backoff = defaultBackoff
+
+			for i, shouldSucceed := range test.syncSequence {
+				// Set up the right fake API for this iteration
+				if shouldSucceed {
+					scController.makeStoragePolicyAPI = newFakeStoragePolicyAPISuccess
+				} else {
+					scController.makeStoragePolicyAPI = newFakeStoragePolicyAPIFailure
+				}
+
+				// Force the check to run by resetting nextCheck
+				scController.nextCheck = time.Time{}
+				scController.policyName = ""
+
+				beforeSync := time.Now()
+				policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), connMgr, apiDeps, opv1.ManagedStorageClass)
+				scController.policyName = policyName
+
+				if shouldSucceed {
+					if clusterCheckResult.CheckError != nil {
+						t.Fatalf("step %d: expected success, got error: %v", i, clusterCheckResult.CheckError)
+					}
+				} else {
+					if clusterCheckResult.CheckError == nil {
+						t.Fatalf("step %d: expected error, got none", i)
+					}
+				}
+
+				// Verify the backoff duration by checking nextCheck - lastCheck
+				actualDelay := scController.nextCheck.Sub(beforeSync)
+				expectedDelay := test.expectedDurations[i]
+
+				// Allow 5% jitter tolerance (jitter is 0.01 = 1%)
+				tolerance := float64(expectedDelay) * 0.05
+				if actualDelay < expectedDelay-time.Duration(tolerance) || actualDelay > expectedDelay+time.Duration(tolerance) {
+					t.Errorf("step %d: expected delay ~%v, got %v", i, expectedDelay, actualDelay)
 				}
 			}
 		})

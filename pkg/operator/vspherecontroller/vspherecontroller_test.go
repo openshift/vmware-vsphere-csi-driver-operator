@@ -69,7 +69,7 @@ type dummyStorageClassController struct {
 	syncCalled int
 }
 
-func (c *dummyStorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+func (c *dummyStorageClassController) Sync(ctx context.Context, connMgr *vclib.VSphereConnectionManager, apiDeps checks.KubeAPIInterface) error {
 	c.syncCalled += 1
 	return nil
 }
@@ -474,18 +474,19 @@ func TestApplyClusterCSIDriver(t *testing.T) {
 			expectedTopology:   "k8s-zone,k8s-region",
 		},
 		{
-			name:             "when configuration has more than one vcenter",
-			clusterCSIDriver: testlib.GetClusterCSIDriver(true),
-			operatorObj:      testlib.MakeFakeDriverInstance(),
-			configFileName:   "multiple_vc.ini",
-			expectError:      true,
+			name:               "when configuration has more than one vcenter",
+			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
+			operatorObj:        testlib.MakeFakeDriverInstance(),
+			configFileName:     "multiple_vc.ini",
+			expectedDatacenter: "Datacenter,Datacenterb",
+			expectedTopology:   "k8s-zone,k8s-region",
 		},
 		{
 			name:               "when configuration has more than one datacenter",
 			clusterCSIDriver:   testlib.GetClusterCSIDriver(true),
 			operatorObj:        testlib.MakeFakeDriverInstance(),
 			configFileName:     "multiple_dc.ini",
-			expectedDatacenter: "Datacentera, DatacenterB",
+			expectedDatacenter: "Datacentera,DatacenterB",
 			expectedTopology:   "k8s-zone,k8s-region",
 		},
 	}

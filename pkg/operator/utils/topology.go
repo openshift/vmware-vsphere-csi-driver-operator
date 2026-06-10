@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"strings"
 
 	cfgv1 "github.com/openshift/api/config/v1"
@@ -46,19 +45,23 @@ func GetTopologyCategories(clusterCSIDriver *opv1.ClusterCSIDriver, infra *cfgv1
 }
 
 func GetDatacenters(config *vsphere.VSphereConfig) ([]string, error) {
-	datacenters := []string{config.Workspace.Datacenter}
+	var allDatacenters []string
+	seen := sets.NewString()
 
-	virtualCenterIPs := sets.StringKeySet(config.VirtualCenter)
-
-	if len(virtualCenterIPs) != 1 {
-		return nil, fmt.Errorf("cloud config must define a single VirtualCenter")
+	for _, vcConfig := range config.VirtualCenter {
+		for _, dc := range strings.Split(vcConfig.Datacenters, ",") {
+			dc = strings.TrimSpace(dc)
+			if dc != "" && !seen.Has(dc) {
+				allDatacenters = append(allDatacenters, dc)
+				seen.Insert(dc)
+			}
+		}
 	}
 
-	virtualCenterIP := virtualCenterIPs.List()[0]
-	if virtualCenterConfig, ok := config.VirtualCenter[virtualCenterIP]; ok {
-		datacenters = strings.Split(virtualCenterConfig.Datacenters, ",")
+	if len(allDatacenters) == 0 {
+		allDatacenters = []string{config.Workspace.Datacenter}
 	}
-	return datacenters, nil
+	return allDatacenters, nil
 }
 
 func UpdateMetrics(infra *cfgv1.Infrastructure, clusterCSIDriver *opv1.ClusterCSIDriver) {

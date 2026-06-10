@@ -44,7 +44,7 @@ var (
 )
 
 type StorageClassSyncInterface interface {
-	Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+	Sync(ctx context.Context, connMgr *vclib.VSphereConnectionManager, apiDeps checks.KubeAPIInterface) error
 }
 
 type StorageClassController struct {
@@ -96,12 +96,12 @@ func NewStorageClassController(
 	return c
 }
 
-func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+func (c *StorageClassController) Sync(ctx context.Context, connMgr *vclib.VSphereConnectionManager, apiDeps checks.KubeAPIInterface) error {
 	checkResultFunc := func() (checks.ClusterCheckResult, checks.ClusterCheckStatus) {
 		sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
 		scState := c.scStateEvaluator.GetStorageClassState(sc.Provisioner)
 
-		policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps, scState)
+		policyName, syncResult := c.syncStoragePolicy(ctx, connMgr, apiDeps, scState)
 		if syncResult.CheckError != nil {
 			klog.Errorf("error syncing storage policy: %v", syncResult.Reason)
 			clusterCondition := "storage_class_sync_failed"
@@ -122,7 +122,7 @@ func (c *StorageClassController) Sync(ctx context.Context, connection *vclib.VSp
 	return c.updateConditions(ctx, checkResult, overallClusterStatus)
 }
 
-func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
+func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connMgr *vclib.VSphereConnectionManager, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
 	// if the SC is not managed, there is no need to sync the storage policy
 	if !c.scStateEvaluator.IsManaged(scState) {
 		return "", checks.MakeClusterCheckResultPass()
@@ -136,7 +136,14 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connecti
 	}
 
 	infra := apiDeps.GetInfrastructure()
+	// Use primary connection for backward compatibility with the factory function
+	connection := connMgr.GetPrimary()
 	apiClient := c.makeStoragePolicyAPI(ctx, connection, infra)
+
+	// Inject the connection manager into the API client if it supports it
+	if mgr, ok := apiClient.(connectionManagerAware); ok {
+		mgr.setConnectionManager(connMgr)
+	}
 
 	// we expect all API calls to finish within apiTimeout or else operator might be stuck
 	tctx, cancel := context.WithTimeout(ctx, apiTimeout)
@@ -151,7 +158,15 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connecti
 	if err != nil {
 		return "", checks.MakeGenericVCenterAPIError(err)
 	}
+	// Reset backoff on success — next sync restarts at 1-minute interval
+	c.backoff = defaultBackoff
 	return policyName, checks.MakeClusterCheckResultPass()
+}
+
+// connectionManagerAware is an optional interface that vCenterInterface implementations
+// can support to receive the connection manager for multi-vCenter operations.
+type connectionManagerAware interface {
+	setConnectionManager(connMgr *vclib.VSphereConnectionManager)
 }
 
 func (c *StorageClassController) updateConditions(ctx context.Context, lastCheckResult checks.ClusterCheckResult, clusterStatus checks.ClusterCheckStatus) error {

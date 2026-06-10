@@ -56,6 +56,7 @@ type VSphereController struct {
 	storageClassController   storageclasscontroller.StorageClassSyncInterface
 	operandControllerStarted bool
 	vSphereConnection        *vclib.VSphereConnection
+	connectionManager        *vclib.VSphereConnectionManager
 	csiConfigManifest        []byte
 	vSphereChecker           vSphereEnvironmentCheckInterface
 	// creates a new vSphereConnection - mainly used for testing
@@ -194,15 +195,48 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	} else {
 		connectionResult = c.loginToVCenter(ctx, infra)
 	}
+
+	// Build a connection manager for multi-vCenter support.
+	// When only one vCenter is present this is a thin wrapper around the single connection.
+	if connectionResult.CheckError == nil && c.vsphereConnectionFunc == nil {
+		connMgr, err := c.createMultiVCenterConnections(ctx, infra)
+		if err != nil {
+			klog.Errorf("Failed to build multi-vCenter connections: %v", err)
+			// Non-fatal for now — fall back to single connection
+		} else {
+			connErrs := connMgr.ConnectAll(ctx)
+			primaryOK := true
+			for _, connErr := range connErrs {
+				if connErr.Host == connMgr.PrimaryHost() {
+					primaryOK = false
+					klog.Errorf("Primary vCenter %s connection failed: %v", connErr.Host, connErr.Err)
+				} else {
+					klog.Warningf("Secondary vCenter %s connection failed (non-degrading): %v", connErr.Host, connErr.Err)
+				}
+			}
+			if primaryOK {
+				c.connectionManager = connMgr
+				// Primary connection is the same as the single connection for backward compat
+				if primary := connMgr.GetPrimary(); primary != nil {
+					c.vSphereConnection = primary
+				}
+			}
+		}
+	}
+
 	defer func() {
 		klog.V(4).Infof("%s: vcenter-csi logging out from vcenter", c.name)
-		if c.vSphereConnection != nil && logout {
+		// Logout from all connections via manager if available
+		if c.connectionManager != nil {
+			c.connectionManager.LogoutAll(ctx)
+			c.connectionManager = nil
+		} else if c.vSphereConnection != nil && logout {
 			err := c.vSphereConnection.Logout(ctx)
 			if err != nil {
 				klog.Errorf("%s: error closing connection to vCenter API: %v", c.name, err)
 			}
-			c.vSphereConnection = nil
 		}
+		c.vSphereConnection = nil
 	}()
 
 	blockCSIDriverInstall, err := c.installCSIDriver(ctx, syncContext, infra, clusterCSIDriver, connectionResult, opStatus)
@@ -213,7 +247,14 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	// only install CSI storageclass if blockCSIDriverInstall is false and CSI driver has been installed.
 	if !blockCSIDriverInstall && c.operandControllerStarted {
 		storageClassAPIDeps := c.getCheckAPIDependency(infra)
-		err = c.storageClassController.Sync(ctx, c.vSphereConnection, storageClassAPIDeps)
+		// Use the connection manager if available, otherwise create a single-connection wrapper
+		syncConnMgr := c.connectionManager
+		if syncConnMgr == nil && c.vSphereConnection != nil {
+			syncConnMgr = vclib.NewVSphereConnectionManager()
+			syncConnMgr.AddConnection(c.vSphereConnection.Hostname, c.vSphereConnection)
+			syncConnMgr.SetPrimary(c.vSphereConnection.Hostname)
+		}
+		err = c.storageClassController.Sync(ctx, syncConnMgr, storageClassAPIDeps)
 		// storageclass sync will only return error if somehow updating conditions fails, in which case
 		// we can return error here and degrade the cluster
 		if err != nil {
@@ -437,6 +478,113 @@ func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *
 	return nil
 }
 
+// createMultiVCenterConnections builds a VSphereConnectionManager from the Infrastructure
+// spec. If the spec contains multiple VCenters or failure domains referencing multiple
+// servers, connections are created for each. Falls back to single-connection behavior
+// when only one vCenter is present.
+func (c *VSphereController) createMultiVCenterConnections(ctx context.Context, infra *ocpv1.Infrastructure) (*vclib.VSphereConnectionManager, error) {
+	klog.V(3).Infof("Creating multi-vCenter connections")
+
+	// Parse cloud config to get the workspace vCenter and VSphereConfig
+	cloudConfig := infra.Spec.CloudConfig
+	cloudConfigMap, err := c.configMapLister.ConfigMaps(cloudConfigNamespace).Get(cloudConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cloud config: %v", err)
+	}
+
+	cfgString, ok := cloudConfigMap.Data[infra.Spec.CloudConfig.Key]
+	if !ok {
+		return nil, fmt.Errorf("cloud config %s/%s does not contain key %q", cloudConfigNamespace, cloudConfig.Name, cloudConfig.Key)
+	}
+	cfg := new(vsphere.VSphereConfig)
+	err = gcfg.ReadStringInto(cfg, cfgString)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read credentials secret
+	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect unique vCenter hostnames from VCenters list or FailureDomains
+	vcenterHosts := collectVCenterHosts(infra)
+
+	// If no VCenters or FDs specified, fall back to workspace vCenter
+	if len(vcenterHosts) == 0 {
+		vcenterHosts = []string{cfg.Workspace.VCenterIP}
+	}
+
+	connMgr := vclib.NewVSphereConnectionManager()
+	connMgr.SetPrimary(cfg.Workspace.VCenterIP)
+
+	// Validate that the workspace vCenter is in the VCenters list
+	primaryFound := false
+	for _, host := range vcenterHosts {
+		if host == cfg.Workspace.VCenterIP {
+			primaryFound = true
+			break
+		}
+	}
+	if !primaryFound {
+		return nil, fmt.Errorf("workspace vCenter %q is not in the Infrastructure VCenters or FailureDomains list; this is an invalid configuration", cfg.Workspace.VCenterIP)
+	}
+
+	for _, host := range vcenterHosts {
+		userKey := host + ".username"
+		username, ok := secret.Data[userKey]
+		if !ok {
+			return nil, fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, userKey)
+		}
+		passwordKey := host + ".password"
+		password, ok := secret.Data[passwordKey]
+		if !ok {
+			return nil, fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
+		}
+
+		// Create a per-vCenter config by copying the base config
+		vcCfg := *cfg
+		vcCfg.Workspace.VCenterIP = host
+
+		conn := vclib.NewVSphereConnection(string(username), string(password), &vcCfg)
+		connMgr.AddConnection(host, conn)
+	}
+
+	return connMgr, nil
+}
+
+// collectVCenterHosts returns the unique set of vCenter hostnames from Infrastructure spec.
+// It checks VCenters first; if empty, collects unique Server values from FailureDomains.
+func collectVCenterHosts(infra *ocpv1.Infrastructure) []string {
+	if infra.Spec.PlatformSpec.VSphere == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var hosts []string
+
+	// Prefer VCenters list
+	if len(infra.Spec.PlatformSpec.VSphere.VCenters) > 0 {
+		for _, vc := range infra.Spec.PlatformSpec.VSphere.VCenters {
+			if _, exists := seen[vc.Server]; !exists {
+				seen[vc.Server] = struct{}{}
+				hosts = append(hosts, vc.Server)
+			}
+		}
+		return hosts
+	}
+
+	// Fallback: collect unique servers from FailureDomains
+	for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+		if _, exists := seen[fd.Server]; !exists {
+			seen[fd.Server] = struct{}{}
+			hosts = append(hosts, fd.Server)
+		}
+	}
+	return hosts
+}
+
 func (c *VSphereController) updateConditions(
 	ctx context.Context,
 	name string,
@@ -570,6 +718,15 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	clusterCSIDriver *operatorapi.ClusterCSIDriver,
 	datastoreURL string) (*corev1.ConfigMap, error) {
 
+	// Collect unique vCenter hosts from VCenters list or FailureDomains
+	vcenterHosts := collectVCenterHosts(infra)
+
+	// If multiple vCenters exist, use programmatic INI construction
+	if len(vcenterHosts) > 1 {
+		return c.applyMultiVCenterCSIDriverChange(infra, sourceCFG, clusterCSIDriver, datastoreURL, vcenterHosts)
+	}
+
+	// Single vCenter path: use template-based approach (backward compatible)
 	csiConfigString := string(c.csiConfigManifest)
 
 	dataCenterNames, err := utils.GetDatacenters(&sourceCFG)
@@ -608,6 +765,107 @@ func (c *VSphereController) applyClusterCSIDriverChange(
 	requiredCM.Data["cloud.conf"] = finalConfigString.String()
 	return requiredCM, nil
 
+}
+
+// applyMultiVCenterCSIDriverChange constructs a CSI config with multiple [VirtualCenter] sections.
+func (c *VSphereController) applyMultiVCenterCSIDriverChange(
+	infra *ocpv1.Infrastructure,
+	sourceCFG vsphere.VSphereConfig,
+	clusterCSIDriver *operatorapi.ClusterCSIDriver,
+	datastoreURL string,
+	vcenterHosts []string) (*corev1.ConfigMap, error) {
+
+	csiConfig := iniv1.Empty()
+
+	// [Global] section
+	globalSection := csiConfig.Section("Global")
+	globalSection.Key("cluster-id").SetValue(infra.Status.InfrastructureName)
+
+	// Build per-vCenter sections
+	for _, host := range vcenterHosts {
+		sectionName := fmt.Sprintf("VirtualCenter \"%s\"", host)
+		vcSection := csiConfig.Section(sectionName)
+		vcSection.Key("insecure-flag").SetValue("true")
+
+		// Collect datacenters from failure domains for this vCenter
+		var dcs []string
+		dcSeen := make(map[string]bool)
+		if infra.Spec.PlatformSpec.VSphere != nil {
+			for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+				if fd.Server == host {
+					dc := fd.Topology.Datacenter
+					if dc != "" && !dcSeen[dc] {
+						dcs = append(dcs, dc)
+						dcSeen[dc] = true
+					}
+				}
+			}
+		}
+
+		// Fallback: check VCenters spec for datacenters
+		if len(dcs) == 0 && infra.Spec.PlatformSpec.VSphere != nil {
+			for _, vc := range infra.Spec.PlatformSpec.VSphere.VCenters {
+				if vc.Server == host {
+					dcs = vc.Datacenters
+					break
+				}
+			}
+		}
+
+		// Last fallback: use config file's VirtualCenter entry
+		if len(dcs) == 0 {
+			if vcConfig, ok := sourceCFG.VirtualCenter[host]; ok {
+				for _, dc := range strings.Split(vcConfig.Datacenters, ",") {
+					dc = strings.TrimSpace(dc)
+					if dc != "" {
+						dcs = append(dcs, dc)
+					}
+				}
+			}
+		}
+
+		if len(dcs) > 0 {
+			vcSection.Key("datacenters").SetValue(strings.Join(dcs, ","))
+		}
+
+		// Set migration-datastore-url for the primary (workspace) vCenter
+		if host == sourceCFG.Workspace.VCenterIP && datastoreURL != "" {
+			vcSection.Key("migration-datastore-url").SetValue(datastoreURL)
+		}
+	}
+
+	// [Labels] section for topology
+	topologyCategories := utils.GetTopologyCategories(clusterCSIDriver, infra)
+	if len(topologyCategories) > 0 {
+		topologyCategoryString := strings.Join(topologyCategories, ",")
+		csiConfig.Section("Labels").Key("topology-categories").SetValue(topologyCategoryString)
+	}
+
+	// Serialize and validate
+	var configString strings.Builder
+	_, err := csiConfig.WriteTo(&configString)
+	if err != nil {
+		return nil, fmt.Errorf("error serializing CSI config: %v", err)
+	}
+
+	// Parse-back validation: ensure the generated INI is valid
+	validationCfg := new(vsphere.VSphereConfig)
+	err = gcfg.ReadStringInto(validationCfg, configString.String())
+	if err != nil {
+		return nil, fmt.Errorf("generated CSI config failed validation: %v", err)
+	}
+
+	// Validate that every VirtualCenter section has non-empty datacenters
+	for host := range validationCfg.VirtualCenter {
+		vcConfig := validationCfg.VirtualCenter[host]
+		if vcConfig == nil || strings.TrimSpace(vcConfig.Datacenters) == "" {
+			return nil, fmt.Errorf("generated CSI config has empty datacenters for VirtualCenter %q", host)
+		}
+	}
+
+	requiredCM := resourceread.ReadConfigMapV1OrDie(c.manifest)
+	requiredCM.Data["cloud.conf"] = configString.String()
+	return requiredCM, nil
 }
 
 func (c *VSphereController) createStorageClassController() storageclasscontroller.StorageClassSyncInterface {

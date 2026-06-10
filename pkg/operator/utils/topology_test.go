@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -8,6 +10,7 @@ import (
 	opv1 "github.com/openshift/api/operator/v1"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/component-base/metrics/testutil"
+	"k8s.io/legacy-cloud-providers/vsphere"
 )
 
 func TestUpdateMetrics(t *testing.T) {
@@ -371,7 +374,8 @@ vsphere_topology_tags{source="infrastructure"} 0
 `,
 		},
 	}
-	for _, test := range tests {
+	for i := range tests {
+		test := tests[i]
 		t.Run(test.name, func(t *testing.T) {
 			// Reset metrics from previous tests. Note: the tests can't run in parallel!
 			legacyregistry.Reset()
@@ -379,6 +383,93 @@ vsphere_topology_tags{source="infrastructure"} 0
 			UpdateMetrics(test.infra, test.clusterCSIDriver)
 			if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(test.expectedMetrics), "vsphere_topology_tags", "vsphere_infrastructure_failure_domains"); err != nil {
 				t.Errorf("Unexpected metric: %s", err)
+			}
+		})
+	}
+}
+
+func makeVSphereConfig(vcs map[string]string, workspaceDC string) *vsphere.VSphereConfig {
+	cfg := &vsphere.VSphereConfig{
+		VirtualCenter: make(map[string]*vsphere.VirtualCenterConfig),
+	}
+	cfg.Workspace.Datacenter = workspaceDC
+	for host, dcs := range vcs {
+		cfg.VirtualCenter[host] = &vsphere.VirtualCenterConfig{Datacenters: dcs}
+	}
+	return cfg
+}
+
+func TestGetDatacenters(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   *vsphere.VSphereConfig
+		expected []string
+		wantErr  bool
+	}{
+		{
+			name:     "single VirtualCenter with one datacenter",
+			config:   makeVSphereConfig(map[string]string{"vcenter1.example.com": "dc1"}, "dc1"),
+			expected: []string{"dc1"},
+		},
+		{
+			name:     "single VirtualCenter with multiple datacenters",
+			config:   makeVSphereConfig(map[string]string{"vcenter1.example.com": "dc1,dc2,dc3"}, "dc1"),
+			expected: []string{"dc1", "dc2", "dc3"},
+		},
+		{
+			name: "multiple VirtualCenters with different datacenters",
+			config: makeVSphereConfig(map[string]string{
+				"vcenter1.example.com": "dc1,dc2",
+				"vcenter2.example.com": "dc3",
+			}, "dc1"),
+			expected: []string{"dc1", "dc2", "dc3"},
+		},
+		{
+			name: "multiple VirtualCenters with overlapping datacenters",
+			config: makeVSphereConfig(map[string]string{
+				"vcenter1.example.com": "dc1,dc2",
+				"vcenter2.example.com": "dc2,dc3",
+			}, "dc1"),
+			expected: []string{"dc1", "dc2", "dc3"},
+		},
+		{
+			name:     "no VirtualCenters falls back to workspace datacenter",
+			config:   makeVSphereConfig(map[string]string{}, "default-dc"),
+			expected: []string{"default-dc"},
+		},
+		{
+			name:     "VirtualCenter with empty datacenters falls back to workspace",
+			config:   makeVSphereConfig(map[string]string{"vcenter1.example.com": ""}, "default-dc"),
+			expected: []string{"default-dc"},
+		},
+		{
+			name:     "VirtualCenter with whitespace in datacenters",
+			config:   makeVSphereConfig(map[string]string{"vcenter1.example.com": " dc1 , dc2 "}, "dc1"),
+			expected: []string{"dc1", "dc2"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := GetDatacenters(test.config)
+			if test.wantErr {
+				if err == nil {
+					t.Error("expected error, got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Sort both for deterministic comparison since map iteration is non-deterministic
+			sort.Strings(got)
+			sortedExpected := make([]string, len(test.expected))
+			copy(sortedExpected, test.expected)
+			sort.Strings(sortedExpected)
+
+			if !reflect.DeepEqual(got, sortedExpected) {
+				t.Errorf("expected %v, got %v", sortedExpected, got)
 			}
 		})
 	}

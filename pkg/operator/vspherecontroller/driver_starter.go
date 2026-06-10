@@ -218,8 +218,18 @@ func WithVSphereCredentials(
 		// So we need to figure those keys out
 		var usernameKey, passwordKey string
 
-		if len(secret.Data) > 2 {
+		// When multiple vCenters are configured, the secret will contain more than 2 keys
+		// (one username+password pair per vCenter). The CSI driver env vars can only hold
+		// one set of credentials (for the primary/workspace vCenter). Secondary vCenter
+		// credentials are read from the config file by the CSI driver itself.
+		vcenterCount := 0
+		if vSphereInfraConfig := infra.Spec.PlatformSpec.VSphere; vSphereInfraConfig != nil {
+			vcenterCount = len(vSphereInfraConfig.VCenters)
+		}
+		if len(secret.Data) > 2 && vcenterCount <= 1 {
 			klog.Warningf("CSI driver can only connect to one vcenter, more than 1 set of credentials found for CSI driver")
+		} else if len(secret.Data) > 2 && vcenterCount > 1 {
+			klog.V(2).Infof("Multiple vCenters configured (%d), injecting credentials for primary vCenter %s", vcenterCount, vCenterName)
 		}
 
 		usernameKey = vCenterName + ".username"
