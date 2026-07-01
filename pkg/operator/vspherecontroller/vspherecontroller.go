@@ -667,7 +667,7 @@ func (c *VSphereController) createCSISecret(
 	if len(infra.Spec.PlatformSpec.VSphere.VCenters) == 1 {
 		datastoreURLs := make(map[string]string)
 		for _, connection := range c.vSphereConnections {
-			storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, connection, infra)
+			storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, connection, infra, false, false, nil)
 
 			defaultDatastore, err := storageApiClient.GetDefaultDatastore(ctx, infra)
 
@@ -787,6 +787,7 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 		c.scLister,
 		c.apiClients.ClusterCSIDriverInformer,
 		c.eventRecorder,
+		c.featureGates,
 	)
 	return storageClassController
 }
