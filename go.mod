@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/google/go-cmp v0.7.0
-	github.com/openshift/api v0.0.0-20260325070019-86893981287e
+	github.com/openshift/api v0.0.0-20260701110937-6e21043ed12a
 	github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee
 	github.com/openshift/client-go v0.0.0-20260320040014-4b5fc2cdad98
 	github.com/openshift/library-go v0.0.0-20260318142011-72bf34f474bc
@@ -124,7 +124,7 @@ require (
 	k8s.io/component-helpers v0.36.0-alpha.0 // indirect
 	k8s.io/kms v0.36.0-alpha.0 // indirect
 	k8s.io/kube-aggregator v0.35.2 // indirect
-	k8s.io/kube-openapi v0.0.0-20260319004828-5883c5ee87b9 // indirect
+	k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.34.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
