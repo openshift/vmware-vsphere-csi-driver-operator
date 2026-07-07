@@ -4,6 +4,9 @@ An operator to deploy the [VMware vSphere CSI Driver](https://github.com/openshi
 
 This operator is installed by the [cluster-storage-operator](https://github.com/openshift/cluster-storage-operator).
 
+For guidance on safely removing a vCenter from a multi-vCenter cluster, see
+[docs/vcenter-removal-runbook.md](docs/vcenter-removal-runbook.md).
+
 # Quick start
 
 Before running the operator manually, you must remove the operator installed by CSO/CVO

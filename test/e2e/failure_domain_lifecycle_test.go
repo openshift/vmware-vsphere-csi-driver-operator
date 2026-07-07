@@ -406,10 +406,28 @@ func verifyOrphanConditionPending(t *testing.T, ctx context.Context, configClien
 	}
 }
 
-// TestVCenterRemovalCleanup verifies that removing a vCenter from the failure
-// domain list cleans up its stale entry in the storage policy controller.
+// TestVCenterRemovalCleanup verifies that removing a vCenter entirely from
+// Infrastructure.Spec.PlatformSpec.VSphere.VCenters (and its FailureDomains)
+// causes the operator to reconnect to it one more time and clean up its
+// orphaned tag/SPBM profile, rather than silently forgetting about it.
+//
+// This requires a multi-vCenter lab where a second vCenter can be safely
+// added and removed from the live Infrastructure spec, which is not
+// available in standard CI today. Until that lab/Prow job exists (tracked
+// as a follow-up, matching the same gap called out for the
+// VSPHERE_MULTI_VCENTER=true-gated multi-vCenter e2e tests), the
+// vcsim-backed integration tests below are the source of truth for this
+// behavior and exercise the exact same Sync -> syncStoragePolicy ->
+// createStoragePolicy -> findOrphanedTags/detachOrphanTags/deleteStoragePolicy
+// path against a real (simulated) vCenter:
+//   - TestOrphanedVCenterIsCleanedUpAfterRemoval and
+//     TestOrphanedVCenterCleanupBlockedByPVSafetyCheckStaysPending in
+//     pkg/operator/storageclasscontroller/vcenter_removal_test.go
+//   - TestReconcileRemovedVCenters, TestFinalizeCleanupStateAndLogout and
+//     TestEvaluateGiveUpFiresAbandonedEventAndMetric in
+//     pkg/operator/vspherecontroller/vcenter_removal_test.go
 func TestVCenterRemovalCleanup(t *testing.T) {
-	t.Skip("vCenter removal cleanup is internal controller state not observable from e2e; requires multi-vCenter mutation test infrastructure")
+	t.Skip("requires a multi-vCenter lab to add/remove a live vCenter from Infrastructure; see pkg/operator/storageclasscontroller/vcenter_removal_test.go and pkg/operator/vspherecontroller/vcenter_removal_test.go for vcsim-backed coverage of this behavior")
 }
 
 // buildFDPatch creates a JSON merge patch for updating failure domains.

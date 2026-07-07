@@ -173,7 +173,7 @@ func TestSync(t *testing.T) {
 				defer assertPanic(t)
 			}
 			// err will be nil on even on failure, need to check conditions instead
-			err := scController.Sync(context.TODO(), conns, apiDeps)
+			err := scController.Sync(context.TODO(), conns, nil, apiDeps)
 			if err != nil {
 				t.Errorf("failed to sync controller: %+v", err)
 			}
@@ -231,7 +231,7 @@ func TestSyncMultiple(t *testing.T) {
 			scController := newStorageClassController(commonApiClient, storageClass, test.storagePolicySyncFails)
 
 			// err will be nil on even on failure, need to check conditions instead
-			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), &conn, apiDeps, opv1.ManagedStorageClass)
+			policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), &conn, apiDeps, opv1.ManagedStorageClass, false)
 			scController.sharedPolicyName = policyName
 
 			if test.expectError {
@@ -247,7 +247,7 @@ func TestSyncMultiple(t *testing.T) {
 				}
 			}
 
-			policyName, clusterCheckResult = scController.syncStoragePolicy(context.TODO(), &conn, apiDeps, opv1.ManagedStorageClass)
+			policyName, clusterCheckResult = scController.syncStoragePolicy(context.TODO(), &conn, apiDeps, opv1.ManagedStorageClass, false)
 			if test.expectError {
 				if clusterCheckResult.CheckError == nil {
 					t.Errorf("Expected error got none")
@@ -317,7 +317,7 @@ func TestBackoffReset(t *testing.T) {
 				scController.vCenterStoragePolicy[conn.Hostname] = ""
 
 				beforeSync := time.Now()
-				policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+				policyName, clusterCheckResult := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass, false)
 				scController.vCenterStoragePolicy[conn.Hostname] = policyName
 
 				if shouldSucceed {
@@ -360,7 +360,7 @@ func TestPerVCenterBackoff(t *testing.T) {
 		bs := scController.getBackoffState(connA.Hostname)
 		bs.nextCheck = time.Time{}
 		scController.vCenterStoragePolicy[connA.Hostname] = ""
-		scController.syncStoragePolicy(context.TODO(), connA, apiDeps, opv1.ManagedStorageClass)
+		scController.syncStoragePolicy(context.TODO(), connA, apiDeps, opv1.ManagedStorageClass, false)
 	}
 
 	// vcenter-b succeeds on first try
@@ -369,7 +369,7 @@ func TestPerVCenterBackoff(t *testing.T) {
 	bsB.nextCheck = time.Time{}
 	scController.vCenterStoragePolicy[connB.Hostname] = ""
 	beforeB := time.Now()
-	scController.syncStoragePolicy(context.TODO(), connB, apiDeps, opv1.ManagedStorageClass)
+	scController.syncStoragePolicy(context.TODO(), connB, apiDeps, opv1.ManagedStorageClass, false)
 
 	bsA := scController.getBackoffState(connA.Hostname)
 	bsB = scController.getBackoffState(connB.Hostname)
@@ -388,6 +388,220 @@ func TestPerVCenterBackoff(t *testing.T) {
 	}
 }
 
+// TestCleanupConnectionsNeverDegradeCluster verifies that a failing cleanup connection (best-effort
+// reconnect to a removed vCenter) never flips overallClusterStatus/checkResult to degraded, even
+// though the same failure on a normal `connections` entry would.
+func TestCleanupConnectionsNeverDegradeCluster(t *testing.T) {
+	initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+	clusterCSIDriverObject := testlib.MakeFakeDriverInstance()
+	configObjects := runtime.Object(testlib.GetInfraObject())
+	commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
+	apiDeps := getCheckAPIDependency(commonApiClient)
+
+	scController := newStorageClassController(commonApiClient, "storageclass1.yaml", false)
+	scController.makeStoragePolicyAPI = newFakeStoragePolicyAPISuccess
+
+	healthyConn := &vclib.VSphereConnection{Hostname: "healthy-vcenter"}
+	failingCleanupConn := &vclib.VSphereConnection{Hostname: "removed-vcenter"}
+
+	callCount := 0
+	scController.makeStoragePolicyAPI = func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure, day2Enabled, forceCleanup bool, recorder events.Recorder) vCenterInterface {
+		callCount++
+		if connection.Hostname == failingCleanupConn.Hostname {
+			return &fakeStoragePolicyAPI{err: fmt.Errorf("cleanup connection failed")}
+		}
+		return &fakeStoragePolicyAPI{ret: "fake-policy"}
+	}
+
+	err := scController.Sync(context.TODO(), []*vclib.VSphereConnection{healthyConn}, []*vclib.VSphereConnection{failingCleanupConn}, apiDeps)
+	if err != nil {
+		t.Fatalf("Sync should never return an error just because a cleanup connection failed: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected both the healthy connection and the cleanup connection to be synced, got %d calls", callCount)
+	}
+
+	_, status, _, err := scController.operatorClient.GetOperatorState()
+	if err != nil {
+		t.Fatalf("failed to get operator state: %v", err)
+	}
+	degraded := testlib.GetMatchingCondition(status.Conditions, testScControllerName+opv1.OperatorStatusTypeDegraded)
+	if degraded == nil || degraded.Status != opv1.ConditionFalse {
+		t.Errorf("expected cluster to not be degraded by a failing cleanup connection, got: %+v", degraded)
+	}
+}
+
+// TestIsHostFullyClean verifies the semantics IsHostFullyClean must have for VSphereController's
+// Phase 2 retry bookkeeping to work: true only once the host has no tracked policy AND no
+// pending (PV-blocked) orphans.
+func TestIsHostFullyClean(t *testing.T) {
+	tests := []struct {
+		name         string
+		policyName   string
+		policyExists bool
+		pending      int
+		expected     bool
+	}{
+		{name: "never synced", expected: true},
+		{name: "policy still tracked", policyExists: true, policyName: "some-policy", expected: false},
+		{name: "empty policy name, no pending orphans", policyExists: true, policyName: "", expected: true},
+		{name: "empty policy name but pending orphans", policyExists: true, policyName: "", pending: 2, expected: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := &StorageClassController{
+				vCenterStoragePolicy: make(map[string]string),
+				pendingOrphans:       make(map[string]int),
+			}
+			if test.policyExists {
+				c.vCenterStoragePolicy["host"] = test.policyName
+			}
+			if test.pending > 0 {
+				c.pendingOrphans["host"] = test.pending
+			}
+			if got := c.IsHostFullyClean("host"); got != test.expected {
+				t.Errorf("expected %v, got %v", test.expected, got)
+			}
+		})
+	}
+}
+
+// TestPurgeVCenterState verifies PurgeVCenterState drops every map entry tracked for a host.
+func TestPurgeVCenterState(t *testing.T) {
+	c := &StorageClassController{
+		vCenterStoragePolicy: map[string]string{"host": "policy"},
+		backoffStates:        map[string]*vCenterBackoffState{"host": {}},
+		pendingOrphans:       map[string]int{"host": 3},
+	}
+	c.PurgeVCenterState("host")
+	if _, ok := c.vCenterStoragePolicy["host"]; ok {
+		t.Error("expected vCenterStoragePolicy entry to be purged")
+	}
+	if _, ok := c.backoffStates["host"]; ok {
+		t.Error("expected backoffStates entry to be purged")
+	}
+	if _, ok := c.pendingOrphans["host"]; ok {
+		t.Error("expected pendingOrphans entry to be purged")
+	}
+}
+
+// TestActiveHostNeverPurgedMidSync guards against accidentally purging a host that is still
+// present in `connections` - Sync() must never call PurgeVCenterState itself; only
+// VSphereController does so, and only once cleanup is confirmed complete or abandoned.
+func TestActiveHostNeverPurgedMidSync(t *testing.T) {
+	initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+	clusterCSIDriverObject := testlib.MakeFakeDriverInstance()
+	configObjects := runtime.Object(testlib.GetInfraObject())
+	commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
+	apiDeps := getCheckAPIDependency(commonApiClient)
+
+	scController := newStorageClassController(commonApiClient, "storageclass1.yaml", false)
+	scController.makeStoragePolicyAPI = newFakeStoragePolicyAPISuccess
+
+	conn := &vclib.VSphereConnection{Hostname: "vcenter-a"}
+	if err := scController.Sync(context.TODO(), []*vclib.VSphereConnection{conn}, nil, apiDeps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := scController.vCenterStoragePolicy[conn.Hostname]; !ok {
+		t.Fatalf("expected vcenter-a's policy to be tracked after a successful sync")
+	}
+
+	// A second Sync() call where vcenter-a happens to be temporarily absent from `connections`
+	// (e.g. a transient vSphereConnections build failure elsewhere) must not purge its state -
+	// only VSphereController decides that, via PurgeVCenterState, once it has confirmed cleanup
+	// is complete or abandoned.
+	if err := scController.Sync(context.TODO(), nil, nil, apiDeps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := scController.vCenterStoragePolicy[conn.Hostname]; !ok {
+		t.Errorf("expected vcenter-a's policy to survive a sync where it was merely absent from connections")
+	}
+}
+
+// TestCleanupConnectionRefreshesTrackedPolicyState is a regression test for a bug where
+// syncStoragePolicy only recorded the returned policy name in c.vCenterStoragePolicy for the
+// `connections` loop of Sync(), never for `cleanupConnections` (whose returned name is
+// discarded). That left a removed vCenter's stale, pre-removal (non-empty) policy name in the
+// map forever, so IsHostFullyClean could never report it clean even after the profile was
+// deleted - starving Phase 2's retry loop of a way to detect completion.
+func TestCleanupConnectionRefreshesTrackedPolicyState(t *testing.T) {
+	initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+	clusterCSIDriverObject := testlib.MakeFakeDriverInstance()
+	configObjects := runtime.Object(testlib.GetInfraObject())
+	commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
+	apiDeps := getCheckAPIDependency(commonApiClient)
+
+	scController := newStorageClassController(commonApiClient, "storageclass1.yaml", false)
+	cleanupConn := &vclib.VSphereConnection{Hostname: "removed-vcenter"}
+
+	// Simulate this host having been an active connection before removal: it still has a
+	// non-empty policy tracked, as if the profile has not been deleted yet.
+	scController.vCenterStoragePolicy[cleanupConn.Hostname] = "openshift-storage-policy-vsphere"
+	scController.makeStoragePolicyAPI = func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure, day2Enabled, forceCleanup bool, recorder events.Recorder) vCenterInterface {
+		return &fakeStoragePolicyAPI{ret: "openshift-storage-policy-vsphere"}
+	}
+	if err := scController.Sync(context.TODO(), nil, []*vclib.VSphereConnection{cleanupConn}, apiDeps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if scController.IsHostFullyClean(cleanupConn.Hostname) {
+		t.Fatalf("expected host to NOT be fully clean while the profile still exists")
+	}
+
+	// Second sync: the zero-FD branch deletes the profile and returns "".
+	bs := scController.getBackoffState(cleanupConn.Hostname)
+	bs.nextCheck = time.Time{}
+	scController.makeStoragePolicyAPI = func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure, day2Enabled, forceCleanup bool, recorder events.Recorder) vCenterInterface {
+		return &fakeStoragePolicyAPI{ret: ""}
+	}
+	if err := scController.Sync(context.TODO(), nil, []*vclib.VSphereConnection{cleanupConn}, apiDeps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !scController.IsHostFullyClean(cleanupConn.Hostname) {
+		t.Errorf("expected host to be fully clean once detection succeeds and the profile is deleted")
+	}
+}
+
+// TestCleanupConnectionBypassesBackoffThrottle is a regression test for a bug where a
+// vCenter's normal (pre-removal) successful sync sets its backoff state's nextCheck up to
+// successCheckInterval (10m) into the future. Once that same hostname later shows up as a
+// cleanupConnection (the vCenter was removed), syncStoragePolicy's within-backoff-window skip
+// check ran for cleanup connections too, silently no-op'ing the cleanup sync - never calling
+// createStoragePolicy, never detecting/deleting the orphaned tag or profile - until the stale
+// 10-minute window from the vCenter's last *active* sync happened to elapse. Cleanup
+// connections are rare, bounded (cleanupApiTimeout) and best-effort, so they must always run
+// the real check regardless of the throttle set while the vCenter was still active.
+func TestCleanupConnectionBypassesBackoffThrottle(t *testing.T) {
+	initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
+	clusterCSIDriverObject := testlib.MakeFakeDriverInstance()
+	configObjects := runtime.Object(testlib.GetInfraObject())
+	commonApiClient := testlib.NewFakeClients(initialObjects, clusterCSIDriverObject, configObjects)
+	apiDeps := getCheckAPIDependency(commonApiClient)
+
+	scController := newStorageClassController(commonApiClient, "storageclass1.yaml", false)
+	cleanupConn := &vclib.VSphereConnection{Hostname: "removed-vcenter"}
+
+	// Simulate this host having been an active connection very recently: its backoff state's
+	// nextCheck is far in the future, exactly as it would be right after a successful sync.
+	scController.vCenterStoragePolicy[cleanupConn.Hostname] = "openshift-storage-policy-vsphere"
+	bs := scController.getBackoffState(cleanupConn.Hostname)
+	bs.nextCheck = time.Now().Add(successCheckInterval)
+
+	apiCalled := false
+	scController.makeStoragePolicyAPI = func(ctx context.Context, connection *vclib.VSphereConnection, infra *v1.Infrastructure, day2Enabled, forceCleanup bool, recorder events.Recorder) vCenterInterface {
+		apiCalled = true
+		return &fakeStoragePolicyAPI{ret: ""}
+	}
+	if err := scController.Sync(context.TODO(), nil, []*vclib.VSphereConnection{cleanupConn}, apiDeps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !apiCalled {
+		t.Error("expected cleanup connection sync to bypass the stale backoff window and call createStoragePolicy")
+	}
+	if !scController.IsHostFullyClean(cleanupConn.Hostname) {
+		t.Errorf("expected host to be reported fully clean once the cleanup sync actually ran")
+	}
+}
+
 func TestPendingOrphansForceResync(t *testing.T) {
 	initialObjects := []runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()}
 	clusterCSIDriverObject := testlib.MakeFakeDriverInstance()
@@ -403,7 +617,7 @@ func TestPendingOrphansForceResync(t *testing.T) {
 	scController.makeStoragePolicyAPI = newFakeStoragePolicyAPISuccess
 	bs := scController.getBackoffState(conn.Hostname)
 	bs.nextCheck = time.Time{}
-	policyName, result := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+	policyName, result := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass, false)
 	if result.CheckError != nil {
 		t.Fatalf("initial sync failed: %v", result.CheckError)
 	}
@@ -416,7 +630,7 @@ func TestPendingOrphansForceResync(t *testing.T) {
 		apiCalled = true
 		return &fakeStoragePolicyAPI{ret: "updated-policy"}
 	}
-	policyName2, result2 := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+	policyName2, result2 := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass, false)
 	if result2.CheckError != nil {
 		t.Fatalf("skip sync failed: %v", result2.CheckError)
 	}
@@ -430,7 +644,7 @@ func TestPendingOrphansForceResync(t *testing.T) {
 	// Set pending orphans — sync should NOT skip even within backoff window
 	scController.pendingOrphans[conn.Hostname] = 3
 	apiCalled = false
-	policyName3, result3 := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass)
+	policyName3, result3 := scController.syncStoragePolicy(context.TODO(), conn, apiDeps, opv1.ManagedStorageClass, false)
 	if result3.CheckError != nil {
 		t.Fatalf("forced resync failed: %v", result3.CheckError)
 	}

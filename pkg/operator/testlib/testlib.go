@@ -483,6 +483,23 @@ func GetSecret() *v1.Secret {
 	}
 }
 
+// GetMultiVCenterSecret returns credentials matching GetZonalMultiVCenterInfra's VCenters
+// ("vcenter.lan", "vcenter2.lan").
+func GetMultiVCenterSecret() *v1.Secret {
+	return &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: defaultNamespace,
+		},
+		Data: map[string][]byte{
+			"vcenter.lan.password":  []byte("vsphere-password"),
+			"vcenter.lan.username":  []byte("vsphere-user"),
+			"vcenter2.lan.password": []byte("vsphere-password"),
+			"vcenter2.lan.username": []byte("vsphere-user"),
+		},
+	}
+}
+
 func GetDCSecret() *v1.Secret {
 	return &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

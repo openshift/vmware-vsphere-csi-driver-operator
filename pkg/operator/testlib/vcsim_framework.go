@@ -146,6 +146,52 @@ func createConnection(modelDir, server string) (*vclib.VSphereConnection, *simul
 	return conn, s, model, nil
 }
 
+// StandaloneSimulator is a single vcsim server whose RealHostname is dialable over the network
+// (unlike the connections returned by SetupSimulator, which are pre-authenticated in-process and
+// never dial their Hostname field). Used by tests that need to exercise a real Connect()/
+// NewClient() round-trip against a "removed vCenter" style reconnect, where only a hostname and
+// credentials are known up front.
+type StandaloneSimulator struct {
+	RealHostname string
+	Username     string
+	Password     string
+	Cleanup      func()
+}
+
+// NewStandaloneSimulator starts a single vcsim server (with tag/category and storage-policy APIs
+// registered, same as SetupSimulator) and returns its real, dialable address.
+func NewStandaloneSimulator(modelDir string) (*StandaloneSimulator, error) {
+	model := simulator.VPX()
+	if err := model.Load(modelDir); err != nil {
+		return nil, err
+	}
+	model.Service.TLS = new(tls.Config)
+
+	s := model.Service.NewServer()
+	model.Service.RegisterSDK(pdbsimulator.New())
+
+	client, err := ConnectToSimulator(s)
+	if err != nil {
+		s.Close()
+		model.Remove()
+		return nil, fmt.Errorf("failed to connect to the simulator: %s", err)
+	}
+	patterns, handlers := vapisimulator.New(client.URL(), simulator.Map(model.Service.Context))
+	for _, p := range patterns {
+		model.Service.Handle(p, handlers)
+	}
+
+	return &StandaloneSimulator{
+		RealHostname: s.URL.Host,
+		Username:     "admin@vsphere.local",
+		Password:     "foobar",
+		Cleanup: func() {
+			s.Close()
+			model.Remove()
+		},
+	}, nil
+}
+
 func ConnectToSimulator(s *simulator.Server) (*govmomi.Client, error) {
 	client, err := govmomi.NewClient(context.TODO(), s.URL, true)
 	if err != nil {

@@ -67,6 +67,17 @@ var (
 			StabilityLevel: metrics.ALPHA,
 		},
 	)
+
+	// VCenterRemovalCleanupTotal counts completed best-effort cleanup attempts for vCenters
+	// removed from Infrastructure.Spec.PlatformSpec.VSphere.VCenters, by outcome.
+	VCenterRemovalCleanupTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Name:           "vsphere_csi_vcenter_removal_cleanup_total",
+			Help:           "Total number of best-effort cleanup attempts for removed vCenters, by result",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"result"},
+	)
 )
 
 func init() {
@@ -75,4 +86,5 @@ func init() {
 	legacyregistry.MustRegister(InfrastructureFailureDomains)
 	legacyregistry.MustRegister(TagOperationsTotal)
 	legacyregistry.MustRegister(OrphanTagsDetectedTotal)
+	legacyregistry.MustRegister(VCenterRemovalCleanupTotal)
 }

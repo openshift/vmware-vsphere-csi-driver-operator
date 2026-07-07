@@ -35,7 +35,7 @@ const (
 func newVsphereController(apiClients *utils.APIClient) *VSphereController {
 	gates := featuregates.NewFeatureGate(
 		[]configv1.FeatureGateName{"SomeEnabledFeatureGate", features.FeatureGateVSphereConfigurableMaxAllowedBlockVolumesPerNode},
-		[]configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMixedNodeEnv},
+		[]configv1.FeatureGateName{"SomeDisabledFeatureGate", features.FeatureGateVSphereMixedNodeEnv, features.FeatureGateVSphereMultiVCenterDay2},
 	)
 	return newVsphereControllerWithGates(apiClients, gates)
 }
@@ -75,6 +75,9 @@ func newVsphereControllerWithGates(apiClients *utils.APIClient, gates featuregat
 		vSphereChecker:         newVSphereEnvironmentChecker(),
 		infraLister:            infraInformer.Lister(),
 		featureGates:           gates,
+		vCenterConfigSnapshots: make(map[string]vCenterConnSnapshot),
+		previousVCenterHosts:   make(map[string]bool),
+		pendingVCenterRemoval:  make(map[string]*vCenterRemovalState),
 	}
 	c.controllers = []conditionalController{}
 	c.storageClassController = &dummyStorageClassController{syncCalled: 0}
@@ -82,17 +85,29 @@ func newVsphereControllerWithGates(apiClients *utils.APIClient, gates featuregat
 }
 
 type dummyStorageClassController struct {
-	syncCalled int
+	syncCalled          int
+	cleanupConnections  []*vclib.VSphereConnection
+	fullyCleanHosts     map[string]bool
 }
 
-func (c *dummyStorageClassController) Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+func (c *dummyStorageClassController) Sync(ctx context.Context, connections []*vclib.VSphereConnection, cleanupConnections []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
 	c.syncCalled += 1
+	c.cleanupConnections = cleanupConnections
 	return nil
 }
 
 func (c *dummyStorageClassController) SyncRemove(ctx context.Context) error {
 	return nil
 }
+
+func (c *dummyStorageClassController) IsHostFullyClean(host string) bool {
+	if c.fullyCleanHosts == nil {
+		return true
+	}
+	return c.fullyCleanHosts[host]
+}
+
+func (c *dummyStorageClassController) PurgeVCenterState(host string) {}
 
 func TestSync(t *testing.T) {
 	metricsHeader := `

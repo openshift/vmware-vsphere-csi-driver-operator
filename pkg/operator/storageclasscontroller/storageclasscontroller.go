@@ -46,11 +46,23 @@ var (
 	}
 
 	successCheckInterval = 10 * time.Minute
+
+	// cleanupApiTimeout bounds each cleanup-connection sync separately from the normal
+	// apiTimeout (10m). A cleanup connection that TCP-connects but hangs on API calls (e.g. a
+	// vCenter in a bad intermediate state) would otherwise be able to add up to apiTimeout of
+	// latency per removed vCenter, per sync, to a single sync cycle.
+	cleanupApiTimeout = 2 * time.Minute
 )
 
 type StorageClassSyncInterface interface {
-	Sync(ctx context.Context, connection []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
+	Sync(ctx context.Context, connections []*vclib.VSphereConnection, cleanupConnections []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error
 	SyncRemove(ctx context.Context) error
+	// IsHostFullyClean reports whether host has no remaining storage-policy/orphan-cleanup state,
+	// i.e. it is safe for the caller to stop tracking it as pending removal.
+	IsHostFullyClean(host string) bool
+	// PurgeVCenterState drops all bookkeeping (policy, backoff, pending-orphan state) held for
+	// host. Callers use this once cleanup is confirmed done or a bounded retry has been abandoned.
+	PurgeVCenterState(host string)
 }
 
 type vCenterBackoffState struct {
@@ -114,45 +126,15 @@ func NewStorageClassController(
 	return scc
 }
 
-func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
-	if c.featureGates != nil && c.featureGates.Enabled(features.FeatureGateVSphereMultiVCenterDay2) {
-		activeHosts := make(map[string]bool, len(connections))
-		for _, conn := range connections {
-			activeHosts[conn.Hostname] = true
-		}
-		staleHosts := make(map[string]bool)
-		for host := range c.vCenterStoragePolicy {
-			if !activeHosts[host] {
-				staleHosts[host] = true
-			}
-		}
-		for host := range c.backoffStates {
-			if !activeHosts[host] {
-				staleHosts[host] = true
-			}
-		}
-		for host := range c.pendingOrphans {
-			if !activeHosts[host] {
-				staleHosts[host] = true
-			}
-		}
-		for host := range staleHosts {
-			klog.V(2).Infof("Removing stale vCenter state for %s", host)
-			delete(c.vCenterStoragePolicy, host)
-			delete(c.backoffStates, host)
-			delete(c.pendingOrphans, host)
-			c.recorder.Eventf("StaleVCenterRemoved", "Removed stale vCenter entry for %s", host)
-		}
-	}
+func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.VSphereConnection, cleanupConnections []*vclib.VSphereConnection, apiDeps checks.KubeAPIInterface) error {
+	sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
+	scState := c.scStateEvaluator.GetStorageClassState(sc.Provisioner)
 
 	checkResultFunc := func() (checks.ClusterCheckResult, checks.ClusterCheckStatus) {
-		sc := resourceread.ReadStorageClassV1OrDie(c.manifest)
-		scState := c.scStateEvaluator.GetStorageClassState(sc.Provisioner)
-
 		// Iterate through each vcenter connection for storage policy.
 		for _, connection := range connections {
 			klog.V(4).Infof("Syncing %v", connection.Hostname)
-			policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps, scState)
+			policyName, syncResult := c.syncStoragePolicy(ctx, connection, apiDeps, scState, false)
 			if syncResult.CheckError != nil {
 				klog.Errorf("error syncing storage policy for %v: %v", connection.Hostname, syncResult.Reason)
 				clusterCondition := "storage_class_sync_failed"
@@ -160,7 +142,6 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 				return syncResult, checks.ClusterCheckDegrade
 			}
 			klog.V(4).Infof("Synced policy %v", policyName)
-			c.vCenterStoragePolicy[connection.Hostname] = policyName
 			// Only update the shared policy name from vCenters that have active failure domains.
 			// A vCenter with zero FDs returns empty string after deleting its orphaned profile.
 			if policyName != "" {
@@ -176,7 +157,27 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 		return checks.MakeClusterCheckResultPass(), checks.ClusterCheckAllGood
 	}
 
+	// connections only - cleanupConnections are best-effort and must never degrade the cluster,
+	// so they are deliberately not part of this result.
 	checkResult, overallClusterStatus := checkResultFunc()
+
+	// Cleanup connections (removed vCenters being reconnected to for best-effort tag/SPBM-profile
+	// cleanup) run through the same syncStoragePolicy()/createStoragePolicy() path - the existing
+	// zero-FD branch there already deletes the profile and detaches orphaned tags. Errors here
+	// only affect this vCenter's own retry bookkeeping (pendingOrphans, backoffStates), never
+	// checkResult/overallClusterStatus.
+	for _, cleanupConn := range cleanupConnections {
+		if cleanupConn == nil {
+			continue
+		}
+		klog.V(4).Infof("Syncing cleanup connection for removed vCenter %v", cleanupConn.Hostname)
+		cctx, cancel := context.WithTimeout(ctx, cleanupApiTimeout)
+		_, syncResult := c.syncStoragePolicy(cctx, cleanupConn, apiDeps, scState, true)
+		cancel()
+		if syncResult.CheckError != nil {
+			klog.Warningf("best-effort cleanup sync failed for removed vCenter %s: %v", cleanupConn.Hostname, syncResult.Reason)
+		}
+	}
 
 	totalPending := 0
 	for _, count := range c.pendingOrphans {
@@ -184,6 +185,27 @@ func (c *StorageClassController) Sync(ctx context.Context, connections []*vclib.
 	}
 
 	return c.updateConditions(ctx, checkResult, overallClusterStatus, totalPending)
+}
+
+// IsHostFullyClean reports true once host has no remaining storage-policy state: no (non-empty)
+// tracked SPBM policy name, and no orphaned tags still blocked on bound PVs. VSphereController
+// calls this after Sync() returns, for each host it attempted cleanup on, to decide whether to
+// stop retrying it.
+func (c *StorageClassController) IsHostFullyClean(host string) bool {
+	if policyName, ok := c.vCenterStoragePolicy[host]; ok && policyName != "" {
+		return false
+	}
+	return c.pendingOrphans[host] == 0
+}
+
+// PurgeVCenterState drops all state Sync() tracks for host: its storage policy name, backoff
+// state, and pending-orphan count. Callers (VSphereController) call this only once cleanup is
+// confirmed done (IsHostFullyClean) or a bounded retry has been abandoned - never merely because
+// host is momentarily absent from the connections passed to Sync().
+func (c *StorageClassController) PurgeVCenterState(host string) {
+	delete(c.vCenterStoragePolicy, host)
+	delete(c.backoffStates, host)
+	delete(c.pendingOrphans, host)
 }
 
 func (c *StorageClassController) SyncRemove(ctx context.Context) error {
@@ -204,7 +226,7 @@ func (c *StorageClassController) getBackoffState(hostname string) *vCenterBackof
 	return state
 }
 
-func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName) (string, checks.ClusterCheckResult) {
+func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connection *vclib.VSphereConnection, apiDeps checks.KubeAPIInterface, scState operatorapi.StorageClassStateName, isCleanup bool) (string, checks.ClusterCheckResult) {
 	if !c.scStateEvaluator.IsManaged(scState) {
 		klog.V(2).Info("sc is not managed")
 		return "", checks.MakeClusterCheckResultPass()
@@ -221,7 +243,13 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connecti
 		}
 	}
 
-	if !time.Now().After(bs.nextCheck) && len(c.vCenterStoragePolicy[connection.Hostname]) > 0 && !forceCleanup && c.pendingOrphans[connection.Hostname] == 0 {
+	// Cleanup connections never honor the backoff window: this hostname's backoff state may
+	// still carry a nextCheck set far in the future by its last successful sync *while it was
+	// still an active connection*. Skipping the check here would silently no-op the cleanup
+	// sync - never calling createStoragePolicy - until that stale window happens to elapse.
+	// Cleanup connections are rare, best-effort and already bounded by cleanupApiTimeout, so
+	// always running the real check is cheap and correct.
+	if !isCleanup && !time.Now().After(bs.nextCheck) && len(c.vCenterStoragePolicy[connection.Hostname]) > 0 && !forceCleanup && c.pendingOrphans[connection.Hostname] == 0 {
 		klog.V(4).Infof("Returning without running any checks for %s", connection.Hostname)
 		return c.vCenterStoragePolicy[connection.Hostname], checks.MakeClusterCheckResultPass()
 	}
@@ -248,6 +276,11 @@ func (c *StorageClassController) syncStoragePolicy(ctx context.Context, connecti
 
 	bs.backoff = defaultBackoff
 	bs.nextCheck = bs.lastCheck.Add(successCheckInterval)
+	// Recorded here (rather than by the caller) so that cleanup-connection syncs - which discard
+	// the returned policyName - also refresh this vCenter's tracked state. Otherwise a removed
+	// vCenter would keep its stale, pre-removal (non-empty) policy name forever, and
+	// IsHostFullyClean would never report it clean even after the profile is deleted.
+	c.vCenterStoragePolicy[connection.Hostname] = policyName
 	return policyName, checks.MakeClusterCheckResultPass()
 }
 
