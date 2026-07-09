@@ -3,6 +3,7 @@ package storageclasscontroller
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -612,7 +613,7 @@ func (v *storagePolicyAPI) findOrphanedTags(ctx context.Context) ([]orphanedData
 	// NewStoragePolicyAPI to match v.vcenterApiConnection.Hostname).
 	currentFDs := sets.NewString()
 	for _, fd := range v.failureDomains {
-		key := fd.Topology.Datacenter + "/" + fd.Topology.Datastore
+		key := fd.Topology.Datacenter + "/" + path.Base(fd.Topology.Datastore)
 		currentFDs.Insert(key)
 	}
 
@@ -621,7 +622,7 @@ func (v *storagePolicyAPI) findOrphanedTags(ctx context.Context) ([]orphanedData
 		workspaceDC := conn.Config.LegacyConfig.Workspace.Datacenter
 		workspaceDS := conn.Config.LegacyConfig.Workspace.DefaultDatastore
 		if workspaceDC != "" && workspaceDS != "" {
-			currentFDs.Insert(workspaceDC + "/" + workspaceDS)
+			currentFDs.Insert(workspaceDC + "/" + path.Base(workspaceDS))
 		}
 	}
 
