@@ -93,8 +93,8 @@ func NewStoragePolicyAPI(ctx context.Context, connection *vclib.VSphereConnectio
 		policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
 		tagName:              infra.Status.InfrastructureName,
 		day2Enabled:          day2Enabled,
-		forceCleanup:        forceCleanup,
-		recorder:            recorder,
+		forceCleanup:         forceCleanup,
+		recorder:             recorder,
 		apiTestInfo:          map[string]int{},
 	}
 	return storagePolicyAPIClient
@@ -253,16 +253,17 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	}
 
 	// If this vCenter has zero failure domains BUT other vCenters have FDs
-	// (meaning this vCenter was specifically removed from the FD list), and a
-	// policy exists, the policy is non-compliant (no datastores carry the tag).
-	// Delete it — unless there are unresolved orphans (PV-blocked or API errors).
+	// (meaning this vCenter was specifically removed from the FD list), its
+	// storage policy is non-compliant (no datastores should continue carrying the
+	// tag for this vCenter). Delete it — unless orphan detection failed or there
+	// are unresolved orphans.
 	// When NO vCenters have FDs (legacy single-datastore path), keep the policy.
 	vSphereInfraConfig := v.infra.Spec.PlatformSpec.VSphere
 	globalFDCount := 0
 	if vSphereInfraConfig != nil {
 		globalFDCount = len(vSphereInfraConfig.FailureDomains)
 	}
-	if v.day2Enabled && len(v.failureDomains) == 0 && globalFDCount > 0 && v.policyCreated && !orphanDetectionFailed && len(unresolved) == 0 {
+	if v.day2Enabled && len(v.failureDomains) == 0 && globalFDCount > 0 && !orphanDetectionFailed && len(unresolved) == 0 {
 		klog.V(2).Infof("vCenter %s has zero failure domains, deleting orphaned SPBM profile %s",
 			v.vcenterApiConnection.Hostname, v.policyName)
 		if delErr := v.deleteStoragePolicy(ctx); delErr != nil {
@@ -568,10 +569,11 @@ func appendPrefix(associableTypes []string) []string {
 // orphanedDatastore identifies a datastore that has the cluster tag but is not
 // in the current failure domain list.
 type orphanedDatastore struct {
-	Datacenter  string
-	Datastore   string
-	Reference   vim.ManagedObjectReference
-	HasBoundPVs bool
+	Datacenter    string
+	Datastore     string
+	Reference     vim.ManagedObjectReference
+	HasBoundPVs   bool
+	CnsCheckError string
 }
 
 // findOrphanedTags queries vCenter for all datastores tagged with the cluster tag,
@@ -644,8 +646,13 @@ func (v *storagePolicyAPI) findOrphanedTags(ctx context.Context) ([]orphanedData
 					Datastore:  dsName,
 					Reference:  objRef.Reference(),
 				}
-				// Check if any CNS volumes are backed by this datastore
-				orphan.HasBoundPVs = v.datastoreHasCnsVolumes(ctx, conn, objRef.Reference())
+				// Check if any CNS volumes are backed by this datastore.
+				hasPVs, cnsErr := v.datastoreHasCnsVolumes(ctx, conn, objRef.Reference())
+				orphan.HasBoundPVs = hasPVs
+				if cnsErr != nil {
+					klog.Warningf("CNS check failed for datastore %s/%s: %v", dcName, dsName, cnsErr)
+					orphan.CnsCheckError = cnsErr.Error()
+				}
 				orphans = append(orphans, orphan)
 			}
 		}
@@ -690,22 +697,19 @@ func (v *storagePolicyAPI) resolveDatastoreIdentity(ctx context.Context, conn *v
 }
 
 // datastoreHasCnsVolumes checks if any CNS volumes are backed by the given datastore.
-// Returns true if volumes are found, false if no volumes or the CNS client is unavailable.
-// When the CNS client is unavailable (older vCenter), returns true (conservative — skip detach).
-func (v *storagePolicyAPI) datastoreHasCnsVolumes(ctx context.Context, conn *vclib.VSphereConnection, datastoreMOR vim.ManagedObjectReference) bool {
+// Returns true when volumes are found, false when none are found, and an error when
+// CNS availability prevented a reliable answer.
+func (v *storagePolicyAPI) datastoreHasCnsVolumes(ctx context.Context, conn *vclib.VSphereConnection, datastoreMOR vim.ManagedObjectReference) (bool, error) {
 	// Login to CNS if not already done
 	if conn.CnsClient() == nil {
 		if err := conn.LoginToCNS(ctx); err != nil {
-			klog.Warningf("CNS API unavailable on vCenter %s, treating datastore as having bound PVs (conservative): %v",
-				conn.Hostname, err)
-			return true // Conservative: skip detach when CNS unavailable
+			return false, fmt.Errorf("CNS login failed: %w", err)
 		}
 	}
 
 	cnsClient := conn.CnsClient()
 	if cnsClient == nil {
-		klog.Warningf("CNS client nil after login on vCenter %s, treating datastore as having bound PVs", conn.Hostname)
-		return true
+		return false, fmt.Errorf("CNS client nil after login")
 	}
 
 	queryFilter := cnstypes.CnsQueryFilter{
@@ -714,16 +718,15 @@ func (v *storagePolicyAPI) datastoreHasCnsVolumes(ctx context.Context, conn *vcl
 
 	queryResult, err := cnsClient.QueryVolume(ctx, &queryFilter)
 	if err != nil {
-		klog.Warningf("Error querying CNS volumes for datastore %s: %v, treating as having bound PVs", datastoreMOR, err)
-		return true // Conservative on error
+		return false, fmt.Errorf("CNS query failed: %w", err)
 	}
 
 	if queryResult != nil && len(queryResult.Volumes) > 0 {
 		klog.V(2).Infof("Datastore %s has %d CNS volumes, skipping orphan cleanup", datastoreMOR, len(queryResult.Volumes))
-		return true
+		return true, nil
 	}
 
-	return false
+	return false, nil
 }
 
 // detachOrphanTags removes tags from orphaned datastores that don't have bound PVs.
@@ -769,6 +772,11 @@ func (v *storagePolicyAPI) detachOrphanTags(ctx context.Context, orphans []orpha
 			}
 			unresolved = append(unresolved, *orphan)
 			continue
+		}
+
+		if orphan.CnsCheckError != "" {
+			klog.V(2).Infof("CNS check was unavailable for datastore %s/%s (proceeding with detach): %s",
+				orphan.Datacenter, orphan.Datastore, orphan.CnsCheckError)
 		}
 
 		err := tagManager.DetachTag(ctx, tag.ID, orphan.Reference)

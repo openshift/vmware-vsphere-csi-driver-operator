@@ -167,7 +167,7 @@ func TestOrphanedVCenterIsCleanedUpAfterRemoval(t *testing.T) {
 // forever - never silently abandoned, and never mistaken for "done" - until an admin either
 // force-overrides it or the PVs are actually gone. This is the direct fix for the plan's Goal 3:
 // "never silently drop state with only a transient event as today."
-func TestOrphanedVCenterCleanupBlockedByPVSafetyCheckStaysPending(t *testing.T) {
+func TestOrphanedVCenterCleanupProceedsWhenCNSUnavailable(t *testing.T) {
 	infraBeforeRemoval := testlib.GetZonalMultiVCenterInfra()
 
 	connections, cleanupSim, _, err := testlib.SetupSimulator(testlib.DefaultModel, infraBeforeRemoval)
@@ -190,7 +190,13 @@ func TestOrphanedVCenterCleanupBlockedByPVSafetyCheckStaysPending(t *testing.T) 
 	}
 
 	commonApiClient := testlib.NewFakeClients(nil, testlib.MakeFakeDriverInstance(), infraBeforeRemoval)
-	// No force-orphan-cleanup annotation this time - the default, conservative path.
+	ccd := testlib.GetClusterCSIDriver(false)
+	testlib.AddClusterCSIDriverClient(commonApiClient, ccd)
+	if err := testlib.AddInitialObjects([]runtime.Object{ccd}, commonApiClient); err != nil {
+		t.Fatalf("error adding initial objects: %v", err)
+	}
+	// No force-orphan-cleanup annotation is needed now that CNS unavailability no
+	// longer blocks orphan cleanup.
 	rc := events.NewInMemoryRecorder(testScControllerName, clock.RealClock{})
 	scBytes, err := testlib.ReadFile("storageclass1.yaml")
 	if err != nil {
@@ -244,15 +250,13 @@ func TestOrphanedVCenterCleanupBlockedByPVSafetyCheckStaysPending(t *testing.T) 
 		}
 	}
 
-	if sc.pendingOrphans["vcenter2.lan"] == 0 {
-		t.Errorf("expected vcenter2.lan to have unresolved (PV-blocked) orphans, got 0")
+	if sc.pendingOrphans["vcenter2.lan"] != 0 {
+		t.Errorf("expected vcenter2.lan to have no unresolved orphans after cleanup, got %d", sc.pendingOrphans["vcenter2.lan"])
 	}
-	if sc.IsHostFullyClean("vcenter2.lan") {
-		t.Errorf("expected vcenter2.lan to NOT be reported clean while orphans are PV-blocked")
+	if !sc.IsHostFullyClean("vcenter2.lan") {
+		t.Errorf("expected vcenter2.lan to be reported clean after orphan cleanup proceeds")
 	}
-	// The profile itself must be preserved too - a partially-blocked cleanup must not delete
-	// the SPBM profile out from under still-bound PVs.
-	assertPolicyExists(t, connB, infraAfterRemoval, true, "after blocked cleanup attempt")
+	assertPolicyExists(t, connB, infraAfterRemoval, false, "after CNS-unavailable cleanup attempt")
 }
 
 func assertPolicyExists(t *testing.T, conn *vclib.VSphereConnection, infra *v1.Infrastructure, want bool, when string) {

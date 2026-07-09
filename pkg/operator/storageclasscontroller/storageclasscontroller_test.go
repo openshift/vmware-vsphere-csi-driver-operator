@@ -198,6 +198,42 @@ func TestSync(t *testing.T) {
 	}
 }
 
+func TestUpdateConditionsUsesGenericOrphanCleanupMessage(t *testing.T) {
+	commonApiClient := testlib.NewFakeClients(
+		[]runtime.Object{testlib.GetConfigMap(), testlib.GetSecret()},
+		testlib.MakeFakeDriverInstance(),
+		testlib.GetInfraObject(),
+	)
+	scController := newStorageClassController(commonApiClient, "storageclass1.yaml", false)
+
+	err := scController.updateConditions(
+		context.TODO(),
+		checks.MakeClusterCheckResultPass(),
+		checks.ClusterCheckAllGood,
+		2,
+	)
+	if err != nil {
+		t.Fatalf("failed to update conditions: %+v", err)
+	}
+
+	_, status, _, err := scController.operatorClient.GetOperatorState()
+	if err != nil {
+		t.Fatalf("failed to get operator state: %+v", err)
+	}
+
+	condition := testlib.GetMatchingCondition(status.Conditions, testScControllerName+"OrphanCleanupPending")
+	if condition == nil {
+		t.Fatal("expected orphan cleanup pending condition to be present")
+	}
+	if condition.Status != opv1.ConditionTrue {
+		t.Fatalf("expected orphan cleanup pending condition true, got %v", condition.Status)
+	}
+	expectedMessage := "2 orphaned datastore tag(s) could not be cleaned up"
+	if condition.Message != expectedMessage {
+		t.Fatalf("expected message %q, got %q", expectedMessage, condition.Message)
+	}
+}
+
 func TestSyncMultiple(t *testing.T) {
 	tests := []struct {
 		name                   string

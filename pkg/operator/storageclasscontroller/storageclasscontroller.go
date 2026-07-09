@@ -85,9 +85,9 @@ type StorageClassController struct {
 	scStateEvaluator     *csiscc.StorageClassStateEvaluator
 
 	sharedPolicyName     string
-	vCenterStoragePolicy map[string]string                 // Key is vcenter hostname, value is policy name
-	backoffStates        map[string]*vCenterBackoffState   // Key is vcenter hostname
-	pendingOrphans       map[string]int                    // Key is vcenter hostname, value is unresolved count
+	vCenterStoragePolicy map[string]string               // Key is vcenter hostname, value is policy name
+	backoffStates        map[string]*vCenterBackoffState // Key is vcenter hostname
+	pendingOrphans       map[string]int                  // Key is vcenter hostname, value is unresolved count
 }
 
 func NewStorageClassController(
@@ -303,7 +303,7 @@ func (c *StorageClassController) updateConditions(ctx context.Context, lastCheck
 	if pendingOrphans > 0 {
 		orphanCondition.Status = operatorapi.ConditionTrue
 		orphanCondition.Reason = "OrphansBlocked"
-		orphanCondition.Message = fmt.Sprintf("%d orphaned datastore tag(s) blocked by existing PVs", pendingOrphans)
+		orphanCondition.Message = fmt.Sprintf("%d orphaned datastore tag(s) could not be cleaned up", pendingOrphans)
 	}
 
 	switch clusterStatus {
