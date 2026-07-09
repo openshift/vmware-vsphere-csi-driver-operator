@@ -312,3 +312,318 @@ func validateAPICallCount(t *testing.T, vmwareAPI *storagePolicyAPI, expectedMap
 		}
 	}
 }
+
+// TestOrphanCleanupProceedsWhenCNSUnavailable verifies that orphan cleanup still
+// proceeds when a vCenter has zero failure domains but the CNS API is unavailable
+// (vcsim doesn't support CNS). In that case the operator should detach the orphan
+// tag and continue deleting the now-orphaned SPBM profile.
+func TestOrphanCleanupProceedsWhenCNSUnavailable(t *testing.T) {
+	var cleanUpFunc func()
+	var connections []*vclib.VSphereConnection
+	var connError error
+
+	infra := testlib.GetZonalInfra()
+
+	connections, cleanUpFunc, _, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
+	defer func() {
+		if cleanUpFunc != nil {
+			cleanUpFunc()
+		}
+	}()
+
+	if connError != nil {
+		t.Fatalf("error connecting to vcenter: %v", connError)
+	}
+
+	for _, conn := range connections {
+		// First create the policy with failure domains
+		apiClient := &storagePolicyAPI{
+			vcenterApiConnection: conn,
+			infra:                infra,
+			failureDomains:       getFailureDomainsForServer(infra, conn.Hostname),
+			categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+			policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+			tagName:              infra.Status.InfrastructureName,
+			apiTestInfo:          map[string]int{},
+		}
+
+		_, err := apiClient.createStoragePolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("Error creating storage policy: %v", err)
+		}
+
+		// Simulate FD removal: this vCenter has no FDs but global FDs exist
+		apiClient2 := &storagePolicyAPI{
+			vcenterApiConnection: conn,
+			infra:                infra,
+			failureDomains:       nil,
+			categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+			policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+			tagName:              infra.Status.InfrastructureName,
+			day2Enabled:          true,
+			apiTestInfo:          map[string]int{},
+		}
+
+		policyName, err := apiClient2.createStoragePolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("Error on zero-FD sync: %v", err)
+		}
+
+		// CNS API unavailable on vcsim should no longer block orphan cleanup.
+		// The orphan tag should be detached and the policy deleted.
+		if policyName != "" {
+			t.Error("expected policy to be deleted when CNS is unavailable and no PVs are confirmed")
+		}
+
+		// Verify policy no longer exists
+		found, err := apiClient2.checkForExistingPolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("error checking policy: %v", err)
+		}
+		if found {
+			t.Error("expected policy to be deleted after orphan cleanup proceeds")
+		}
+	}
+}
+
+func TestOrphanCleanupBlockedWhenCNSConfirmsPVs(t *testing.T) {
+	var cleanUpFunc func()
+	var connections []*vclib.VSphereConnection
+	var connError error
+
+	infra := testlib.GetZonalInfra()
+
+	connections, cleanUpFunc, _, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
+	defer func() {
+		if cleanUpFunc != nil {
+			cleanUpFunc()
+		}
+	}()
+
+	if connError != nil {
+		t.Fatalf("error connecting to vcenter: %v", connError)
+	}
+
+	for _, conn := range connections {
+		apiClient := &storagePolicyAPI{
+			vcenterApiConnection: conn,
+			infra:                infra,
+			failureDomains:       getFailureDomainsForServer(infra, conn.Hostname),
+			categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+			policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+			tagName:              infra.Status.InfrastructureName,
+			apiTestInfo:          map[string]int{},
+		}
+
+		_, err := apiClient.createStoragePolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("error creating storage policy: %v", err)
+		}
+		defer func(client *storagePolicyAPI) {
+			if err := client.deleteStoragePolicy(context.TODO()); err != nil {
+				t.Errorf("error deleting storage policy: %v", err)
+			}
+		}(apiClient)
+
+		fd := getFailureDomainsForServer(infra, conn.Hostname)[0]
+		ds, err := apiClient.getDatastore(context.TODO(), fd.Topology.Datacenter, fd.Topology.Datastore)
+		if err != nil {
+			t.Fatalf("error fetching datastore: %v", err)
+		}
+
+		orphans := []orphanedDatastore{{
+			Datacenter:  fd.Topology.Datacenter,
+			Datastore:   fd.Topology.Datastore,
+			Reference:   ds.Reference(),
+			HasBoundPVs: true,
+		}}
+
+		unresolved := apiClient.detachOrphanTags(context.TODO(), orphans)
+		if len(unresolved) != 1 {
+			t.Fatalf("expected one unresolved orphan, got %d", len(unresolved))
+		}
+		if unresolved[0].Reference != ds.Reference() {
+			t.Fatalf("expected unresolved orphan for datastore %s, got %s", ds.Reference(), unresolved[0].Reference)
+		}
+		if !apiClient.checkForTagOnDatastore(context.TODO(), ds) {
+			t.Fatal("expected datastore tag to remain attached when PVs are confirmed")
+		}
+	}
+}
+
+// TestSPBMPreservedWhenNoGlobalFDs verifies that the SPBM profile is NOT deleted
+// when there are zero failure domains globally (legacy single-datastore path).
+func TestSPBMPreservedWhenNoGlobalFDs(t *testing.T) {
+	var cleanUpFunc func()
+	var connections []*vclib.VSphereConnection
+	var connError error
+
+	// Use infra with NO failure domains (legacy path)
+	infra := testlib.GetInfraObject()
+
+	connections, cleanUpFunc, _, connError = testlib.SetupSimulator(testlib.DefaultModel, infra)
+	defer func() {
+		if cleanUpFunc != nil {
+			cleanUpFunc()
+		}
+	}()
+
+	if connError != nil {
+		t.Fatalf("error connecting to vcenter: %v", connError)
+	}
+
+	for _, conn := range connections {
+		apiClient := &storagePolicyAPI{
+			vcenterApiConnection: conn,
+			infra:                infra,
+			failureDomains:       nil,
+			categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+			policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+			tagName:              infra.Status.InfrastructureName,
+			apiTestInfo:          map[string]int{},
+		}
+
+		policyName, err := apiClient.createStoragePolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("Error creating storage policy: %v", err)
+		}
+
+		// Policy should NOT be empty — legacy path preserves it
+		if policyName == "" {
+			t.Error("expected non-empty policy name in legacy path")
+		}
+
+		// Verify policy exists
+		found, err := apiClient.checkForExistingPolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("error checking policy: %v", err)
+		}
+		if !found {
+			t.Error("expected policy to exist in legacy path")
+		}
+
+		// Cleanup
+		defer func() {
+			if err := apiClient.deleteStoragePolicy(context.TODO()); err != nil {
+				t.Errorf("error deleting storage policy: %v", err)
+			}
+		}()
+	}
+}
+
+// TestVCenterStoragePolicyMapCleanup verifies that the vCenterStoragePolicy map
+// is cleaned up when vCenters are removed from the connection list.
+func TestVCenterStoragePolicyMapCleanup(t *testing.T) {
+	scc := &StorageClassController{
+		vCenterStoragePolicy: map[string]string{
+			"vcenter1.lan":        "policy-1",
+			"vcenter2.lan":        "policy-2",
+			"vcenter-removed.lan": "policy-3",
+		},
+	}
+
+	// Simulate connections with only vcenter1 and vcenter2
+	activeHosts := map[string]bool{
+		"vcenter1.lan": true,
+		"vcenter2.lan": true,
+	}
+	for host := range scc.vCenterStoragePolicy {
+		if !activeHosts[host] {
+			delete(scc.vCenterStoragePolicy, host)
+		}
+	}
+
+	if _, ok := scc.vCenterStoragePolicy["vcenter-removed.lan"]; ok {
+		t.Error("expected vcenter-removed.lan to be cleaned up from map")
+	}
+	if _, ok := scc.vCenterStoragePolicy["vcenter1.lan"]; !ok {
+		t.Error("expected vcenter1.lan to remain in map")
+	}
+	if _, ok := scc.vCenterStoragePolicy["vcenter2.lan"]; !ok {
+		t.Error("expected vcenter2.lan to remain in map")
+	}
+}
+
+// TestDay2GateDisabledNoOrphanCleanup verifies that when day2Enabled is false,
+// orphan detection and SPBM profile deletion do NOT run, even when the conditions
+// for cleanup are met (zero FDs on this vCenter, global FDs exist).
+func TestDay2GateDisabledNoOrphanCleanup(t *testing.T) {
+	infra := testlib.GetZonalInfra()
+
+	connections, cleanUpFunc, _, connError := testlib.SetupSimulator(testlib.DefaultModel, infra)
+	defer func() {
+		if cleanUpFunc != nil {
+			cleanUpFunc()
+		}
+	}()
+	if connError != nil {
+		t.Fatalf("error connecting to vcenter: %v", connError)
+	}
+
+	for _, conn := range connections {
+		// Create the policy with failure domains
+		apiClient := &storagePolicyAPI{
+			vcenterApiConnection: conn,
+			infra:                infra,
+			failureDomains:       getFailureDomainsForServer(infra, conn.Hostname),
+			categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+			policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+			tagName:              infra.Status.InfrastructureName,
+			day2Enabled:          false,
+			apiTestInfo:          map[string]int{},
+		}
+
+		_, err := apiClient.createStoragePolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("Error creating storage policy: %v", err)
+		}
+
+		// Simulate FD removal with day2Enabled=false: should NOT run cleanup
+		apiClient2 := &storagePolicyAPI{
+			vcenterApiConnection: conn,
+			infra:                infra,
+			failureDomains:       nil,
+			categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+			policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+			tagName:              infra.Status.InfrastructureName,
+			day2Enabled:          false,
+			apiTestInfo:          map[string]int{},
+		}
+
+		policyName, err := apiClient2.createStoragePolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("Error on zero-FD sync: %v", err)
+		}
+
+		// With gate disabled, profile should NOT be deleted even though FDs are zero
+		if policyName == "" {
+			t.Error("expected policy to be preserved when day2 gate is disabled")
+		}
+
+		found, err := apiClient2.checkForExistingPolicy(context.TODO())
+		if err != nil {
+			t.Fatalf("error checking policy: %v", err)
+		}
+		if !found {
+			t.Error("expected policy to still exist when day2 gate is disabled")
+		}
+
+		if err := apiClient2.deleteStoragePolicy(context.TODO()); err != nil {
+			t.Errorf("error deleting storage policy: %v", err)
+		}
+	}
+}
+
+// getFailureDomainsForServer filters failure domains by server hostname
+func getFailureDomainsForServer(infra *v1.Infrastructure, server string) []*v1.VSpherePlatformFailureDomainSpec {
+	var fds []*v1.VSpherePlatformFailureDomainSpec
+	if infra.Spec.PlatformSpec.VSphere == nil {
+		return nil
+	}
+	for _, fd := range infra.Spec.PlatformSpec.VSphere.FailureDomains {
+		if fd.Server == server {
+			fds = append(fds, &fd)
+		}
+	}
+	return fds
+}

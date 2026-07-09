@@ -155,6 +155,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/openshift/api v0.0.0-20260325070019-86893981287e h1:a5gc+sLpHw7rDpo7FoZfBAo/Wp0NTwDMbRNu+7W/D/o=
 github.com/openshift/api v0.0.0-20260325070019-86893981287e/go.mod h1:pyVjK0nZ4sRs4fuQVQ4rubsJdahI1PB94LnQ8sGdvxo=
+github.com/openshift/api v0.0.0-20260701110937-6e21043ed12a h1:EZA8FmEywkowN+xBpPAedlZYNu96gRgWOfT2FqDyiRA=
+github.com/openshift/api v0.0.0-20260701110937-6e21043ed12a/go.mod h1:7WJ3IPaK6nmWT8bDcaNooHqd0H5WepjVqV/10VlkMEM=
 github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee h1:+Sp5GGnjHDhT/a/nQ1xdp43UscBMr7G5wxsYotyhzJ4=
 github.com/openshift/build-machinery-go v0.0.0-20250530140348-dc5b2804eeee/go.mod h1:8jcm8UPtg2mCAsxfqKil1xrmRMI3a+XU2TZ9fF8A7TE=
 github.com/openshift/client-go v0.0.0-20260320040014-4b5fc2cdad98 h1:Ssuo/zELWqb7pFCwzB3QGEA4QeLW948hL2AhWq2SWjs=
@@ -360,6 +362,8 @@ k8s.io/kube-aggregator v0.35.2 h1:bnF7E238wUOVaPpTyKrqGCAEXOAJ6HRTARvJTZ0UIC0=
 k8s.io/kube-aggregator v0.35.2/go.mod h1:7Xl9zFJFsFIrPnwBfu7hve+G5QgLsDZRIedc8gA1mq4=
 k8s.io/kube-openapi v0.0.0-20260319004828-5883c5ee87b9 h1:Sztf7ESG9tAXRW/ACJZjrj5jhdOUqS2KFRQT+CTvu78=
 k8s.io/kube-openapi v0.0.0-20260319004828-5883c5ee87b9/go.mod h1:uGBT7iTA6c6MvqUvSXIaYZo9ukscABYi2btjhvgKGZ0=
+k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288 h1:A7Lby6ekC6nv+6oO38huCMFBRP0Os+tIeq1GkwxOQes=
+k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288/go.mod h1:V/QaCUYDa+0QpcHhVVc5l99Uz56wEMEXBSj9oCDkNDY=
 k8s.io/legacy-cloud-providers v0.29.1 h1:mkXFip6ZWEaBrRbY1CHrV5RHstkfUtniaPr8SEOnmPg=
 k8s.io/legacy-cloud-providers v0.29.1/go.mod h1:dvm2FRI9P5k6kOadonN+eM61XvGP98rlJlxsVoHo+/M=
 k8s.io/utils v0.0.0-20260319190234-28399d86e0b5 h1:kBawHLSnx/mYHmRnNUf9d4CpjREbeZuxoSGOX/J+aYM=

@@ -48,10 +48,43 @@ var (
 		},
 		[]string{domainScope},
 	)
+
+	// TagOperationsTotal counts tag attach/detach/skip operations.
+	TagOperationsTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Name:           "vsphere_csi_tag_operations_total",
+			Help:           "Total number of vSphere CSI tag operations",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"operation", "result"},
+	)
+
+	// OrphanTagsDetectedTotal counts orphaned tags detected.
+	OrphanTagsDetectedTotal = metrics.NewCounter(
+		&metrics.CounterOpts{
+			Name:           "vsphere_csi_orphan_tags_detected_total",
+			Help:           "Total number of orphaned tags detected",
+			StabilityLevel: metrics.ALPHA,
+		},
+	)
+
+	// VCenterRemovalCleanupTotal counts completed best-effort cleanup attempts for vCenters
+	// removed from Infrastructure.Spec.PlatformSpec.VSphere.VCenters, by outcome.
+	VCenterRemovalCleanupTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Name:           "vsphere_csi_vcenter_removal_cleanup_total",
+			Help:           "Total number of best-effort cleanup attempts for removed vCenters, by result",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"result"},
+	)
 )
 
 func init() {
 	legacyregistry.MustRegister(InstallErrorMetric)
 	legacyregistry.MustRegister(TopologyTagsMetric)
 	legacyregistry.MustRegister(InfrastructureFailureDomains)
+	legacyregistry.MustRegister(TagOperationsTotal)
+	legacyregistry.MustRegister(OrphanTagsDetectedTotal)
+	legacyregistry.MustRegister(VCenterRemovalCleanupTotal)
 }

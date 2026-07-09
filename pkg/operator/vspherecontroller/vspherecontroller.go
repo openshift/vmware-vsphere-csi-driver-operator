@@ -2,12 +2,15 @@ package vspherecontroller
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +20,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	ocpv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 	operatorapi "github.com/openshift/api/operator/v1"
 	infralister "github.com/openshift/client-go/config/listers/config/v1"
 	clustercsidriverlister "github.com/openshift/client-go/operator/listers/operator/v1"
@@ -68,7 +72,81 @@ type VSphereController struct {
 
 	// creates a new vSphereConnection - mainly used for testing
 	vsphereConnectionFunc func() ([]*vclib.VSphereConnection, checks.ClusterCheckResult, bool)
+
+	// vCenterConfigSnapshots caches {Hostname, Insecure} per vCenter host while it is still
+	// active in cloudConfig, so we can still reconnect to it after it disappears from
+	// infra.Spec.PlatformSpec.VSphere.VCenters (and thus from cloudConfig.Config.VirtualCenter).
+	vCenterConfigSnapshots map[string]vCenterConnSnapshot
+	// previousVCenterHosts is the set of vCenter hosts seen active on the previous sync, used to
+	// detect hosts that disappeared from VCenters between syncs.
+	previousVCenterHosts map[string]bool
+	// pendingVCenterRemoval tracks removed vCenters that are being reconnected to for best-effort
+	// tag/SPBM-profile cleanup, bounded by classifyConnectError/maxTransientRetryWindow.
+	pendingVCenterRemoval map[string]*vCenterRemovalState
+
+	// secondaryVCenterUnreachable/secondaryVCenterMessage reflect whether any non-workspace
+	// vCenter failed to connect on the most recent sync (Phase 6 fault isolation). They never
+	// cause a cluster degrade; they only drive the SecondaryVCenterUnreachable condition.
+	secondaryVCenterUnreachable bool
+	secondaryVCenterMessage     string
 }
+
+// vCenterConnSnapshot is a snapshot of the connection settings needed to reconnect to a vCenter
+// after it has been removed from the live cloud config.
+type vCenterConnSnapshot struct {
+	Hostname string
+	Insecure bool
+}
+
+// connectFailureClass classifies a reconnect failure against a removed vCenter, so that
+// reconcileRemovedVCenters can tell a permanent (mis-)configuration problem apart from a vCenter
+// that is simply unreachable right now (e.g. mid maintenance window).
+type connectFailureClass string
+
+const (
+	// failureClassTransient covers network/timeout/TLS/DNS errors - indistinguishable from a
+	// vCenter that is mid-maintenance. Retried until maxTransientRetryWindow elapses.
+	failureClassTransient connectFailureClass = "transient"
+	// failureClassPermanent covers rejected/missing credentials. Maintenance never removes
+	// secret keys or invalidates a password, so there is no window to wait out.
+	failureClassPermanent connectFailureClass = "permanent"
+)
+
+// vCenterConnectFailure records a non-critical (secondary vCenter) connection failure detected
+// during createVCenterConnection/loginToVCenter, so the caller can log/event/condition it without
+// aborting the sync for the other, healthy vCenters (Phase 6 fault isolation).
+type vCenterConnectFailure struct {
+	host string
+	err  error
+}
+
+// vCenterRemovalState tracks bounded-retry bookkeeping for a single removed vCenter that is
+// pending best-effort cleanup.
+type vCenterRemovalState struct {
+	firstDetected time.Time
+	attempts      int
+	lastError     error
+	lastClass     connectFailureClass
+}
+
+// maxTransientRetryWindow bounds how long we keep retrying a removed vCenter that is merely
+// unreachable (as opposed to one whose credentials are known-bad). Reported vSphere maintenance
+// windows run 6-12h; this is comfortably more than double that. Package-level var so tests can
+// override it instead of sleeping.
+var maxTransientRetryWindow = 48 * time.Hour
+
+const (
+	eventVCenterCleanupStarted      = "VCenterCleanupStarted"
+	eventVCenterRemovalCancelled    = "VCenterRemovalCancelled"
+	eventVCenterCleanupSucceeded    = "VCenterCleanupSucceeded"
+	eventVCenterCleanupAbandoned    = "VCenterCleanupAbandoned"
+	eventSecondaryVCenterUnreach    = "SecondaryVCenterUnreachable"
+	conditionVCenterRemovalPending  = "VCenterRemovalPending"
+	conditionSecondaryVCenterUnrch  = "SecondaryVCenterUnreachable"
+
+	metricResultSuccess   = "success"
+	metricResultAbandoned = "abandoned"
+)
 
 const (
 	cloudConfigNamespace              = "openshift-config"
@@ -137,6 +215,9 @@ func NewVSphereController(
 		infraLister:             infraInformer.Lister(),
 		vCenterConnectionStatus: false,
 		featureGates:            gates,
+		vCenterConfigSnapshots:  make(map[string]vCenterConnSnapshot),
+		previousVCenterHosts:    make(map[string]bool),
+		pendingVCenterRemoval:   make(map[string]*vCenterRemovalState),
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
@@ -214,6 +295,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 
 	var connectionResult checks.ClusterCheckResult
 	logout := true
+	var cleanupConnections []*vclib.VSphereConnection
 
 	// Load config when it has changed or if first time syncing.  For now, we do every time, but in future maybe limit
 	// this to only when changed so that we can reduce logging messages.
@@ -221,6 +303,7 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	if err != nil {
 		return err
 	}
+	c.refreshVCenterConfigSnapshots()
 
 	// Update infra so we have failure domains in the case of an older cluster with out-dated infra definition.
 	// The following logic is borrowed from VPD.  We should make util project contain this so its shared and kept in sync
@@ -235,6 +318,12 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	} else {
 		connectionResult = c.loginToVCenter(ctx, infra)
 	}
+
+	day2Enabled := c.featureGates != nil && c.featureGates.Enabled(features.FeatureGateVSphereMultiVCenterDay2)
+	if day2Enabled {
+		cleanupConnections = c.reconcileRemovedVCenters(ctx, infra)
+	}
+
 	defer func() {
 		klog.V(4).Infof("%s: vcenter-csi logging out from vcenter", c.name)
 		for _, vConn := range c.vSphereConnections {
@@ -245,8 +334,26 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 				}
 			}
 		}
+		// Cleanup connections are rebuilt from scratch every sync via connectToVCenterHost, so
+		// there is no reason to keep the session alive across syncs - always log out.
+		for _, vConn := range cleanupConnections {
+			if vConn != nil {
+				if err := vConn.Logout(ctx); err != nil {
+					klog.Errorf("%s: error closing cleanup connection to vCenter API: %v", c.name, err)
+				}
+			}
+		}
 		c.vSphereConnections = nil
 	}()
+
+	if day2Enabled {
+		if err := c.updateSecondaryVCenterCondition(ctx); err != nil {
+			klog.Errorf("%s: error updating %s condition: %v", c.name, conditionSecondaryVCenterUnrch, err)
+		}
+		if err := c.updateVCenterRemovalPendingCondition(ctx); err != nil {
+			klog.Errorf("%s: error updating %s condition: %v", c.name, conditionVCenterRemovalPending, err)
+		}
+	}
 
 	// if we successfully connected to vCenter and previously we couldn't and operator has one or more
 	// error conditions, then lets reset exp. backoff so as we can run the full cluster checks
@@ -270,11 +377,14 @@ func (c *VSphereController) sync(ctx context.Context, syncContext factory.SyncCo
 	// only install CSI storageclass if blockCSIDriverInstall is false and CSI driver has been installed.
 	if !blockCSIDriverInstall && c.operandControllerStarted {
 		storageClassAPIDeps := c.getCheckAPIDependency(infra)
-		err = c.storageClassController.Sync(ctx, c.vSphereConnections, storageClassAPIDeps)
+		err = c.storageClassController.Sync(ctx, c.vSphereConnections, cleanupConnections, storageClassAPIDeps)
 		// storageclass sync will only return error if somehow updating conditions fails, in which case
 		// we can return error here and degrade the cluster
 		if err != nil {
 			return err
+		}
+		if day2Enabled {
+			c.finalizeCleanupState(cleanupConnections)
 		}
 	}
 
@@ -440,23 +550,89 @@ func (c *VSphereController) getCheckAPIDependency(infra *ocpv1.Infrastructure) c
 }
 
 func (c *VSphereController) loginToVCenter(ctx context.Context, infra *ocpv1.Infrastructure) checks.ClusterCheckResult {
-	immediateError := c.createVCenterConnection(ctx, infra)
+	failures, immediateError := c.createVCenterConnection(ctx, infra)
 	if immediateError != nil {
+		c.secondaryVCenterUnreachable = false
+		c.secondaryVCenterMessage = ""
 		return checks.MakeClusterDegradedError(checks.CheckStatusOpenshiftAPIError, immediateError)
 	}
 
+	day2Enabled := c.featureGates != nil && c.featureGates.Enabled(features.FeatureGateVSphereMultiVCenterDay2)
+	if !day2Enabled {
+		// Preserve original behavior exactly: any connection failure degrades/blocks, for every
+		// vCenter alike. Phase 6 fault isolation (below) only applies when day2Enabled.
+		for _, vConn := range c.vSphereConnections {
+			if err := vConn.Connect(ctx); err != nil {
+				return checks.ClusterCheckResult{
+					CheckError:  err,
+					Action:      checks.CheckActionBlockUpgradeOrDegrade,
+					CheckStatus: checks.CheckStatusVSphereConnectionFailed,
+					Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
+				}
+			}
+		}
+		return checks.MakeClusterCheckResultPass()
+	}
+
+	workspaceHost := c.resolveWorkspaceHost()
+	singleVCenter := len(infra.Spec.PlatformSpec.VSphere.VCenters) <= 1
+
+	var messages []string
+	for _, failure := range failures {
+		msg := fmt.Sprintf("vCenter %s is unreachable: %v", failure.host, failure.err)
+		klog.Warningf("%s", msg)
+		c.eventRecorder.Warningf(eventSecondaryVCenterUnreach, "%s", msg)
+		messages = append(messages, msg)
+	}
+
+	var healthyConnections []*vclib.VSphereConnection
+	var lastErr error
 	for _, vConn := range c.vSphereConnections {
 		err := vConn.Connect(ctx)
 		if err != nil {
-			result := checks.ClusterCheckResult{
-				CheckError:  err,
-				Action:      checks.CheckActionBlockUpgradeOrDegrade,
-				CheckStatus: checks.CheckStatusVSphereConnectionFailed,
-				Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
+			critical := singleVCenter || (workspaceHost != "" && vConn.Hostname == workspaceHost)
+			if critical {
+				c.secondaryVCenterUnreachable = false
+				c.secondaryVCenterMessage = ""
+				return checks.ClusterCheckResult{
+					CheckError:  err,
+					Action:      checks.CheckActionBlockUpgradeOrDegrade,
+					CheckStatus: checks.CheckStatusVSphereConnectionFailed,
+					Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
+				}
 			}
-			return result
+			msg := fmt.Sprintf("vCenter %s is unreachable: %v", vConn.Hostname, err)
+			klog.Warningf("Secondary %s", msg)
+			c.eventRecorder.Warningf(eventSecondaryVCenterUnreach, "%s", msg)
+			messages = append(messages, msg)
+			lastErr = err
+			continue
+		}
+		healthyConnections = append(healthyConnections, vConn)
+	}
+
+	totalConfigured := len(infra.Spec.PlatformSpec.VSphere.VCenters)
+	if totalConfigured > 0 && len(healthyConnections) == 0 {
+		// Every configured vCenter failed - either at credential lookup or Connect() - so there
+		// is nothing to fall back on even though none of them individually matched the
+		// workspace/single-vCenter "critical" check above.
+		c.secondaryVCenterUnreachable = false
+		c.secondaryVCenterMessage = ""
+		err := lastErr
+		if err == nil && len(failures) > 0 {
+			err = failures[0].err
+		}
+		return checks.ClusterCheckResult{
+			CheckError:  err,
+			Action:      checks.CheckActionBlockUpgradeOrDegrade,
+			CheckStatus: checks.CheckStatusVSphereConnectionFailed,
+			Reason:      fmt.Sprintf("Failed to connect to vSphere: %v", err),
 		}
 	}
+
+	c.vSphereConnections = healthyConnections
+	c.secondaryVCenterUnreachable = len(messages) > 0
+	c.secondaryVCenterMessage = strings.Join(messages, "; ")
 	return checks.MakeClusterCheckResultPass()
 }
 
@@ -483,31 +659,60 @@ func hasErrorConditions(opStats operatorapi.OperatorStatus) bool {
 	return hasDegradedOrBlockUpgradeConditions
 }
 
-func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *ocpv1.Infrastructure) error {
+func (c *VSphereController) createVCenterConnection(ctx context.Context, infra *ocpv1.Infrastructure) ([]vCenterConnectFailure, error) {
 	klog.V(3).Infof("Creating vSphere connection")
+	day2Enabled := c.featureGates != nil && c.featureGates.Enabled(features.FeatureGateVSphereMultiVCenterDay2)
+	workspaceHost := c.resolveWorkspaceHost()
+	singleVCenter := len(infra.Spec.PlatformSpec.VSphere.VCenters) <= 1
+
+	var failures []vCenterConnectFailure
 	for _, vcenter := range infra.Spec.PlatformSpec.VSphere.VCenters {
+		// Phase 6 fault isolation (a non-workspace vCenter's credential problem must not abort
+		// connecting to the other, healthy vCenters) only applies when day2Enabled - otherwise
+		// preserve the original "abort on first error" behavior exactly.
+		critical := !day2Enabled || singleVCenter || (workspaceHost != "" && vcenter.Server == workspaceHost)
+
 		secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
 		if err != nil {
-			return err
+			if critical {
+				return failures, err
+			}
+			failures = append(failures, vCenterConnectFailure{host: vcenter.Server, err: err})
+			continue
 		}
 		userKey := vcenter.Server + "." + "username"
 		username, ok := secret.Data[userKey]
 		if !ok {
-			return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, userKey)
+			err := fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, userKey)
+			if critical {
+				return failures, err
+			}
+			failures = append(failures, vCenterConnectFailure{host: vcenter.Server, err: err})
+			continue
 		}
 		passwordKey := vcenter.Server + "." + "password"
 		password, ok := secret.Data[passwordKey]
 		if !ok {
-			return fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
+			err := fmt.Errorf("error parsing secret %q: key %q not found", cloudCredSecretName, passwordKey)
+			if critical {
+				return failures, err
+			}
+			failures = append(failures, vCenterConnectFailure{host: vcenter.Server, err: err})
+			continue
 		}
 
 		vs, err := vclib.NewVSphereConnection(string(username), string(password), vcenter.Server, c.cloudConfig)
 		if err != nil {
-			return fmt.Errorf("error creating new vsphere connection: %v", err)
+			wrapped := fmt.Errorf("error creating new vsphere connection: %v", err)
+			if critical {
+				return failures, wrapped
+			}
+			failures = append(failures, vCenterConnectFailure{host: vcenter.Server, err: wrapped})
+			continue
 		}
 		c.vSphereConnections = append(c.vSphereConnections, vs)
 	}
-	return nil
+	return failures, nil
 }
 
 func (c *VSphereController) loadCloudConfig(infra *ocpv1.Infrastructure) (*vclib.VSphereConfig, error) {
@@ -528,6 +733,301 @@ func (c *VSphereController) loadCloudConfig(infra *ocpv1.Infrastructure) (*vclib
 		return nil, err
 	}
 	return &config, nil
+}
+
+// resolveWorkspaceHost returns the hostname of the primary/workspace vCenter, if determinable.
+// Legacy ini configs carry it explicitly in Workspace.VCenterIP. YAML configs have no distinct
+// "workspace" concept, but carry an equivalent notion of a primary vCenter in Global.VCenterIP.
+// Returns "" if neither is available (e.g. cloudConfig not yet loaded).
+func (c *VSphereController) resolveWorkspaceHost() string {
+	if c.cloudConfig == nil {
+		return ""
+	}
+	if c.cloudConfig.LegacyConfig != nil && c.cloudConfig.LegacyConfig.Workspace.VCenterIP != "" {
+		return c.cloudConfig.LegacyConfig.Workspace.VCenterIP
+	}
+	if c.cloudConfig.Config != nil && c.cloudConfig.Config.Global.VCenterIP != "" {
+		return c.cloudConfig.Config.Global.VCenterIP
+	}
+	return ""
+}
+
+// ensureRemovalMaps lazily initializes the removal-tracking maps. This keeps hand-built
+// VSphereController literals (as used throughout the test suite) safe to use without every one
+// of them needing to set up these maps explicitly.
+func (c *VSphereController) ensureRemovalMaps() {
+	if c.vCenterConfigSnapshots == nil {
+		c.vCenterConfigSnapshots = make(map[string]vCenterConnSnapshot)
+	}
+	if c.previousVCenterHosts == nil {
+		c.previousVCenterHosts = make(map[string]bool)
+	}
+	if c.pendingVCenterRemoval == nil {
+		c.pendingVCenterRemoval = make(map[string]*vCenterRemovalState)
+	}
+}
+
+// refreshVCenterConfigSnapshots caches connection settings for every vCenter that is currently
+// active in c.cloudConfig. Must run every sync, while a vCenter is still active - it is the only
+// way connectToVCenterHost can construct a connection to it after it has been removed from
+// VCenters and therefore from cloudConfig.Config.VirtualCenter.
+func (c *VSphereController) refreshVCenterConfigSnapshots() {
+	c.ensureRemovalMaps()
+	if c.cloudConfig == nil || c.cloudConfig.Config == nil {
+		return
+	}
+	for host, vc := range c.cloudConfig.Config.VirtualCenter {
+		c.vCenterConfigSnapshots[host] = vCenterConnSnapshot{Hostname: vc.VCenterIP, Insecure: vc.InsecureFlag}
+	}
+}
+
+// classifyConnectError decides whether a reconnect failure against a removed vCenter looks
+// permanent (bad/missing credentials) or transient (network/timeout/TLS/DNS - indistinguishable
+// from a vCenter that is mid-maintenance). Defaults to transient: an unrecognized error is more
+// likely a maintenance-time quirk than a reason to abandon cleanup, and maxTransientRetryWindow
+// still bounds the cost either way.
+func classifyConnectError(err error) connectFailureClass {
+	if err == nil {
+		return failureClassTransient
+	}
+	var netErr net.Error
+	if stderrors.As(err, &netErr) {
+		return failureClassTransient
+	}
+	if stderrors.Is(err, syscall.ECONNREFUSED) {
+		return failureClassTransient
+	}
+	msg := strings.ToLower(err.Error())
+	permanentSubstrings := []string{
+		"incorrect user name or password",
+		"login failure",
+		"invalidlogin",
+		"unauthorized",
+		"authentication failed",
+		"incorrect user name or password was specified",
+	}
+	for _, s := range permanentSubstrings {
+		if strings.Contains(msg, s) {
+			return failureClassPermanent
+		}
+	}
+	return failureClassTransient
+}
+
+// connectToVCenterHost reconnects to a vCenter host using cached credentials/config settings,
+// bypassing vclib.NewVSphereConnection's config-lookup helpers - those require a live
+// cfg.Config.VirtualCenter[host] entry, which no longer exists once host has been removed from
+// VCenters. connection settings come from the snapshot taken by refreshVCenterConfigSnapshots
+// while host was still active.
+func (c *VSphereController) connectToVCenterHost(ctx context.Context, host string) (*vclib.VSphereConnection, connectFailureClass, error) {
+	snapshot, ok := c.vCenterConfigSnapshots[host]
+	if !ok {
+		return nil, failureClassPermanent, fmt.Errorf("no cached connection settings for removed vCenter %s", host)
+	}
+	secret, err := c.secretLister.Secrets(c.targetNamespace).Get(cloudCredSecretName)
+	if err != nil {
+		return nil, failureClassTransient, fmt.Errorf("reading cloud credentials: %w", err)
+	}
+	usernameKey := host + ".username"
+	username, ok := secret.Data[usernameKey]
+	if !ok {
+		return nil, failureClassPermanent, fmt.Errorf("no cached credentials for removed vCenter %s", host)
+	}
+	passwordKey := host + ".password"
+	password, ok := secret.Data[passwordKey]
+	if !ok {
+		return nil, failureClassPermanent, fmt.Errorf("no cached credentials for removed vCenter %s", host)
+	}
+	conn := &vclib.VSphereConnection{
+		Username: string(username),
+		Password: string(password),
+		Hostname: snapshot.Hostname,
+		Insecure: snapshot.Insecure,
+		Config:   c.cloudConfig,
+	}
+	if err := conn.Connect(ctx); err != nil {
+		return nil, classifyConnectError(err), err
+	}
+	return conn, failureClassTransient, nil
+}
+
+// reconcileRemovedVCenters detects vCenters removed from infra.Spec.PlatformSpec.VSphere.VCenters
+// and drives best-effort reconnect/cleanup for them, bounded by maxTransientRetryWindow. Returns
+// the set of successfully-reconnected cleanup-only connections for this sync; callers must log
+// these out at the end of the same sync (a fresh connection is made every sync regardless).
+//
+// Retrying every host already pending is the primary, steady-state, run-every-sync path -
+// detecting newly-removed hosts is the secondary trigger that seeds the map.
+func (c *VSphereController) reconcileRemovedVCenters(ctx context.Context, infra *ocpv1.Infrastructure) []*vclib.VSphereConnection {
+	c.ensureRemovalMaps()
+
+	currentHosts := make(map[string]bool)
+	if infra.Spec.PlatformSpec.VSphere != nil {
+		for _, vc := range infra.Spec.PlatformSpec.VSphere.VCenters {
+			currentHosts[vc.Server] = true
+		}
+	}
+
+	// Re-add guard (C3): cancel pending removal for any host that reappeared in VCenters,
+	// before anything below builds a cleanup connection for it this sync. Without this, a
+	// re-added host would get both an active connection (from createVCenterConnection) and a
+	// cleanup connection in the same Sync() call, and the cleanup connection's zero-FD branch
+	// would delete the SPBM profile the active connection just verified/recreated.
+	for host := range c.pendingVCenterRemoval {
+		if currentHosts[host] {
+			klog.V(2).Infof("vCenter %s reappeared in VCenters before cleanup finished; cancelling pending removal", host)
+			delete(c.pendingVCenterRemoval, host)
+			c.eventRecorder.Eventf(eventVCenterRemovalCancelled, "vCenter %s reappeared in spec before cleanup finished", host)
+		}
+	}
+
+	workspaceHost := c.resolveWorkspaceHost()
+
+	var cleanupConnections []*vclib.VSphereConnection
+
+	attemptHost := func(host string) {
+		state, ok := c.pendingVCenterRemoval[host]
+		if !ok {
+			state = &vCenterRemovalState{firstDetected: time.Now()}
+			c.pendingVCenterRemoval[host] = state
+			c.eventRecorder.Eventf(eventVCenterCleanupStarted, "vCenter %s was removed; starting best-effort cleanup", host)
+		}
+		conn, class, err := c.connectToVCenterHost(ctx, host)
+		state.attempts++
+		state.lastClass = class
+		state.lastError = err
+		if err != nil {
+			klog.V(2).Infof("Reconnect attempt %d for removed vCenter %s failed (%s): %v", state.attempts, host, class, err)
+			c.evaluateGiveUp(host, state)
+			return
+		}
+		cleanupConnections = append(cleanupConnections, conn)
+	}
+
+	// Retry every host already pending from a previous sync (steady state). Snapshot the key
+	// set first: attemptHost/evaluateGiveUp may delete from pendingVCenterRemoval as they run,
+	// and newly-seeded hosts (below) must not be double-attempted in the same sync.
+	pendingHosts := make([]string, 0, len(c.pendingVCenterRemoval))
+	for host := range c.pendingVCenterRemoval {
+		pendingHosts = append(pendingHosts, host)
+	}
+	for _, host := range pendingHosts {
+		attemptHost(host)
+	}
+
+	// Detect newly-removed hosts and seed + attempt them within this same sync.
+	for host := range c.previousVCenterHosts {
+		if currentHosts[host] {
+			continue
+		}
+		if _, alreadyHandled := c.pendingVCenterRemoval[host]; alreadyHandled {
+			continue
+		}
+		if workspaceHost != "" && host == workspaceHost {
+			klog.Warningf("Primary/workspace vCenter %s was removed from VCenters; skipping automatic reconnect/cleanup (handled by the connection-failure degraded path instead)", host)
+			continue
+		}
+		attemptHost(host)
+	}
+
+	c.previousVCenterHosts = currentHosts
+	return cleanupConnections
+}
+
+// evaluateGiveUp applies the maintenance-aware give-up policy: permanent failures (bad/missing
+// credentials) abandon immediately, transient failures (network/timeout - indistinguishable from
+// a maintenance window) are retried until maxTransientRetryWindow elapses.
+func (c *VSphereController) evaluateGiveUp(host string, state *vCenterRemovalState) {
+	giveUp := false
+	switch state.lastClass {
+	case failureClassPermanent:
+		giveUp = true
+	case failureClassTransient:
+		if time.Since(state.firstDetected) > maxTransientRetryWindow {
+			giveUp = true
+		}
+	}
+	if !giveUp {
+		return
+	}
+	klog.Warningf("Giving up on cleanup for removed vCenter %s after %d attempt(s): %v", host, state.attempts, state.lastError)
+	c.eventRecorder.Warningf(eventVCenterCleanupAbandoned, "Giving up on cleanup for removed vCenter %s after %d attempt(s): %v", host, state.attempts, state.lastError)
+	utils.VCenterRemovalCleanupTotal.WithLabelValues(metricResultAbandoned).Inc()
+	delete(c.pendingVCenterRemoval, host)
+	delete(c.vCenterConfigSnapshots, host)
+	if c.storageClassController != nil {
+		c.storageClassController.PurgeVCenterState(host)
+	}
+}
+
+// finalizeCleanupState checks, for every host we attempted cleanup on this sync, whether
+// StorageClassController now considers it fully clean; if so the removal is done and the
+// bookkeeping for it is dropped. Otherwise it stays in pendingVCenterRemoval and is retried next
+// sync (bounded by evaluateGiveUp).
+func (c *VSphereController) finalizeCleanupState(cleanupConnections []*vclib.VSphereConnection) {
+	for _, conn := range cleanupConnections {
+		if conn == nil {
+			continue
+		}
+		if !c.storageClassController.IsHostFullyClean(conn.Hostname) {
+			continue
+		}
+		if _, wasPending := c.pendingVCenterRemoval[conn.Hostname]; !wasPending {
+			// Already finalized (e.g. on a previous sync) - avoid firing a duplicate
+			// success event/metric for a host that isn't actually pending anymore.
+			continue
+		}
+		klog.V(2).Infof("Cleanup confirmed complete for removed vCenter %s", conn.Hostname)
+		delete(c.pendingVCenterRemoval, conn.Hostname)
+		delete(c.vCenterConfigSnapshots, conn.Hostname)
+		c.eventRecorder.Eventf(eventVCenterCleanupSucceeded, "Completed cleanup for removed vCenter %s", conn.Hostname)
+		utils.VCenterRemovalCleanupTotal.WithLabelValues(metricResultSuccess).Inc()
+		c.storageClassController.PurgeVCenterState(conn.Hostname)
+	}
+}
+
+// updateVCenterRemovalPendingCondition mirrors OrphanCleanupPending: True while any vCenter is
+// known-removed-but-not-yet-cleaned-up, so admins can see pending Day-2 work via `oc get
+// clusteroperator` without needing to inspect operator logs.
+func (c *VSphereController) updateVCenterRemovalPendingCondition(ctx context.Context) error {
+	cond := operatorapi.OperatorCondition{
+		Type:   c.name + conditionVCenterRemovalPending,
+		Status: operatorapi.ConditionFalse,
+		Reason: "NoPendingRemovals",
+	}
+	for host, state := range c.pendingVCenterRemoval {
+		if state.attempts == 0 {
+			continue
+		}
+		cond.Status = operatorapi.ConditionTrue
+		cond.Reason = "CleanupInProgress"
+		var lastErrMsg string
+		if state.lastError != nil {
+			lastErrMsg = state.lastError.Error()
+		}
+		cond.Message = fmt.Sprintf("vCenter %s was removed and is pending best-effort cleanup (attempts=%d, lastError=%q)", host, state.attempts, lastErrMsg)
+		break
+	}
+	_, _, err := v1helpers.UpdateStatus(ctx, c.operatorClient, v1helpers.UpdateConditionFn(cond))
+	return err
+}
+
+// updateSecondaryVCenterCondition surfaces Phase 6 fault isolation: a non-workspace vCenter
+// being unreachable is visible via this condition, distinct from the main Degraded condition, so
+// a maintenance window doesn't page anyone or block upgrades.
+func (c *VSphereController) updateSecondaryVCenterCondition(ctx context.Context) error {
+	cond := operatorapi.OperatorCondition{
+		Type:   c.name + conditionSecondaryVCenterUnrch,
+		Status: operatorapi.ConditionFalse,
+		Reason: "AllVCentersReachable",
+	}
+	if c.secondaryVCenterUnreachable {
+		cond.Status = operatorapi.ConditionTrue
+		cond.Reason = "VCenterUnreachable"
+		cond.Message = c.secondaryVCenterMessage
+	}
+	_, _, err := v1helpers.UpdateStatus(ctx, c.operatorClient, v1helpers.UpdateConditionFn(cond))
+	return err
 }
 
 func (c *VSphereController) updateConditions(
@@ -667,7 +1167,7 @@ func (c *VSphereController) createCSISecret(
 	if len(infra.Spec.PlatformSpec.VSphere.VCenters) == 1 {
 		datastoreURLs := make(map[string]string)
 		for _, connection := range c.vSphereConnections {
-			storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, connection, infra)
+			storageApiClient := storageclasscontroller.NewStoragePolicyAPI(ctx, connection, infra, false, false, nil)
 
 			defaultDatastore, err := storageApiClient.GetDefaultDatastore(ctx, infra)
 
@@ -787,6 +1287,7 @@ func (c *VSphereController) createStorageClassController() storageclasscontrolle
 		c.scLister,
 		c.apiClients.ClusterCSIDriverInformer,
 		c.eventRecorder,
+		c.featureGates,
 	)
 	return storageClassController
 }
