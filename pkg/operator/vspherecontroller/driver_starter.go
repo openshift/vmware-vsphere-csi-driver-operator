@@ -4,13 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/openshift/api/features"
 	"os"
 	"strconv"
 
-	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
-	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
-
+	"github.com/openshift/api/features"
 	operatorapi "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
@@ -19,8 +16,11 @@ import (
 	"github.com/openshift/library-go/pkg/operator/csi/csidrivernodeservicecontroller"
 	"github.com/openshift/library-go/pkg/operator/deploymentcontroller"
 	"github.com/openshift/library-go/pkg/operator/loglevel"
+	"github.com/openshift/library-go/pkg/operator/resource/resourcehash"
+	"github.com/openshift/library-go/pkg/operator/staleconditions"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/openshift/vmware-vsphere-csi-driver-operator/assets"
+	"github.com/openshift/vmware-vsphere-csi-driver-operator/pkg/operator/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -71,14 +71,6 @@ func (c *VSphereController) createCSIDriver() {
 			"csidriver.yaml",
 			"service.yaml",
 			"ca_configmap.yaml",
-			// Static assets used by the webhook
-			"webhook/config.yaml",
-			"webhook/sa.yaml",
-			"webhook/service.yaml",
-			"webhook/configuration.yaml",
-			"webhook/rbac/role.yaml",
-			"webhook/rbac/rolebinding.yaml",
-			"webhook/pdb.yaml",
 		},
 		func() bool {
 			return getOperatorSyncState(c.operatorClient) == operatorapi.Managed
@@ -104,6 +96,32 @@ func (c *VSphereController) createCSIDriver() {
 		// Don't ever remove.
 		func() bool {
 			return false
+		},
+	).WithConditionalStaticResourcesController(
+		// Remove webhook
+		// TODO: remove this code + webhook assets in 5.1 or newer
+		"VMwareVSphereDriverWebhookRemovalStaticResourcesController",
+		c.kubeClient,
+		c.apiClients.DynamicClient,
+		c.apiClients.KubeInformers,
+		assets.ReadFile,
+		[]string{
+			"webhook/config.yaml",
+			"webhook/sa.yaml",
+			"webhook/service.yaml",
+			"webhook/configuration.yaml",
+			"webhook/rbac/role.yaml",
+			"webhook/rbac/rolebinding.yaml",
+			"webhook/pdb.yaml",
+			"webhook/deployment.yaml",
+		},
+		// Never create
+		func() bool {
+			return false
+		},
+		// Always remove
+		func() bool {
+			return true
 		},
 	).WithCSIConfigObserverController(
 		"VMwareVSphereDriverCSIConfigObserverController",
@@ -165,6 +183,22 @@ func (c *VSphereController) createCSIDriver() {
 	c.controllers = append(c.controllers, conditionalController{
 		name:       driverOperandName,
 		controller: csiControllerSet,
+	})
+
+	// Remove conditions of webhook controller that we removed in 5.0
+	// TODO: remove this code + webhook removal in 5.1 or newer
+	c.controllers = append(c.controllers, conditionalController{
+		name: "VMwareVSphereDriverWebhookConditionRemover",
+		controller: staleconditions.NewRemoveStaleConditionsController(
+			"VMwareVSphereDriverWebhookConditionRemover",
+			[]string{
+				"VMwareVSphereDriverWebhookControllerAvailable",
+				"VMwareVSphereDriverWebhookControllerProgressing",
+				"VMwareVSphereDriverWebhookControllerDegraded",
+			},
+			c.operatorClient,
+			c.eventRecorder,
+		),
 	})
 }
 

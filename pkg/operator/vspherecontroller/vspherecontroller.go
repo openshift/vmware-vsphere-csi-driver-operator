@@ -76,7 +76,6 @@ const (
 	legacyConfigMapName               = "vsphere-csi-config"
 	cloudCredSecretName               = "vmware-vsphere-cloud-credentials"
 	metricsCertSecretName             = "vmware-vsphere-csi-driver-controller-metrics-serving-cert"
-	webhookSecretName                 = "vmware-vsphere-csi-driver-webhook-secret"
 	trustedCAConfigMap                = "vmware-vsphere-csi-driver-trusted-ca-bundle"
 	driverConfigSecretName            = "vsphere-csi-config-secret"
 	defaultNamespace                  = "openshift-cluster-csi-drivers"
@@ -140,7 +139,6 @@ func NewVSphereController(
 	}
 	c.controllers = []conditionalController{}
 	c.createCSIDriver()
-	c.createWebHookController()
 	c.storageClassController = c.createStorageClassController()
 
 	return factory.New().WithInformers(
