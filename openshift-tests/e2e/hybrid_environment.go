@@ -3,8 +3,9 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
 	"time"
+
+	"github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,20 +17,13 @@ import (
 	clusteroperatorhelpers "github.com/openshift/library-go/pkg/config/clusteroperator/v1helpers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/clientcmd/api"
 )
 
 const (
 	vSpherePlatformType  = "vsphere"
 	platformTypeLabelKey = "node.openshift.io/platform-type"
 	hybridTestClient     = "vsphere-hybrid-e2e"
-	storageCOName        = "storage"
-	csiDriverName        = "csi.vsphere.vmware.com"
 
-	// Timeout constants
-	testContextTimeout                 = 10 * time.Minute
 	restoreContextTimeout              = 15 * time.Minute
 	clusterCSIDriverUpdateTimeout      = 2 * time.Minute
 	clusterCSIDriverUpdatePollInterval = 2 * time.Second
@@ -145,21 +139,9 @@ var _ = Describe("[sig-storage][OCPFeatureGate:VSphereMixedNodeEnv][platform:vsp
 	)
 
 	BeforeEach(func() {
-		// Create Kubernetes client
-		loader := clientcmd.NewDefaultClientConfigLoadingRules()
-		clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			loader,
-			&clientcmd.ConfigOverrides{ClusterInfo: api.Cluster{InsecureSkipTLSVerify: true}},
-		)
-		config, err := clientConfig.ClientConfig()
+		var err error
+		ctx, cancel, kubeClient, configClient, operatorClient, err = NewE2EClientsFromDefaultKubeconfig(hybridTestClient, testContextTimeout)
 		Expect(err).NotTo(HaveOccurred(), "Failed to get kubeconfig")
-
-		kubeClient = kubernetes.NewForConfigOrDie(rest.AddUserAgent(config, hybridTestClient))
-		configClient = configclient.NewForConfigOrDie(rest.AddUserAgent(config, hybridTestClient))
-		operatorClient = operatorclient.NewForConfigOrDie(rest.AddUserAgent(config, hybridTestClient))
-
-		// Create context with timeout
-		ctx, cancel = context.WithTimeout(context.Background(), testContextTimeout)
 	})
 
 	AfterEach(func() {
