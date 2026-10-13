@@ -1,0 +1,10 @@
+kind: StorageClass
+apiVersion: invalid-value
+metadata:
+  name: thin-csi-renamed
+provisioner: csi.vsphere.vmware.com
+parameters:
+  StoragePolicyName: "fake-storage-policy"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete

@@ -1,0 +1,14 @@
+# vSphere CSI driver operator cannot create a StorageClass yet.
+# Use this StorageClass as a template for CI tests, pointing to
+# our datastore.
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-ci
+parameters:
+  # Datastore URL in OCP CI
+  datastoreurl: ds:///vmfs/volumes/vsan:86c7dbc3da924855-b20d5cd1f4eec976/
+provisioner: csi.vsphere.vmware.com
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer

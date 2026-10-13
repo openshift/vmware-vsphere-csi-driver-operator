@@ -1,0 +1,422 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: vmware-vsphere-csi-driver-controller
+  namespace: openshift-cluster-csi-drivers
+  annotations:
+    config.openshift.io/inject-proxy: csi-driver,vsphere-syncer
+    config.openshift.io/inject-proxy-cabundle: csi-driver,vsphere-syncer
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app: vmware-vsphere-csi-driver-controller
+  template:
+    metadata:
+      labels:
+        app: vmware-vsphere-csi-driver-controller
+        openshift.storage.network-policy.all-egress: allow
+        openshift.storage.network-policy.api-server: allow
+        openshift.storage.network-policy.dns: allow
+        openshift.storage.network-policy.metrics-range: allow
+      annotations:
+        openshift.io/required-scc: restricted-v2
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+    spec:
+      serviceAccountName: vmware-vsphere-csi-driver-controller-sa
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: vmware-vsphere-csi-driver-controller
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: csi-driver
+          securityContext:
+            readOnlyRootFilesystem: true
+          image: ${DRIVER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --fss-name=internal-feature-states.csi.vsphere.vmware.com
+            - --fss-namespace=$(CSI_NAMESPACE)
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: X_CSI_MODE
+              value: "controller"
+            - name: VSPHERE_CSI_CONFIG
+              value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
+            - name: INCLUSTER_CLIENT_QPS
+              value: "100"
+            - name: INCLUSTER_CLIENT_BURST
+              value: "100"
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: X_CSI_SERIAL_VOL_ACCESS_TIMEOUT
+              value: 3m
+            - name: X_CSI_SPEC_DISABLE_LEN_CHECK
+              value: "true"
+            - name: MAX_VOLUMES_PER_NODE
+              value: "59"
+          ports:
+            - name: healthz
+              containerPort: 10301
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 5
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+            - name: vsphere-csi-config-volume
+              mountPath: /etc/kubernetes/vsphere-csi-config/
+              readOnly: true
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: driver-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
+          args:
+          - --secure-listen-address=0.0.0.0:9201
+          - --upstream=http://127.0.0.1:2112/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+          - --tls-min-version=${TLS_MIN_VERSION}
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9201
+            name: driver-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: csi-provisioner
+          securityContext:
+            readOnlyRootFilesystem: true
+          image: ${PROVISIONER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=$(ADDRESS)
+            - --default-fstype=ext4
+            - --timeout=300s
+            # - --feature-gates=Topology=true
+            # - --extra-create-metadata=true
+            - --v=${LOG_LEVEL}
+            - --leader-election
+            - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
+            - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
+            - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
+            - --http-endpoint=localhost:8202
+            # needed only for topology aware setup, it is expected that
+            # operator will set this field is needed.
+            # - "--strict-topology"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+          # kube-rbac-proxy for external-provisioner container.
+          # Provides https proxy for http-based external-provisioner metrics.
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: provisioner-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
+          args:
+          - --secure-listen-address=0.0.0.0:9202
+          - --upstream=http://127.0.0.1:8202/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+          - --tls-min-version=${TLS_MIN_VERSION}
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9202
+            name: provisioner-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: csi-attacher
+          securityContext:
+            readOnlyRootFilesystem: true
+          image: ${ATTACHER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=$(ADDRESS)
+            - --timeout=300s
+            - --http-endpoint=localhost:8203
+            - --leader-election
+            - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
+            - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
+            - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
+            - --v=${LOG_LEVEL}
+            - --reconcile-sync=10m
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: attacher-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
+          args:
+          - --secure-listen-address=0.0.0.0:9203
+          - --upstream=http://127.0.0.1:8203/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+          - --tls-min-version=${TLS_MIN_VERSION}
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9203
+            name: attacher-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: csi-resizer
+          securityContext:
+            readOnlyRootFilesystem: true
+          image: ${RESIZER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=$(ADDRESS)
+            - --http-endpoint=localhost:8204
+            - --timeout=300s
+            - --leader-election
+            - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
+            - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
+            - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
+            - --v=${LOG_LEVEL}
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: resizer-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
+          args:
+          - --secure-listen-address=0.0.0.0:9204
+          - --upstream=http://127.0.0.1:8204/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+          - --tls-min-version=${TLS_MIN_VERSION}
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9204
+            name: resizer-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
+          terminationMessagePolicy: FallbackToLogsOnError
+        # external-snapshotter container
+        - name: csi-snapshotter
+          securityContext:
+            readOnlyRootFilesystem: true
+          image: ${SNAPSHOTTER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=$(ADDRESS)
+            - --metrics-address=localhost:8205
+            - --timeout=300s
+            - --leader-election
+            - --leader-election-lease-duration=${LEADER_ELECTION_LEASE_DURATION}
+            - --leader-election-renew-deadline=${LEADER_ELECTION_RENEW_DEADLINE}
+            - --leader-election-retry-period=${LEADER_ELECTION_RETRY_PERIOD}
+            - --v=${LOG_LEVEL}
+          env:
+          - name: ADDRESS
+            value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+          - mountPath: /var/lib/csi/sockets/pluginproxy/
+            name: socket-dir
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: snapshotter-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
+          args:
+          - --secure-listen-address=0.0.0.0:9206
+          - --upstream=http://127.0.0.1:8205/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+          - --tls-min-version=${TLS_MIN_VERSION}
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9206
+            name: snapshotter-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: csi-liveness-probe
+          securityContext:
+            readOnlyRootFilesystem: true
+          image: ${LIVENESS_PROBE_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --csi-address=$(ADDRESS)
+            - --probe-timeout=3s
+            - --health-port=10301
+            - --v=${LOG_LEVEL}
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: vsphere-syncer
+          securityContext:
+            readOnlyRootFilesystem: true
+          image: ${VMWARE_VSPHERE_SYNCER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-election
+            - --fss-name=internal-feature-states.csi.vsphere.vmware.com
+            - --fss-namespace=$(CSI_NAMESPACE)
+          env:
+            - name: FULL_SYNC_INTERVAL_MINUTES
+              value: "30"
+            - name: VSPHERE_CSI_CONFIG
+              value: "/etc/kubernetes/vsphere-csi-config/cloud.conf"
+            - name: INCLUSTER_CLIENT_QPS
+              value: "100"
+            - name: INCLUSTER_CLIENT_BURST
+              value: "100"
+            - name: CSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/kubernetes/vsphere-csi-config
+              name: vsphere-csi-config-volume
+              readOnly: true
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+          terminationMessagePolicy: FallbackToLogsOnError
+        - name: syncer-kube-rbac-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
+          args:
+          - --secure-listen-address=0.0.0.0:9205
+          - --upstream=http://127.0.0.1:2113/
+          - --tls-cert-file=/etc/tls/private/tls.crt
+          - --tls-private-key-file=/etc/tls/private/tls.key
+          - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+          - --tls-min-version=${TLS_MIN_VERSION}
+          - --logtostderr=true
+          image: ${KUBE_RBAC_PROXY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 9205
+            name: syncer-m
+            protocol: TCP
+          resources:
+            requests:
+              memory: 20Mi
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/tls/private
+            name: metrics-serving-cert
+          terminationMessagePolicy: FallbackToLogsOnError
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: vsphere-csi-config-volume
+          secret:
+            secretName: vsphere-csi-config-secret
+        - name: metrics-serving-cert
+          secret:
+            secretName: vmware-vsphere-csi-driver-controller-metrics-serving-cert
