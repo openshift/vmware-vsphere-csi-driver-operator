@@ -5,6 +5,7 @@ import (
 	cfginformers "github.com/openshift/client-go/config/informers/externalversions"
 	operatorinformers "github.com/openshift/client-go/operator/informers/externalversions"
 	clustercsidriverinformer "github.com/openshift/client-go/operator/informers/externalversions/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/configobserver/featuregates"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/dynamic"
@@ -39,4 +40,7 @@ type APIClient struct {
 
 	// Dynamic client for OLM and old CSI operator APIs
 	DynamicClient dynamic.Interface
+
+	// Accessor used to gate TLS curve preference observation
+	FeatureGateAccessor featuregates.FeatureGateAccess
 }
