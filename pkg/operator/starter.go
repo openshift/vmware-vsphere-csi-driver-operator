@@ -123,6 +123,7 @@ func RunOperator(ctx context.Context, controllerConfig *controllercmd.Controller
 		ConfigInformers:          configInformers,
 		DynamicClient:            dynamicClient,
 		ClusterCSIDriverInformer: clusterCSIDriverInformer,
+		FeatureGateAccessor:      featureGateAccessor,
 	}
 
 	cloudConfigBytes, err := assets.ReadFile("vsphere_cloud_config_secret.yaml")

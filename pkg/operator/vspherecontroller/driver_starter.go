@@ -123,9 +123,10 @@ func (c *VSphereController) createCSIDriver() {
 		func() bool {
 			return true
 		},
-	).WithCSIConfigObserverController(
+	).WithCSIConfigObserverControllerWithFeatureGates(
 		"VMwareVSphereDriverCSIConfigObserverController",
 		c.apiClients.ConfigInformers,
+		c.apiClients.FeatureGateAccessor,
 	).WithCSIDriverControllerService(
 		"VMwareVSphereDriverControllerServiceController",
 		assets.ReadFile,
