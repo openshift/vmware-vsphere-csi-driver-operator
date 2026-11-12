@@ -230,7 +230,12 @@ func (v *storagePolicyAPI) createStoragePolicy(ctx context.Context) (string, err
 	}
 
 	// Since we create zonal storage policy when in multi vcenter or single vcenter w/ zones, the below is
-	// only for case where cluster is upgrade from a version that used a non FailureDomain config.
+	// only for case where cluster is upgraded from a version that used a non FailureDomain config. That config
+	// only ever exists for legacy ini cloud-provider-config (yaml config has no equivalent [Workspace] section),
+	// so without it there is no datastore to build a storage policy from.
+	if v.vcenterApiConnection.Config == nil || v.vcenterApiConnection.Config.LegacyConfig == nil {
+		return v.policyName, fmt.Errorf("unable to determine a datastore for the default storage policy: vCenter %s has no failure domains and no legacy cloud-provider-config", v.vcenterApiConnection.Hostname)
+	}
 	dsName := v.vcenterApiConnection.Config.LegacyConfig.Workspace.DefaultDatastore
 	dcName := v.vcenterApiConnection.Config.LegacyConfig.Workspace.Datacenter
 

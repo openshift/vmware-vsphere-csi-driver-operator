@@ -312,3 +312,44 @@ func validateAPICallCount(t *testing.T, vmwareAPI *storagePolicyAPI, expectedMap
 		}
 	}
 }
+
+// TestCreateStoragePolicy_NoFailureDomainsNoLegacyConfig is a regression test for a follow-on to OCPBUGS-140533:
+// createStoragePolicy's non-zonal fallback used to dereference vcenterApiConnection.Config.LegacyConfig.Workspace
+// unconditionally, which panicked for a yaml-format cloud-provider-config (LegacyConfig is nil) once Infrastructure
+// could have vCenters without any failure domains at all. It must return a clear error instead.
+func TestCreateStoragePolicy_NoFailureDomainsNoLegacyConfig(t *testing.T) {
+	infra := testlib.GetInfraObject() // empty VSphere platform spec: no failure domains
+
+	connections, cleanUpFunc, _, connError := testlib.SetupSimulator(testlib.DefaultModel, infra)
+	defer func() {
+		if cleanUpFunc != nil {
+			cleanUpFunc()
+		}
+	}()
+	if connError != nil {
+		t.Fatalf("error connecting to vcenter: %v", connError)
+	}
+
+	yamlCfg := &vclib.VSphereConfig{}
+	if err := yamlCfg.LoadConfig(testlib.GetNewConfigMap().Data["config"]); err != nil {
+		t.Fatalf("failed to load yaml config: %v", err)
+	}
+
+	for _, conn := range connections {
+		conn.Config = yamlCfg // simulate a yaml-format cloud-provider-config, which has no LegacyConfig
+
+		storagePolicyAPIClient := &storagePolicyAPI{
+			vcenterApiConnection: conn,
+			infra:                infra,
+			categoryName:         fmt.Sprintf(categoryNameTemplate, infra.Status.InfrastructureName),
+			policyName:           fmt.Sprintf(policyNameTemplate, infra.Status.InfrastructureName),
+			tagName:              infra.Status.InfrastructureName,
+			apiTestInfo:          map[string]int{},
+		}
+
+		_, err := storagePolicyAPIClient.createStoragePolicy(context.TODO())
+		if err == nil {
+			t.Fatal("expected an error when there are no failure domains and no legacy cloud-provider-config, got none")
+		}
+	}
+}
