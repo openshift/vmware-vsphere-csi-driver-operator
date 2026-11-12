@@ -672,7 +672,14 @@ func (c *VSphereController) createCSISecret(
 			defaultDatastore, err := storageApiClient.GetDefaultDatastore(ctx, infra)
 
 			if err != nil {
-				return fmt.Errorf("unable to fetch default datastore url: %v", err)
+				// The default datastore is only used to populate the optional migration-datastore-url used for
+				// translating legacy in-tree vSphere volumes.  It cannot always be determined -- e.g. a cluster
+				// upgraded onto yaml-format cloud-provider-config whose Infrastructure was never updated with
+				// failure domains has no source for it at all, since yaml config carries no datastore/folder/
+				// resourcePool information.  Don't degrade the whole CSI driver install over it.
+				klog.Warningf("unable to fetch default datastore url for %s, in-tree volume migration may not work correctly: %v", connection.Hostname, err)
+				syncContext.Recorder().Warningf("DefaultDatastoreLookupFailed", "unable to fetch default datastore url for %s: %v", connection.Hostname, err)
+				continue
 			}
 
 			datastoreURL = defaultDatastore.Summary.Url

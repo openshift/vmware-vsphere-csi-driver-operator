@@ -21,6 +21,7 @@ import (
 	"gopkg.in/gcfg.v1"
 	iniv1 "gopkg.in/ini.v1"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/metrics/testutil"
@@ -1521,5 +1522,82 @@ func TestPasswordSerializationDeserialization(t *testing.T) {
 				t.Error("Datacenters field is empty")
 			}
 		})
+	}
+}
+
+// TestCreateCSISecret_DefaultDatastoreLookupFailureIsNonFatal is a regression test for a follow-on to
+// OCPBUGS-140533: once ConvertToPlatformSpec() reconstructs a vCenter/failure domain from a yaml-format
+// cloud-provider-config that itself has no failure domains, the resulting failure domain's Topology.Datastore is
+// necessarily empty (yaml config carries no datastore/folder/resourcePool information). createCSISecret() must not
+// let a resulting "default datastore" lookup failure degrade the whole CSI driver installation, since that value is
+// only used for the best-effort migration-datastore-url.
+func TestCreateCSISecret_DefaultDatastoreLookupFailureIsNonFatal(t *testing.T) {
+	// infra represents the state after ConvertToPlatformSpec ran: a vCenter and failure domain were reconstructed,
+	// but the failure domain has no datastore since the source config was yaml-format.
+	infra := testlib.GetInfraObject()
+	infra.Spec.PlatformSpec.VSphere.VCenters = []configv1.VSpherePlatformVCenterSpec{
+		{Server: "localhost", Datacenters: []string{"DC0"}},
+	}
+	infra.Spec.PlatformSpec.VSphere.FailureDomains = []configv1.VSpherePlatformFailureDomainSpec{
+		{
+			Server: "localhost",
+			Topology: configv1.VSpherePlatformTopology{
+				Datacenter: "DC0",
+				// Datastore intentionally left empty, as yaml cloud-provider-config has no such field.
+			},
+		},
+	}
+
+	// Only used to pick which vCenter the simulator connects the fake client to; must have a failure domain whose
+	// Server matches so NewStoragePolicyAPI's hostname-based filtering finds it.
+	simInfra := testlib.GetInfraObject()
+	simInfra.Spec.PlatformSpec.VSphere.FailureDomains = infra.Spec.PlatformSpec.VSphere.FailureDomains
+	connections, cleanup, _, err := testlib.SetupSimulator(testlib.DefaultModel, simInfra)
+	if err != nil {
+		t.Fatalf("failed to set up simulator: %v", err)
+	}
+	defer cleanup()
+
+	initialObjects := []runtime.Object{testlib.GetSecret(), testlib.GetCSIDriver(true)}
+	commonApiClient := testlib.NewFakeClients(initialObjects, testlib.MakeFakeDriverInstance(), runtime.Object(infra))
+	clusterCSIDriver := testlib.GetClusterCSIDriver(false)
+	testlib.AddClusterCSIDriverClient(commonApiClient, clusterCSIDriver)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	go testlib.StartFakeInformer(commonApiClient, stopCh)
+	if err := testlib.AddInitialObjects(append(initialObjects, clusterCSIDriver), commonApiClient); err != nil {
+		t.Fatalf("error adding initial objects: %v", err)
+	}
+	testlib.WaitForSync(commonApiClient, stopCh)
+
+	ctrl := newVsphereController(commonApiClient)
+	ctrl.vSphereConnections = connections
+
+	cloudCfg := &vclib.VSphereConfig{}
+	if err := cloudCfg.LoadConfig(testlib.GetNewConfigMap().Data["config"]); err != nil {
+		t.Fatalf("failed to load cloud config: %v", err)
+	}
+	ctrl.cloudConfig = cloudCfg
+
+	err = ctrl.createCSISecret(context.TODO(), factory.NewSyncContext("vsphere-controller", ctrl.eventRecorder), infra, clusterCSIDriver)
+	if err != nil {
+		t.Fatalf("expected createCSISecret to tolerate a default datastore lookup failure without error, got: %v", err)
+	}
+
+	secret, err := commonApiClient.KubeClient.CoreV1().Secrets(defaultNamespace).Get(context.TODO(), "vsphere-csi-config-secret", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("expected csi config secret to be created despite the datastore lookup failure: %v", err)
+	}
+	csiConfig, err := iniv1.Load(secret.Data["cloud.conf"])
+	if err != nil {
+		t.Fatalf("error loading result ini: %v", err)
+	}
+	datastoreURL, err := csiConfig.Section("VirtualCenter \"localhost\"").GetKey("migration-datastore-url")
+	if err != nil {
+		t.Fatalf("error getting datastore url: %v", err)
+	}
+	if datastoreURL.String() != "" {
+		t.Errorf("expected empty migration-datastore-url since it could not be determined, got %q", datastoreURL.String())
 	}
 }
