@@ -304,3 +304,30 @@ func TestNodeChecker_CheckOnNode_FeatureGateVSphereMixedNodeEnv(t *testing.T) {
 		})
 	}
 }
+
+// TestGetVM_NoVCenterConnections is a regression test for OCPBUGS-140533: when vmConnection is empty -- which
+// happened whenever the operator couldn't reconstruct any vCenter connections from cloud-provider-config -- getVM
+// must return the "unable to find VM ... by UUID ..." error users saw reported on the storage ClusterOperator,
+// rather than panicking or looping forever. This pins the exact symptom so a future regression surfaces here
+// instead of only in a live cluster.
+func TestGetVM_NoVCenterConnections(t *testing.T) {
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-master-0",
+		},
+		Spec: v1.NodeSpec{
+			ProviderID: vSphereProviderIDPrefix + "422382ad-924d-9627-b6c6-ca86eb869f76",
+		},
+	}
+
+	checkOpts := CheckArgs{} // vmConnection intentionally left nil/empty
+
+	vm, err := getVM(context.TODO(), checkOpts, node)
+	if vm != nil {
+		t.Errorf("expected nil VM, got %+v", vm)
+	}
+	expected := "unable to find VM test-node-master-0 by UUID 422382ad-924d-9627-b6c6-ca86eb869f76"
+	if err == nil || err.Error() != expected {
+		t.Errorf("expected error %q, got %v", expected, err)
+	}
+}

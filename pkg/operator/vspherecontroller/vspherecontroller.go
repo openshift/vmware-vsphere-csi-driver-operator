@@ -918,52 +918,79 @@ func ConvertToPlatformSpec(config *vclib.VSphereConfig, infra *ocpv1.Infrastruct
 	}
 	vSphereSpec := infra.Spec.PlatformSpec.VSphere
 
-	if config != nil {
-		//   We only need to do this for legacy ini configs.  Yaml configs we expect all to be configured correctly.
-		if config.LegacyConfig != nil {
-			if len(vSphereSpec.VCenters) != 0 {
-				// we need to check if we really need to add to VCenters and FailureDomains.
-				configuredVCenters := vCentersToMap(vSphereSpec.VCenters)
+	if config == nil {
+		return
+	}
 
-				// vcenter is missing from the map, add it...
-				for _, vCenter := range config.Config.VirtualCenter {
-					if _, ok := configuredVCenters[vCenter.VCenterIP]; !ok {
-						klog.Warningf("vCenter %v is missing from vCenter map", vCenter.VCenterIP)
-						addVCenter(config, vSphereSpec, vCenter.VCenterIP)
-					}
-				}
+	// This reconstruction applies equally to legacy ini and newer yaml cloud-provider-config: both can be
+	// rendered without the Infrastructure CR's VCenters/FailureDomains being populated to match.
+	if len(vSphereSpec.VCenters) != 0 {
+		// we need to check if we really need to add to VCenters and FailureDomains.
+		configuredVCenters := vCentersToMap(vSphereSpec.VCenters)
 
-				// If platform spec defined vCenters, but no failure domains, this seems like invalid config.  We can
-				// attempt to add failure domain as a failsafe, but only if legacy ini config was used.
-				if len(vSphereSpec.FailureDomains) == 0 {
-					addFailureDomainsToPlatformSpec(config, vSphereSpec, config.LegacyConfig.Workspace.VCenterIP)
-				}
-			} else {
-				// If we are here, infrastructure resource hasn't been updated for any vCenter.  For multi vcenter support,
-				// being here is not supported.  For 1 vCenter we will allow which should be from a very old cluster being
-				// upgraded but never having infrastructure config updated to latest standards.
-				if len(config.Config.VirtualCenter) == 1 {
-					convertIntreeToPlatformSpec(config, vSphereSpec)
-				} else {
-					klog.Error("infrastructure has not been configured correctly to support multiple vCenters.")
-				}
+		// vcenter is missing from the map, add it...
+		for vCenterKey, vCenter := range config.Config.VirtualCenter {
+			if _, ok := configuredVCenters[vCenter.VCenterIP]; !ok {
+				klog.Warningf("vCenter %v is missing from vCenter map", vCenter.VCenterIP)
+				// Look up by the config's own map key (which can differ from VCenterIP when a vCenter is
+				// configured with a separate TenantRef), not by VCenterIP itself.
+				addVCenter(config, vSphereSpec, vCenterKey)
 			}
+		}
+
+		// If platform spec defined vCenters, but no failure domains, this seems like invalid config.  We can
+		// attempt to add a failure domain as a failsafe, but only for legacy ini config: yaml config has no
+		// per-vCenter topology data (datacenter/datastore/folder/resourcePool) to reconstruct one from.
+		if len(vSphereSpec.FailureDomains) == 0 {
+			if config.LegacyConfig != nil {
+				addFailureDomainsToPlatformSpec(config, vSphereSpec, primaryVCenterName(config))
+			} else {
+				klog.Warning("infrastructure has no failure domains and cloud-provider-config is yaml-format, which has no topology data to reconstruct one from")
+			}
+		}
+	} else {
+		// If we are here, infrastructure resource hasn't been updated for any vCenter.  For multi vcenter support,
+		// being here is not supported.  For 1 vCenter we will allow which should be from a very old cluster being
+		// upgraded but never having infrastructure config updated to latest standards.
+		if len(config.Config.VirtualCenter) == 1 {
+			convertIntreeToPlatformSpec(config, vSphereSpec)
+		} else {
+			klog.Error("infrastructure has not been configured correctly to support multiple vCenters.")
 		}
 	}
 }
 
-func convertIntreeToPlatformSpec(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec) {
-	// All this logic should only happen if using legacy cloud provider config and admin has not set up failure domain
-	legacyCfg := config.LegacyConfig
-	if ccmVcenter, ok := legacyCfg.VirtualCenter[legacyCfg.Workspace.VCenterIP]; ok {
-		datacenters := strings.Split(ccmVcenter.Datacenters, ",")
-
-		platformSpec.VCenters = append(platformSpec.VCenters, ocpv1.VSpherePlatformVCenterSpec{
-			Server:      legacyCfg.Workspace.VCenterIP,
-			Datacenters: datacenters,
-		})
-		addFailureDomainsToPlatformSpec(config, platformSpec, legacyCfg.Workspace.VCenterIP)
+// primaryVCenterName returns the name (key into config.Config.VirtualCenter) of the vCenter to fall back to when
+// Infrastructure has no vCenters/failure domains of its own. Legacy ini configs name this vCenter explicitly in
+// their [Workspace] section; yaml configs have no such concept, so callers must only rely on this when exactly one
+// vCenter is configured.
+func primaryVCenterName(config *vclib.VSphereConfig) string {
+	if config.LegacyConfig != nil {
+		return config.LegacyConfig.Workspace.VCenterIP
 	}
+	for vCenterName := range config.Config.VirtualCenter {
+		return vCenterName
+	}
+	return ""
+}
+
+func convertIntreeToPlatformSpec(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec) {
+	// All this logic should only happen if admin has not set up failure domain, regardless of whether the
+	// cloud-provider config is in the legacy ini or newer yaml format.
+	vCenterName := primaryVCenterName(config)
+	ccmVcenter, ok := config.Config.VirtualCenter[vCenterName]
+	if !ok {
+		return
+	}
+	datacenters := strings.Split(ccmVcenter.Datacenters, ",")
+
+	platformSpec.VCenters = append(platformSpec.VCenters, ocpv1.VSpherePlatformVCenterSpec{
+		Server:      ccmVcenter.VCenterIP,
+		Datacenters: datacenters,
+	})
+	// No-op for yaml config (addFailureDomainsToPlatformSpec only reconstructs from legacy ini data); for legacy
+	// config, vCenterName here is already the real server address (config.LegacyConfig.Workspace.VCenterIP).
+	addFailureDomainsToPlatformSpec(config, platformSpec, vCenterName)
 }
 
 func addVCenter(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec, vCenterName string) {
@@ -979,18 +1006,26 @@ func addVCenter(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatform
 	}
 }
 
-func addFailureDomainsToPlatformSpec(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec, vcenter string) {
-	legacyCfg := config.LegacyConfig
+// addFailureDomainsToPlatformSpec appends a failure domain reconstructed from legacy ini cloud-provider-config's
+// [Workspace] section. Yaml config has no equivalent section -- it carries no datacenter/datastore/folder/
+// resourcePool data at all -- so there is no reliable topology to fabricate a failure domain from, and this is a
+// no-op when config is yaml-format. A fabricated failure domain with missing topology (e.g. an empty datastore)
+// would otherwise be indistinguishable downstream from a real, admin-configured zonal failure domain.
+func addFailureDomainsToPlatformSpec(config *vclib.VSphereConfig, platformSpec *ocpv1.VSpherePlatformSpec, vCenterKey string) {
+	if config.LegacyConfig == nil {
+		return
+	}
+	workspace := config.LegacyConfig.Workspace
 	platformSpec.FailureDomains = append(platformSpec.FailureDomains, ocpv1.VSpherePlatformFailureDomainSpec{
 		Name:   "",
 		Region: "",
 		Zone:   "",
-		Server: vcenter,
+		Server: vCenterKey,
 		Topology: ocpv1.VSpherePlatformTopology{
-			Datacenter:   legacyCfg.Workspace.Datacenter,
-			Folder:       legacyCfg.Workspace.Folder,
-			ResourcePool: legacyCfg.Workspace.ResourcePoolPath,
-			Datastore:    legacyCfg.Workspace.DefaultDatastore,
+			Datacenter:   workspace.Datacenter,
+			Folder:       workspace.Folder,
+			ResourcePool: workspace.ResourcePoolPath,
+			Datastore:    workspace.DefaultDatastore,
 		},
 	})
 }
